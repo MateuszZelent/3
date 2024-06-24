@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
+//	"time"
 )
 
 type RPCFunc func(string) string
@@ -56,7 +56,8 @@ func HandleRPC(w http.ResponseWriter, r *http.Request) {
 }
 
 // re-usable http client for making RPC calls
-var httpClient = http.Client{Timeout: 2 * time.Second}
+//var httpClient = http.Client{Timeout: 2 * time.Second}
+var httpClient = http.Client{}
 
 // make RPC call to method on node with given address.
 func RPCCall(addr, method, arg string) (ret string, err error) {

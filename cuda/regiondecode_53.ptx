@@ -111,7 +111,7 @@
 	.reg .pred 	%p<2>;
 	.reg .b16 	%rs<2>;
 	.reg .f32 	%f<2>;
-	.reg .b32 	%r<11>;
+	.reg .b32 	%r<10>;
 	.reg .b64 	%rd<13>;
 
 
@@ -130,13 +130,12 @@
 	@%p1 bra 	BB6_2;
 
 	cvta.to.global.u64 	%rd4, %rd3;
-	cvt.s64.s32	%rd5, %r1;
+	mul.wide.s32 	%rd5, %r1, 2;
 	add.s64 	%rd6, %rd4, %rd5;
-	ld.global.nc.u8 	%rs1, [%rd6];
+	ld.global.nc.u16 	%rs1, [%rd6];
 	cvta.to.global.u64 	%rd7, %rd2;
 	cvt.u32.u16	%r9, %rs1;
-	and.b32  	%r10, %r9, 255;
-	mul.wide.u32 	%rd8, %r10, 4;
+	mul.wide.u32 	%rd8, %r9, 4;
 	add.s64 	%rd9, %rd7, %rd8;
 	ld.global.nc.f32 	%f1, [%rd9];
 	cvta.to.global.u64 	%rd10, %rd1;

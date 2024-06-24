@@ -48,10 +48,10 @@
 	@%p1 bra 	BB0_2;
 
 	cvta.to.global.u64 	%rd8, %rd7;
-	cvt.s64.s32	%rd9, %r1;
+	mul.wide.s32 	%rd9, %r1, 2;
 	add.s64 	%rd10, %rd8, %rd9;
 	cvta.to.global.u64 	%rd11, %rd4;
-	ld.global.u8 	%r9, [%rd10];
+	ld.global.u16 	%r9, [%rd10];
 	mul.wide.u32 	%rd12, %r9, 4;
 	add.s64 	%rd13, %rd11, %rd12;
 	cvta.to.global.u64 	%rd14, %rd1;

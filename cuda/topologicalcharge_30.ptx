@@ -21,11 +21,11 @@
 	.param .u32 settopologicalcharge_param_5,
 	.param .u32 settopologicalcharge_param_6,
 	.param .u32 settopologicalcharge_param_7,
-	.param .u8 settopologicalcharge_param_8
+	.param .u16 settopologicalcharge_param_8
 )
 {
 	.reg .pred 	%p<77>;
-	.reg .b16 	%rs<15>;
+	.reg .b16 	%rs<4>;
 	.reg .f32 	%f<291>;
 	.reg .b32 	%r<162>;
 	.reg .b64 	%rd<61>;
@@ -39,7 +39,7 @@
 	ld.param.u32 	%r38, [settopologicalcharge_param_5];
 	ld.param.u32 	%r39, [settopologicalcharge_param_6];
 	ld.param.u32 	%r40, [settopologicalcharge_param_7];
-	ld.param.u8 	%rs3, [settopologicalcharge_param_8];
+	ld.param.u16 	%rs3, [settopologicalcharge_param_8];
 	cvta.to.global.u64 	%rd1, %rd8;
 	cvta.to.global.u64 	%rd2, %rd7;
 	cvta.to.global.u64 	%rd3, %rd6;
@@ -102,8 +102,7 @@ BB0_4:
 	max.s32 	%r154, %r5, %r54;
 
 BB0_5:
-	and.b16  	%rs4, %rs1, 1;
-	setp.eq.b16	%p10, %rs4, 1;
+	setp.ne.s16	%p10, %rs1, 0;
 	setp.gt.s32	%p11, %r5, -1;
 	or.pred  	%p12, %p11, %p10;
 	mov.f32 	%f263, 0f00000000;
@@ -137,8 +136,7 @@ BB0_9:
 
 BB0_10:
 	setp.gt.s32	%p14, %r1, 0;
-	setp.eq.b16	%p15, %rs4, 1;
-	or.pred  	%p16, %p14, %p15;
+	or.pred  	%p16, %p14, %p10;
 	mov.f32 	%f266, 0f00000000;
 	mov.f32 	%f265, %f266;
 	mov.f32 	%f264, %f266;
@@ -170,8 +168,7 @@ BB0_14:
 
 BB0_15:
 	setp.lt.s32	%p18, %r13, %r38;
-	setp.eq.b16	%p19, %rs4, 1;
-	or.pred  	%p20, %p18, %p19;
+	or.pred  	%p20, %p18, %p10;
 	mov.f32 	%f269, 0f00000000;
 	mov.f32 	%f268, %f269;
 	mov.f32 	%f267, %f269;
@@ -204,8 +201,7 @@ BB0_19:
 BB0_20:
 	add.s32 	%r21, %r157, %r4;
 	setp.lt.s32	%p22, %r17, %r38;
-	setp.eq.b16	%p23, %rs4, 1;
-	or.pred  	%p24, %p22, %p23;
+	or.pred  	%p24, %p22, %p10;
 	mov.f32 	%f272, 0f00000000;
 	mov.f32 	%f271, %f272;
 	mov.f32 	%f270, %f272;

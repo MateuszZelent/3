@@ -42,3 +42,23 @@ func MemsetD8Async(deviceptr DevicePtr, value uint8, N int64, stream Stream) {
 		panic(err)
 	}
 }
+
+// 16 bit by Victor
+
+
+// Sets the first N 16-bit values of dst array to value.
+// Asynchronous.
+func MemsetD16(deviceptr DevicePtr, value uint16, N int64) {
+	err := Result(C.cuMemsetD16(C.CUdeviceptr(deviceptr), C.ushort(value), C.size_t(N)))
+	if err != SUCCESS {
+		panic(err)
+	}
+}
+
+// Asynchronously sets the first N 32-bit values of dst array to value.
+func MemsetD16Async(deviceptr DevicePtr, value uint16, N int64, stream Stream) {
+	err := Result(C.cuMemsetD16Async(C.CUdeviceptr(deviceptr), C.ushort(value), C.size_t(N), C.CUstream(unsafe.Pointer(uintptr(stream)))))
+	if err != SUCCESS {
+		panic(err)
+	}
+}

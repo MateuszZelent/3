@@ -111,8 +111,8 @@
 	.reg .pred 	%p<3>;
 	.reg .b16 	%rs<2>;
 	.reg .f32 	%f<2>;
-	.reg .b32 	%r<12>;
-	.reg .b64 	%rd<13>;
+	.reg .b32 	%r<11>;
+	.reg .b64 	%rd<14>;
 
 
 	ld.param.u64 	%rd2, [zeromask_param_0];
@@ -131,22 +131,22 @@
 
 	cvta.to.global.u64 	%rd5, %rd4;
 	cvt.s64.s32	%rd1, %r1;
-	add.s64 	%rd6, %rd5, %rd1;
-	ld.global.nc.u8 	%rs1, [%rd6];
-	cvta.to.global.u64 	%rd7, %rd3;
+	mul.wide.s32 	%rd6, %r1, 2;
+	add.s64 	%rd7, %rd5, %rd6;
+	ld.global.nc.u16 	%rs1, [%rd7];
+	cvta.to.global.u64 	%rd8, %rd3;
 	cvt.u32.u16	%r9, %rs1;
-	and.b32  	%r10, %r9, 255;
-	mul.wide.u32 	%rd8, %r10, 4;
-	add.s64 	%rd9, %rd7, %rd8;
-	ld.global.nc.f32 	%f1, [%rd9];
+	mul.wide.u32 	%rd9, %r9, 4;
+	add.s64 	%rd10, %rd8, %rd9;
+	ld.global.nc.f32 	%f1, [%rd10];
 	setp.eq.f32	%p2, %f1, 0f00000000;
 	@%p2 bra 	BB6_3;
 
-	cvta.to.global.u64 	%rd10, %rd2;
-	shl.b64 	%rd11, %rd1, 2;
-	add.s64 	%rd12, %rd10, %rd11;
-	mov.u32 	%r11, 0;
-	st.global.u32 	[%rd12], %r11;
+	cvta.to.global.u64 	%rd11, %rd2;
+	shl.b64 	%rd12, %rd1, 2;
+	add.s64 	%rd13, %rd11, %rd12;
+	mov.u32 	%r10, 0;
+	st.global.u32 	[%rd13], %r10;
 
 BB6_3:
 	ret;

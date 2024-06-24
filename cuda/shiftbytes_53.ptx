@@ -108,7 +108,7 @@
 	.param .u32 shiftbytes_param_3,
 	.param .u32 shiftbytes_param_4,
 	.param .u32 shiftbytes_param_5,
-	.param .u8 shiftbytes_param_6
+	.param .u16 shiftbytes_param_6
 )
 {
 	.reg .pred 	%p<9>;
@@ -123,7 +123,7 @@
 	ld.param.u32 	%r7, [shiftbytes_param_3];
 	ld.param.u32 	%r9, [shiftbytes_param_4];
 	ld.param.u32 	%r8, [shiftbytes_param_5];
-	ld.param.u8 	%rs4, [shiftbytes_param_6];
+	ld.param.u16 	%rs4, [shiftbytes_param_6];
 	mov.u32 	%r10, %ntid.x;
 	mov.u32 	%r11, %ctaid.x;
 	mov.u32 	%r12, %tid.x;
@@ -154,16 +154,16 @@ BB6_1:
 
 	cvta.to.global.u64 	%rd3, %rd2;
 	mad.lo.s32 	%r19, %r5, %r6, %r4;
-	cvt.s64.s32	%rd4, %r19;
+	mul.wide.s32 	%rd4, %r19, 2;
 	add.s64 	%rd5, %rd3, %rd4;
-	ld.global.nc.u8 	%rs4, [%rd5];
+	ld.global.nc.u16 	%rs4, [%rd5];
 
 BB6_3:
 	cvta.to.global.u64 	%rd6, %rd1;
 	mad.lo.s32 	%r20, %r5, %r6, %r1;
-	cvt.s64.s32	%rd7, %r20;
+	mul.wide.s32 	%rd7, %r20, 2;
 	add.s64 	%rd8, %rd6, %rd7;
-	st.global.u8 	[%rd8], %rs4;
+	st.global.u16 	[%rd8], %rs4;
 
 BB6_4:
 	ret;
