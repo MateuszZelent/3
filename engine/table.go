@@ -18,6 +18,7 @@ const TableAutoflushRate = 5   // auto-flush table every X seconds
 
 func init() {
 	DeclFunc("TableAdd", TableAdd, "Add quantity as a column to the data table.")
+	DeclFunc("TableAddAs", TableAddAs, "Add a quantity to the data table under a custom column name.")
 	DeclFunc("TableAddVar", TableAddVariable, "Add user-defined variable + name + unit to data table.")
 	DeclFunc("TableSave", TableSave, "Save the data table right now (appends one line).")
 	DeclFunc("TableAutoSave", TableAutoSave, "Auto-save the data table every period (s). Zero disables save.")
@@ -67,6 +68,22 @@ func newTable(name string) *DataTable {
 func TableAdd(col Quantity) {
 	Table.Add(col)
 }
+
+func TableAddAs(col Quantity, name string) {
+	if name == "" {
+		panic(UserErr("TableAddAs: name must not be empty"))
+	}
+	Table.Add(&namedTableQuantity{Quantity: col, name: name})
+}
+
+type namedTableQuantity struct {
+	Quantity
+	name string
+}
+
+func (q *namedTableQuantity) Name() string       { return q.name }
+func (q *namedTableQuantity) Unit() string       { return UnitOf(q.Quantity) }
+func (q *namedTableQuantity) average() []float64 { return AverageOf(q.Quantity) }
 
 func TableAddVariable(x script.ScalarFunction, name, unit string) {
 	Table.AddVariable(x, name, unit)

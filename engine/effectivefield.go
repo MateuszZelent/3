@@ -15,6 +15,7 @@ func SetEffectiveField(dst *data.Slice) {
 	AddAnisotropyField(dst)
 	AddMagnetoelasticField(dst)
 	B_ext.AddTo(dst)
+	AddOerstedField(dst)
 	if !relaxing {
 		B_therm.AddTo(dst)
 	}

@@ -54,7 +54,7 @@ func SetLLTorque(dst *data.Slice) {
 	if Msat.hasZero() {    // Apply no torque to Msat==0 cells
 		cuda.ZeroMaskInv(dst, Msat.gpuLUT1(), regions.Gpu())
 	}
-	alpha := Alpha.MSlice()
+	alpha := effectiveAlphaMSlice()
 	defer alpha.Recycle()
 	if Precess {
 		cuda.LLTorque(dst, M.Buffer(), dst, alpha) // overwrite dst with torque
@@ -82,7 +82,7 @@ func AddSTTorque(dst *data.Slice) {
 		defer msat.Recycle()
 		j := J.MSlice()
 		defer j.Recycle()
-		alpha := Alpha.MSlice()
+		alpha := effectiveAlphaMSlice()
 		defer alpha.Recycle()
 		xi := Xi.MSlice()
 		defer xi.Recycle()
@@ -97,7 +97,7 @@ func AddSTTorque(dst *data.Slice) {
 		defer j.Recycle()
 		fixedP := FixedLayer.MSlice()
 		defer fixedP.Recycle()
-		alpha := Alpha.MSlice()
+		alpha := effectiveAlphaMSlice()
 		defer alpha.Recycle()
 		pol := Pol.MSlice()
 		defer pol.Recycle()

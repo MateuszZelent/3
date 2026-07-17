@@ -13,10 +13,23 @@ const NREGION = 256 // maximum number of regions, limited by size of byte.
 func init() {
 	DeclFunc("DefRegion", DefRegion, "Define a material region with given index (0-255) and shape")
 	DeclFunc("RedefRegion", RedefRegion, "Reassign all cells with a given region (first argument) to a new region (second argument)")
+	DeclFunc("ShapeFromRegion", ShapeFromRegion, "Returns a shape matching the current region-definition history")
+	DeclFunc("RegionFromCoordinate", RegionFromCoordinate, "Returns the region index at cell coordinates x, y, z")
 	DeclROnly("regions", &regions, "Outputs the region index for each cell")
 	DeclROnly("NREGION", NREGION, "Maximum number of regions (256)")
 	DeclFunc("DefRegionCell", DefRegionCell, "Set a material region (first argument) in one cell "+
 		"by the index of the cell (last three arguments)")
+}
+
+func ShapeFromRegion(id int) Shape {
+	defRegionId(id)
+	return func(x, y, z float64) bool {
+		return regions.get(data.Vector{x, y, z}) == id
+	}
+}
+
+func RegionFromCoordinate(x, y, z int) int {
+	return regions.GetCell(x, y, z)
 }
 
 // stores the region index for each cell

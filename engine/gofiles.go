@@ -27,6 +27,7 @@ var (
 	Flag_legacygui   = flag.Bool("legacy-gui", false, "Use the original mumax3 web GUI")
 	Flag_tunnel      = flag.String("tunnel", "", "SSH host used for an optional reverse web-UI tunnel")
 	Flag_webdebug    = flag.Bool("webui-debug", false, "Enable web API request logging")
+	Flag_insecure    = flag.Bool("insecure", false, "Allow unsafe mx3 operations such as RunShell")
 )
 
 func FlagPassed(name string) bool {

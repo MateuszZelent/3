@@ -15,6 +15,7 @@ type Excitation struct {
 	name       string
 	perRegion  RegionwiseVector // Region-based excitation
 	extraTerms []mulmask        // add extra mask*multiplier terms
+	revision   uint64           // mutation counter used by cached derived fields
 }
 
 // space-dependent mask plus time dependent multiplier
@@ -75,6 +76,7 @@ func (e *Excitation) RemoveExtraTerms() {
 		m.mask.Free()
 	}
 	e.extraTerms = nil
+	e.revision++
 }
 
 // Add an extra mask*multiplier term to the excitation.
@@ -103,18 +105,31 @@ func (e *Excitation) AddGo(mask *data.Slice, mul func() float64) {
 		mask = assureGPU(mask)
 	}
 	e.extraTerms = append(e.extraTerms, mulmask{mul, mask})
+	e.revision++
 }
 
-func (e *Excitation) SetRegion(region int, f script.VectorFunction) { e.perRegion.SetRegion(region, f) }
-func (e *Excitation) SetValue(v interface{})                        { e.perRegion.SetValue(v) }
-func (e *Excitation) Set(v data.Vector)                             { e.perRegion.setRegions(0, NREGION, slice(v)) }
-func (e *Excitation) getRegion(region int) []float64                { return e.perRegion.getRegion(region) } // for gui
+func (e *Excitation) SetRegion(region int, f script.VectorFunction) {
+	e.perRegion.SetRegion(region, f)
+	e.revision++
+}
+func (e *Excitation) SetValue(v interface{}) {
+	e.perRegion.SetValue(v)
+	e.revision++
+}
+func (e *Excitation) Set(v data.Vector) {
+	e.perRegion.setRegions(0, NREGION, slice(v))
+	e.revision++
+}
+func (e *Excitation) getRegion(region int) []float64 { return e.perRegion.getRegion(region) } // for gui
 
 func (e *Excitation) SetRegionFn(region int, f func() [3]float64) {
 	e.perRegion.setFunc(region, region+1, func() []float64 {
 		return slice(f())
 	})
+	e.revision++
 }
+
+func (e *Excitation) Revision() uint64 { return e.revision }
 
 func (e *Excitation) average() []float64      { return qAverageUniverse(e) }
 func (e *Excitation) Average() data.Vector    { return unslice(qAverageUniverse(e)) }

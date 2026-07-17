@@ -15,8 +15,20 @@ func init() {
 	DeclFunc("SetCellSize", SetCellSize, `Sets the X,Y,Z cell size in meters`)
 	DeclFunc("SetMesh", SetMesh, `Sets GridSize, CellSize and PBC at the same time`)
 	DeclFunc("SmoothMesh", SmoothMesh, `Rounds selected grid dimensions down to a 7-smooth size while preserving the physical world size`)
+	DeclFunc("SetTotalSize", SetTotalSize, `Sets the physical world size while preserving the current grid size`)
 	DeclFunc("SetPBC", SetPBC, "Sets the number of repetitions in X,Y,Z to create periodic boundary "+
 		"conditions. The number of repetitions determines the cutoff range for the demagnetization.")
+}
+
+// SetTotalSize changes the physical dimensions of the mesh without changing
+// the number of cells. It is the current-engine equivalent of Amumax's mesh
+// helper and therefore composes with the lazy SetGridSize/SetCellSize API.
+func SetTotalSize(tx, ty, tz float64) {
+	arg("TotalSize", tx > 0 && ty > 0 && tz > 0)
+	if lazy_gridsize == nil {
+		panic(UserErr("SetTotalSize: set the grid size first"))
+	}
+	SetCellSize(tx/float64(lazy_gridsize[X]), ty/float64(lazy_gridsize[Y]), tz/float64(lazy_gridsize[Z]))
 }
 
 func Mesh() *data.Mesh {
@@ -81,6 +93,7 @@ func SetMesh(Nx, Ny, Nz int, cellSizeX, cellSizeY, cellSizeZ float64, pbcx, pbcy
 		// free everything to trigger kernel recalculation, etc
 		conv_.Free()
 		conv_ = nil
+		FreeOersted()
 		mfmconv_.Free()
 		mfmconv_ = nil
 		cuda.FreeBuffers()
@@ -98,6 +111,9 @@ func SetMesh(Nx, Ny, Nz int, cellSizeX, cellSizeY, cellSizeZ float64, pbcx, pbcy
 			// up to the user to add them again
 			B_ext.RemoveExtraTerms()
 			J.RemoveExtraTerms()
+			JOersted.RemoveExtraTerms()
+			IOersted.RemoveExtraTerms()
+			SpongeAlpha.RemoveExtraTerms()
 
 			B_therm.noise.Free()
 			B_therm.noise = nil

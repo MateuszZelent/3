@@ -9,7 +9,23 @@ import (
 // load PTX code for function name, find highest SM that matches our card.
 func fatbinLoad(sm map[int]string, fn string) cu.Function {
 	cc := determineCC()
-	return cu.ModuleLoadData(sm[cc]).GetFunction(fn)
+	code := sm[cc]
+	if code == "" {
+		// PTX targeted at an older virtual architecture can be JIT-compiled for
+		// newer GPUs. Generated extension kernels may therefore provide fewer
+		// entries than the core mumax3 kernel set.
+		best := 0
+		for candidate, candidateCode := range sm {
+			if candidateCode != "" && candidate <= cc && candidate > best {
+				best = candidate
+				code = candidateCode
+			}
+		}
+	}
+	if code == "" {
+		panic("no compatible PTX image for CUDA kernel " + fn)
+	}
+	return cu.ModuleLoadData(code).GetFunction(fn)
 }
 
 var UseCC = 0

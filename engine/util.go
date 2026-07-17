@@ -30,12 +30,15 @@ func init() {
 	DeclConst("Mu0", mag.Mu0, "Vacuum permeability (Tm/A)")
 	DeclFunc("Print", myprint, "Print to standard output")
 	DeclFunc("LoadFile", LoadFile, "Load OVF, DUMP, a Zarr dataset/chunk, or an HDF5 file reference file.h5:/dataset")
+	DeclFunc("LoadOvfFile", LoadOvfFile, "Compatibility alias for loading an OVF file")
 	DeclFunc("Index2Coord", Index2Coord, "Convert cell index to x,y,z coordinate in meter")
 	DeclFunc("NewSlice", NewSlice, "Makes a 4D array with a specified number of components (first argument) "+
 		"and a specified size nx,ny,nz (remaining arguments)")
 	DeclFunc("NewVectorMask", NewVectorMask, "Makes a 3D array of vectors")
 	DeclFunc("NewScalarMask", NewScalarMask, "Makes a 3D array of scalars")
 }
+
+func LoadOvfFile(filename string) *data.Slice { return LoadFile(filename) }
 
 // Returns a new slice (3D array) with given number of components and size.
 func NewSlice(ncomp, Nx, Ny, Nz int) *data.Slice {

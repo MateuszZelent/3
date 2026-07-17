@@ -33,6 +33,7 @@ func init() {
 	DeclFunc("Run", Run, "Run the simulation for a time in seconds")
 	DeclFunc("Steps", Steps, "Run the simulation for a number of time steps")
 	DeclFunc("RunWhile", RunWhile, "Run while condition function is true")
+	DeclFunc("RunWithoutPrecession", RunWithoutPrecession, "Run for a duration with precession temporarily disabled")
 	DeclFunc("SetSolver", SetSolver, "Set solver type.<br>1: Euler<br>2: Heun<br>3: Bogacki-Shampine<br>4: Runge-Kutta (RK4)<br>5: Dormand-Prince<br>6: Fehlberg<br>-1: Backward Euler")
 	DeclFunc("ClearPostSteps", func() { postStep = nil }, "Clear the postStep array, which contains functions that are executed after each solver step. This includes running averages, centering routines to track skyrmions and domain walls etc.")
 	DeclTVar("t", &Time, "Total simulated time (s)")
@@ -48,6 +49,13 @@ func init() {
 	_ = NewScalarValue("LastErr", "", "Error of last step", func() float64 { return LastErr })
 	_ = NewScalarValue("PeakErr", "", "Overall maxium error per step", func() float64 { return PeakErr })
 	_ = NewScalarValue("NEval", "", "Total number of torque evaluations", func() float64 { return float64(NEvals) })
+}
+
+func RunWithoutPrecession(seconds float64) {
+	previous := Precess
+	Precess = false
+	defer func() { Precess = previous }()
+	Run(seconds)
 }
 
 // Time stepper like Euler, Heun, RK23
