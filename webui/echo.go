@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	runtimedebug "runtime/debug"
 	"strconv"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 func Start(host string, port int, basePath string, tunnel string, debug bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Log.Warn("WebUI crashed: %v", r)
+			log.Log.Warn("WebUI crashed: %v\n%s", r, runtimedebug.Stack())
 		}
 	}()
 	e := echo.New()

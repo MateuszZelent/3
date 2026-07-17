@@ -29,8 +29,11 @@ type ParametersState struct {
 
 func initParameterAPI(e *echo.Group, ws *WebSocketManager) *ParametersState {
 	parametersState := ParametersState{
-		ws:             ws,
-		Regions:        engine.ExistingRegionIndices(),
+		ws: ws,
+		// Reading the region map downloads CUDA memory. Start with region zero;
+		// the first WebSocket update refreshes this state through the engine's
+		// injection queue, on the CUDA-owning OS thread.
+		Regions:        []int{0},
 		SelectedRegion: 0,
 	}
 	parametersState.getFields()
@@ -39,8 +42,10 @@ func initParameterAPI(e *echo.Group, ws *WebSocketManager) *ParametersState {
 }
 
 func (s *ParametersState) Update() {
-	s.Regions = engine.ExistingRegionIndices()
-	s.getFields()
+	engine.InjectAndWait(func() {
+		s.Regions = engine.ExistingRegionIndices()
+		s.getFields()
+	})
 }
 
 func (s *ParametersState) getFields() {
