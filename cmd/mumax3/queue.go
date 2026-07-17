@@ -3,6 +3,7 @@ package main
 // File queue for distributing multiple input files over GPUs.
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -28,8 +29,10 @@ var (
 func RunQueue(files []string) {
 	s := NewStateTab(files)
 	s.PrintTo(os.Stdout)
-	go s.ListenAndServe(*engine.Flag_port)
-	fmt.Print("//Realtime queue overview available at http://127.0.0.1", *engine.Flag_port, "\n")
+	if *engine.Flag_port != "" {
+		go s.ListenAndServe(*engine.Flag_port)
+		fmt.Print("//Realtime queue overview available at http://127.0.0.1", *engine.Flag_port, "\n")
+	}
 	s.Run()
 	fmt.Println(numOK.get(), "OK, ", numFailed.get(), "failed")
 	os.Exit(int(exitStatus))
@@ -129,7 +132,7 @@ func run(inFile string, gpu int, webAddr string) {
 	// pass through flags
 	flags := []string{gpuFlag, httpFlag}
 	flag.Visit(func(f *flag.Flag) {
-		if f.Name != "gpu" && f.Name != "http" && f.Name != "failfast" {
+		if f.Name != "gpu" && f.Name != "http" && f.Name != "failfast" && f.Name != "max_gpus" {
 			flags = append(flags, fmt.Sprintf("-%v=%v", f.Name, f.Value))
 		}
 	})
@@ -154,24 +157,41 @@ func run(inFile string, gpu int, webAddr string) {
 // Creates a concurrent channel containing the available GPU IDs for jobs.
 // Returns the channel and the number of available GPUs for the queue.
 func initGPUs() (chan int, int) {
-	nGpu := cu.DeviceGetCount()
-	if nGpu == 0 {
-		log.Fatal("no GPUs available")
+	deviceCount := cu.DeviceGetCount()
+	gpuIDs, err := selectQueueGPUs(deviceCount, engine.FlagPassed("gpu"), *engine.Flag_gpu, *flag_maxGPUs)
+	if err != nil {
+		log.Fatal(err)
 	}
+	log.Printf("//queue using %d of %d available GPU(s): %v", len(gpuIDs), deviceCount, gpuIDs)
+	idle := make(chan int, len(gpuIDs))
+	for _, gpu := range gpuIDs {
+		idle <- gpu
+	}
+	return idle, len(gpuIDs)
+}
 
-	singleGPU := engine.FlagPassed("gpu")
-	if singleGPU {
-		nGpu = 1
+func selectQueueGPUs(deviceCount int, explicitGPU bool, gpu, maxGPUs int) ([]int, error) {
+	if deviceCount < 1 {
+		return nil, errors.New("no GPUs available")
 	}
-	idle := make(chan int, nGpu)
-	if singleGPU {
-		idle <- *engine.Flag_gpu
-	} else {
-		for i := 0; i < nGpu; i++ {
-			idle <- i
+	if maxGPUs < 0 {
+		return nil, fmt.Errorf("max_gpus must be at least 0, got %d", maxGPUs)
+	}
+	if explicitGPU {
+		if gpu < 0 || gpu >= deviceCount {
+			return nil, fmt.Errorf("GPU index %d is outside the available range 0..%d", gpu, deviceCount-1)
 		}
+		return []int{gpu}, nil
 	}
-	return idle, nGpu
+	count := deviceCount
+	if maxGPUs > 0 && maxGPUs < count {
+		count = maxGPUs
+	}
+	gpuIDs := make([]int, count)
+	for i := range gpuIDs {
+		gpuIDs[i] = i
+	}
+	return gpuIDs, nil
 }
 
 func (s *stateTab) PrintTo(w io.Writer) {

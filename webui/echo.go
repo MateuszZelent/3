@@ -2,12 +2,13 @@
 package webui
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	runtimedebug "runtime/debug"
 	"strconv"
-	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -16,12 +17,7 @@ import (
 	"github.com/mumax/3/log"
 )
 
-func Start(host string, port int, basePath string, tunnel string, debug bool) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Log.Warn("WebUI crashed: %v\n%s", r, runtimedebug.Stack())
-		}
-	}()
+func Start(host string, port int, basePath string, tunnel string, debug bool) (int, error) {
 	e := echo.New()
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: []string{"*"},
@@ -57,62 +53,44 @@ func Start(host string, port int, basePath string, tunnel string, debug bool) {
 	engineState := initEngineStateAPI(api, wsManager)
 	wsManager.engineState = engineState
 
-	startGuiServer(e, host, basePath, port, tunnel)
+	return startGuiServer(e, host, basePath, port, tunnel)
 }
 
-func startGuiServer(e *echo.Echo, host string, basePath string, port int, tunnel string) {
-	const maxRetries = 5
+func startGuiServer(e *echo.Echo, host string, basePath string, startPort int, tunnel string) (int, error) {
+	listener, port, err := listenAvailable(host, startPort)
+	if err != nil {
+		return 0, err
+	}
+	addr := listener.Addr().String()
+	log.Log.Info("Serving the web UI at http://%s%s", addr, basePath)
 
-	for i := 0; i < maxRetries; i++ {
-		// Find an available port
-		addr, port, err := FindAvailablePort(host, port)
-		if err != nil {
-			log.Log.ErrAndExit("Failed to find available port: %v", err)
-		}
-		log.Log.Info("Serving the web UI at http://%s%s", addr, basePath)
-
-		if tunnel != "" {
-			go startTunnel(tunnel)
-		}
-
-		engine.WebMetadata.Add("webui", addr)
-		engine.WebMetadata.Add("port", port)
-
-		// Attempt to start the server
-		err = e.Start(addr)
-		if err != nil {
-			if opErr, ok := err.(*net.OpError); ok && opErr.Op == "listen" {
-				// Port is already in use, retrying
-				time.Sleep(1 * time.Second) // Wait before retrying
-				continue
-			}
-			// If the error is not related to the port being busy, exit
-			log.Log.Err("Failed to start server:  %v", err)
-			break
-		}
-
-		// If the server started successfully, break out of the loop
-		log.Log.Info("Successfully started server at http://%s", addr)
-		return
+	engine.WebMetadata.Add("webui", addr)
+	engine.WebMetadata.Add("port", port)
+	if tunnel != "" {
+		go startTunnel(tunnel)
 	}
 
-	// If the loop completes without successfully starting the server
-	log.Log.Err("Failed to start server after multiple attempts")
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Log.Warn("WebUI crashed: %v\n%s", r, runtimedebug.Stack())
+			}
+		}()
+		if err := e.Server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Log.Err("WebUI server stopped: %v", err)
+		}
+	}()
+
+	return port, nil
 }
 
-func FindAvailablePort(host string, startPort int) (string, string, error) {
-	// Loop to find the first available port
+func listenAvailable(host string, startPort int) (net.Listener, int, error) {
 	for port := startPort; port <= 65535; port++ {
 		address := net.JoinHostPort(host, strconv.Itoa(port))
 		listener, err := net.Listen("tcp", address)
 		if err == nil {
-			// Close the listener immediately, we just wanted to check availability
-			errl := listener.Close()
-			if errl != nil {
-				log.Log.Err("Failed to close listener: %v", errl)
-			}
-			return address, strconv.Itoa(port), nil
+			return listener, port, nil
 		}
 	}
-	return "", "", fmt.Errorf("no available ports found")
+	return nil, 0, fmt.Errorf("no available ports found from %s", net.JoinHostPort(host, strconv.Itoa(startPort)))
 }

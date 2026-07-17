@@ -24,10 +24,93 @@ type MainUpdate = {
 	fft?: FftData;
 };
 
+type LegacyVectorField = Array<{ x: number; y: number; z: number }>;
+type PreviewWire = Omit<Preview, 'vectorFieldValues' | 'vectorFieldPositions'> & {
+	vectorFieldValues?: LegacyVectorField | Float32Array;
+	vectorFieldPositions?: LegacyVectorField | Int32Array;
+	vectorValuesBinary?: Uint8Array;
+	vectorPositionsBinary?: Uint8Array;
+};
+
 export let connected = writable(false);
 export let connectionState = writable<ConnectionState>('disconnected');
 let previewRenderScheduled = false;
 let tableRenderScheduled = false;
+let cachedVectorPositions: Int32Array<ArrayBufferLike> = new Int32Array();
+let cachedTopologyRevision = -1;
+
+function typedArrayView<T extends Float32Array | Int32Array>(
+	bytes: Uint8Array,
+	ctor: { new (buffer: ArrayBufferLike, byteOffset: number, length: number): T }
+): T {
+	const byteLength = bytes.byteLength - (bytes.byteLength % 4);
+	if (bytes.byteOffset % 4 === 0) {
+		return new ctor(bytes.buffer, bytes.byteOffset, byteLength / 4);
+	}
+	const aligned = bytes.slice(0, byteLength);
+	return new ctor(aligned.buffer, aligned.byteOffset, byteLength / 4);
+}
+
+function flattenLegacyVectors(values: LegacyVectorField) {
+	const result = new Float32Array(values.length * 3);
+	for (let i = 0; i < values.length; i++) {
+		result[i * 3] = values[i].x;
+		result[i * 3 + 1] = values[i].y;
+		result[i * 3 + 2] = values[i].z;
+	}
+	return result;
+}
+
+function flattenLegacyPositions(values: LegacyVectorField) {
+	const result = new Int32Array(values.length * 3);
+	for (let i = 0; i < values.length; i++) {
+		result[i * 3] = values[i].x;
+		result[i * 3 + 1] = values[i].y;
+		result[i * 3 + 2] = values[i].z;
+	}
+	return result;
+}
+
+function normalizePreview(msg: PreviewWire): Preview {
+	const revision = Number(msg.topologyRevision ?? 0);
+	let values: Float32Array<ArrayBufferLike> = new Float32Array();
+	if (msg.vectorValuesBinary instanceof Uint8Array) {
+		values = typedArrayView(msg.vectorValuesBinary, Float32Array);
+	} else if (msg.vectorFieldValues instanceof Float32Array) {
+		values = msg.vectorFieldValues;
+	} else if (Array.isArray(msg.vectorFieldValues)) {
+		values = flattenLegacyVectors(msg.vectorFieldValues);
+	}
+
+	if (msg.vectorPositionsBinary instanceof Uint8Array) {
+		cachedVectorPositions = typedArrayView(msg.vectorPositionsBinary, Int32Array);
+		cachedTopologyRevision = revision;
+	} else if (msg.vectorFieldPositions instanceof Int32Array) {
+		cachedVectorPositions = msg.vectorFieldPositions;
+		cachedTopologyRevision = revision;
+	} else if (Array.isArray(msg.vectorFieldPositions)) {
+		cachedVectorPositions = flattenLegacyPositions(msg.vectorFieldPositions);
+		cachedTopologyRevision = revision;
+	} else if (cachedTopologyRevision !== revision) {
+		cachedVectorPositions = new Int32Array();
+		cachedTopologyRevision = revision;
+	}
+
+	const vectorCount = Math.min(
+		Number(msg.vectorCount ?? values.length / 3),
+		Math.floor(values.length / 3),
+		Math.floor(cachedVectorPositions.length / 3)
+	);
+	const positions = vectorCount > 0 ? cachedVectorPositions : new Int32Array();
+
+	return {
+		...msg,
+		vectorFieldValues: values,
+		vectorFieldPositions: positions,
+		vectorCount,
+		topologyRevision: revision
+	} as Preview;
+}
 
 async function renderPreview() {
 	if (get(previewState).type === '3D') {
@@ -160,11 +243,17 @@ export function parseMsgpack(data: ArrayBuffer) {
 		solverState.set(msg.solver);
 	}
 	if (msg.tablePlot) {
-		tablePlotState.set(msg.tablePlot);
+		tablePlotState.set({
+			...msg.tablePlot,
+			columns: msg.tablePlot.columns ?? [],
+			data: msg.tablePlot.data ?? [],
+			corePos: msg.tablePlot.corePos ?? null,
+			coreEnabled: msg.tablePlot.coreEnabled ?? false
+		});
 		scheduleTableRender();
 	}
 	if (msg.preview) {
-		previewState.set(msg.preview);
+		previewState.set(normalizePreview(msg.preview as PreviewWire));
 		schedulePreviewRender();
 	}
 	if (msg.metrics) {
@@ -176,7 +265,7 @@ export function parseMsgpack(data: ArrayBuffer) {
 }
 
 export function parsePreviewMsgpack(data: ArrayBuffer) {
-	const msg = decode(new Uint8Array(data)) as Preview;
-	previewState.set(msg);
+	const msg = decode(new Uint8Array(data)) as PreviewWire;
+	previewState.set(normalizePreview(msg));
 	schedulePreviewRender();
 }

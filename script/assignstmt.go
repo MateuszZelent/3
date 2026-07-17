@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"reflect"
+	"strings"
 )
 
 // compiles a (single) assign statement lhs = rhs
@@ -41,9 +42,23 @@ func (w *World) compileDefine(a *ast.AssignStmt, lhs ast.Expr, r Expr) Expr {
 		panic(err(a.Pos(), "non-name on left side of :="))
 	}
 	addr := reflect.New(r.Type())
-	ok = w.safeDeclare(ident.Name, &reflectLvalue{addr.Elem()})
+	local := &reflectLvalue{addr.Elem()}
+	ok = w.safeDeclare(ident.Name, local)
 	if !ok {
-		panic(err(a.Pos(), "already defined: "+ident.Name))
+		// A small number of engine compatibility variables deliberately allow
+		// Go-style shadowing. This keeps legacy scripts such as `Nx := 128`
+		// valid even when the engine also exposes a newer assignable `Nx` mesh
+		// variable. Ordinary built-ins and script variables still reject
+		// redeclaration exactly as before.
+		lname := strings.ToLower(ident.Name)
+		existing := w.Identifiers[lname]
+		shadowable, canShadow := existing.(interface {
+			AllowScriptDefineShadow() bool
+		})
+		if !canShadow || !shadowable.AllowScriptDefineShadow() {
+			panic(err(a.Pos(), "already defined: "+ident.Name))
+		}
+		w.Identifiers[lname] = local
 	}
 	return w.compileAssign(a, lhs, r)
 }

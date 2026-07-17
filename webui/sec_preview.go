@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 	"net/http"
@@ -15,25 +16,34 @@ import (
 )
 
 type PreviewState struct {
-	ws                   *WebSocketManager
-	globalQuantities     []string
-	layerMask            [][]float32
-	maskXSize            int
-	maskYSize            int
-	maskLayer            int
-	Quantity             string       `msgpack:"quantity"`
-	Unit                 string       `msgpack:"unit"`
-	Component            string       `msgpack:"component"`
-	Layer                int          `msgpack:"layer"`
-	AllLayers            bool         `msgpack:"allLayers"`
-	Type                 string       `msgpack:"type"`
-	VectorFieldValues    []Vector3f   `msgpack:"vectorFieldValues"`
-	VectorFieldPositions []Vector3i   `msgpack:"vectorFieldPositions"`
-	ScalarField          [][3]float32 `msgpack:"scalarField"`
-	Min                  float32      `msgpack:"min"`
-	Max                  float32      `msgpack:"max"`
-	Refresh              bool         `msgpack:"refresh"`
-	NComp                int          `msgpack:"nComp"`
+	ws                    *WebSocketManager
+	globalQuantities      []string
+	layerMask             [][]float32
+	maskXSize             int
+	maskYSize             int
+	maskLayer             int
+	previewCPU            *data.Slice
+	previewGPU            *data.Slice
+	previewBufferSize     [3]int
+	previewBufferNComp    int
+	cachedPositionsBinary []byte
+	Quantity              string       `msgpack:"quantity"`
+	Unit                  string       `msgpack:"unit"`
+	Component             string       `msgpack:"component"`
+	Layer                 int          `msgpack:"layer"`
+	AllLayers             bool         `msgpack:"allLayers"`
+	Type                  string       `msgpack:"type"`
+	VectorFieldValues     []Vector3f   `msgpack:"-"`
+	VectorFieldPositions  []Vector3i   `msgpack:"-"`
+	VectorValuesBinary    []byte       `msgpack:"vectorValuesBinary,omitempty"`
+	VectorPositionsBinary []byte       `msgpack:"vectorPositionsBinary,omitempty"`
+	VectorCount           int          `msgpack:"vectorCount"`
+	TopologyRevision      uint64       `msgpack:"topologyRevision"`
+	ScalarField           [][3]float32 `msgpack:"scalarField"`
+	Min                   float32      `msgpack:"min"`
+	Max                   float32      `msgpack:"max"`
+	Refresh               bool         `msgpack:"refresh"`
+	NComp                 int          `msgpack:"nComp"`
 
 	MaxPoints            int    `msgpack:"maxPoints"`
 	DataPointsCount      int    `msgpack:"dataPointsCount"`
@@ -59,6 +69,79 @@ type Vector3i struct {
 	X int `msgpack:"x"`
 	Y int `msgpack:"y"`
 	Z int `msgpack:"z"`
+}
+
+func sameVectorPositions(a, b []Vector3i) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func packVectorValues(dst []byte, values []Vector3f) []byte {
+	required := len(values) * 3 * 4
+	if cap(dst) < required {
+		dst = make([]byte, required)
+	} else {
+		dst = dst[:required]
+	}
+	for i, value := range values {
+		offset := i * 12
+		binary.LittleEndian.PutUint32(dst[offset:], math.Float32bits(value.X))
+		binary.LittleEndian.PutUint32(dst[offset+4:], math.Float32bits(value.Y))
+		binary.LittleEndian.PutUint32(dst[offset+8:], math.Float32bits(value.Z))
+	}
+	return dst
+}
+
+func packVectorPositions(dst []byte, positions []Vector3i) []byte {
+	required := len(positions) * 3 * 4
+	if cap(dst) < required {
+		dst = make([]byte, required)
+	} else {
+		dst = dst[:required]
+	}
+	for i, position := range positions {
+		offset := i * 12
+		binary.LittleEndian.PutUint32(dst[offset:], uint32(int32(position.X)))
+		binary.LittleEndian.PutUint32(dst[offset+4:], uint32(int32(position.Y)))
+		binary.LittleEndian.PutUint32(dst[offset+8:], uint32(int32(position.Z)))
+	}
+	return dst
+}
+
+func (s *PreviewState) setVectorPayload(values []Vector3f, positions []Vector3i) {
+	topologyChanged := !sameVectorPositions(s.VectorFieldPositions, positions)
+	s.VectorFieldValues = values
+	s.VectorFieldPositions = positions
+	s.VectorCount = len(values)
+	s.VectorValuesBinary = packVectorValues(s.VectorValuesBinary, values)
+
+	if topologyChanged {
+		s.TopologyRevision++
+		s.cachedPositionsBinary = packVectorPositions(s.cachedPositionsBinary, positions)
+	}
+	// Each frame is self-contained. The websocket writer deliberately replaces
+	// stale queued frames with the newest one, so a topology-changing frame may
+	// be skipped for a slow client. Sending the compact position buffer with
+	// every frame keeps the newest frame independently decodable.
+	s.VectorPositionsBinary = s.cachedPositionsBinary
+	s.ScalarField = nil
+	s.DataPointsCount = len(values)
+}
+
+func (s *PreviewState) clearVectorPayload() {
+	s.VectorFieldValues = nil
+	s.VectorFieldPositions = nil
+	s.VectorValuesBinary = nil
+	s.VectorPositionsBinary = nil
+	s.cachedPositionsBinary = nil
+	s.VectorCount = 0
 }
 
 func initPreviewAPI(e *echo.Group, ws *WebSocketManager) *PreviewState {
@@ -114,6 +197,32 @@ func (s *PreviewState) getComponent() int {
 	return compStringToIndex(s.Component)
 }
 
+func (s *PreviewState) quantitySlice(quantity engine.Quantity) (*data.Slice, bool) {
+	if buffered, ok := quantity.(interface {
+		Slice() (*data.Slice, bool)
+	}); ok {
+		return buffered.Slice()
+	}
+	return engine.ValueOf(quantity), true
+}
+
+func (s *PreviewState) previewBuffers(nComp int, size [3]int) (*data.Slice, *data.Slice) {
+	if s.previewCPU != nil && s.previewGPU != nil && s.previewBufferNComp == nComp && s.previewBufferSize == size {
+		return s.previewCPU, s.previewGPU
+	}
+	if s.previewGPU != nil {
+		s.previewGPU.Free()
+	}
+	if s.previewCPU != nil {
+		s.previewCPU.Free()
+	}
+	s.previewCPU = data.NewSlice(nComp, size)
+	s.previewGPU = cuda.NewSlice(nComp, size)
+	s.previewBufferNComp = nComp
+	s.previewBufferSize = size
+	return s.previewCPU, s.previewGPU
+}
+
 func (s *PreviewState) Update() {
 	engine.InjectAndWait(s.UpdateQuantityBuffer)
 }
@@ -136,8 +245,7 @@ func (s *PreviewState) UpdateQuantityBuffer() {
 		if r := recover(); r != nil {
 			log.Log.Warn("Recovered from panic in UpdateQuantityBuffer: %v", r)
 			s.ScalarField = nil
-			s.VectorFieldPositions = nil
-			s.VectorFieldValues = nil
+			s.clearVectorPayload()
 			s.DataPointsCount = 0
 		}
 	}()
@@ -151,8 +259,11 @@ func (s *PreviewState) UpdateQuantityBuffer() {
 	if s.Type == "3D" {
 		componentCount = 3
 	}
-	GPUIn := engine.ValueOf(s.getQuantity())
-	defer cuda.Recycle(GPUIn)
+	quantity := s.getQuantity()
+	GPUIn, recycleInput := s.quantitySlice(quantity)
+	if recycleInput {
+		defer cuda.Recycle(GPUIn)
+	}
 
 	depthLayers := 1
 	if s.AllLayers && s.Type == "3D" {
@@ -176,49 +287,46 @@ func (s *PreviewState) UpdateQuantityBuffer() {
 		return
 	}
 
-	CPUOut := data.NewSlice(componentCount, [3]int{sizing.AppliedX, sizing.AppliedY, 1})
-	GPUOut := cuda.NewSlice(1, [3]int{sizing.AppliedX, sizing.AppliedY, 1})
-	defer GPUOut.Free()
+	CPUOut, GPUOut := s.previewBuffers(componentCount, [3]int{sizing.AppliedX, sizing.AppliedY, 1})
 
 	if s.Type == "3D" {
 		for c := 0; c < componentCount; c++ {
-			cuda.Resize(GPUOut, GPUIn.Comp(c), s.Layer)
-			data.Copy(CPUOut.Comp(c), GPUOut)
+			cuda.Resize(GPUOut.Comp(c), GPUIn.Comp(c), s.Layer)
 		}
+		data.Copy(CPUOut, GPUOut)
 		s.normalizeVectors(CPUOut)
 		s.UpdateVectorField(CPUOut.Vectors())
 		return
 	}
 
 	s.ensureMask(sizing.AppliedX, sizing.AppliedY)
-	if s.getQuantity().NComp() > 1 {
-		cuda.Resize(GPUOut, GPUIn.Comp(s.getComponent()), s.Layer)
-		data.Copy(CPUOut.Comp(0), GPUOut)
+	if quantity.NComp() > 1 {
+		cuda.Resize(GPUOut.Comp(0), GPUIn.Comp(s.getComponent()), s.Layer)
 	} else {
-		cuda.Resize(GPUOut, GPUIn.Comp(0), s.Layer)
-		data.Copy(CPUOut.Comp(0), GPUOut)
+		cuda.Resize(GPUOut.Comp(0), GPUIn.Comp(0), s.Layer)
 	}
+	data.Copy(CPUOut, GPUOut)
 	s.UpdateScalarField(CPUOut.Scalars())
 }
 
 func (s *PreviewState) normalizeVectors(f *data.Slice) {
 	a := f.Vectors()
-	maxnorm := 0.0
+	maxnormSquared := 0.0
 	for i := range a[0] {
 		for j := range a[0][i] {
 			for k := range a[0][i][j] {
 				x, y, z := a[0][i][j][k], a[1][i][j][k], a[2][i][j][k]
-				norm := math.Sqrt(float64(x*x + y*y + z*z))
-				if norm > maxnorm {
-					maxnorm = norm
+				normSquared := float64(x*x + y*y + z*z)
+				if normSquared > maxnormSquared {
+					maxnormSquared = normSquared
 				}
 			}
 		}
 	}
-	if maxnorm == 0 {
+	if maxnormSquared == 0 {
 		return
 	}
-	factor := float32(1 / maxnorm)
+	factor := float32(1 / math.Sqrt(maxnormSquared))
 
 	for i := range a[0] {
 		for j := range a[0][i] {
@@ -374,46 +482,51 @@ func (s *PreviewState) applyResolvedSizing(sizing previewSizing) {
 
 func (s *PreviewState) updateAllLayers(GPUIn *data.Slice, componentCount int, layerStride int) {
 	nz := GPUIn.Size()[2]
-	valArray := make([]Vector3f, 0)
-	posArray := make([]Vector3i, 0)
-
 	xSize := maxInt(s.AppliedXChosenSize, 1)
 	ySize := maxInt(s.AppliedYChosenSize, 1)
-	CPUOut := data.NewSlice(componentCount, [3]int{xSize, ySize, 1})
-	GPUOut := cuda.NewSlice(1, [3]int{xSize, ySize, 1})
-	defer GPUOut.Free()
+	stride := maxInt(layerStride, 1)
+	depth := ceilDiv(nz, stride)
+	CPUOut, GPUOut := s.previewBuffers(componentCount, [3]int{xSize, ySize, depth})
 
-	for layer := 0; layer < nz; layer += maxInt(layerStride, 1) {
+	dstLayer := 0
+	for layer := 0; layer < nz; layer += stride {
 		for c := 0; c < componentCount; c++ {
-			cuda.Resize(GPUOut, GPUIn.Comp(c), layer)
-			data.Copy(CPUOut.Comp(c), GPUOut)
+			cuda.ResizeLayerTo(GPUOut.Comp(c), GPUIn.Comp(c), dstLayer, layer)
 		}
-		vf := CPUOut.Vectors()
-		yLen := len(vf[0][0])
-		xLen := len(vf[0][0][0])
+		dstLayer++
+	}
+	data.Copy(CPUOut, GPUOut)
+
+	valArray := make([]Vector3f, 0, xSize*ySize*depth)
+	posArray := make([]Vector3i, 0, xSize*ySize*depth)
+	vf := CPUOut.Vectors()
+	for layerIndex := 0; layerIndex < depth; layerIndex++ {
+		sourceLayer := layerIndex * stride
+		yLen := len(vf[0][layerIndex])
+		xLen := len(vf[0][layerIndex][0])
 		for posx := 0; posx < xLen; posx++ {
 			for posy := 0; posy < yLen; posy++ {
-				valx := vf[0][0][posy][posx]
-				valy := vf[1][0][posy][posx]
-				valz := vf[2][0][posy][posx]
+				valx := vf[0][layerIndex][posy][posx]
+				valy := vf[1][layerIndex][posy][posx]
+				valz := vf[2][layerIndex][posy][posx]
 				if (valx == 0 && valy == 0 && valz == 0) || math.IsNaN(float64(valx)) {
 					continue
 				}
-				posArray = append(posArray, Vector3i{X: posx, Y: posy, Z: layer})
+				posArray = append(posArray, Vector3i{X: posx, Y: posy, Z: sourceLayer})
 				valArray = append(valArray, Vector3f{X: valx, Y: valy, Z: valz})
 			}
 		}
 	}
 
-	maxnorm := float64(0)
+	maxnormSquared := float64(0)
 	for _, v := range valArray {
-		norm := math.Sqrt(float64(v.X*v.X + v.Y*v.Y + v.Z*v.Z))
-		if norm > maxnorm {
-			maxnorm = norm
+		normSquared := float64(v.X*v.X + v.Y*v.Y + v.Z*v.Z)
+		if normSquared > maxnormSquared {
+			maxnormSquared = normSquared
 		}
 	}
-	if maxnorm > 0 {
-		factor := float32(1 / maxnorm)
+	if maxnormSquared > 0 {
+		factor := float32(1 / math.Sqrt(maxnormSquared))
 		for i := range valArray {
 			valArray[i].X *= factor
 			valArray[i].Y *= factor
@@ -421,10 +534,7 @@ func (s *PreviewState) updateAllLayers(GPUIn *data.Slice, componentCount int, la
 		}
 	}
 
-	s.VectorFieldPositions = posArray
-	s.VectorFieldValues = valArray
-	s.ScalarField = nil
-	s.DataPointsCount = len(valArray)
+	s.setVectorPayload(valArray, posArray)
 }
 
 func (s *PreviewState) updateAllLayersScalar(GPUIn *data.Slice) {
@@ -500,8 +610,7 @@ func (s *PreviewState) updateAllLayersScalar(GPUIn *data.Slice) {
 		s.Min = 0
 		s.Max = 0
 		s.ScalarField = nil
-		s.VectorFieldValues = nil
-		s.VectorFieldPositions = nil
+		s.clearVectorPayload()
 		s.DataPointsCount = 0
 		return
 	}
@@ -509,8 +618,7 @@ func (s *PreviewState) updateAllLayersScalar(GPUIn *data.Slice) {
 	s.Min = min
 	s.Max = max
 	s.ScalarField = valArray
-	s.VectorFieldValues = nil
-	s.VectorFieldPositions = nil
+	s.clearVectorPayload()
 	s.DataPointsCount = len(valArray)
 }
 
@@ -533,10 +641,7 @@ func (s *PreviewState) UpdateVectorField(vectorField [3][][][]float32) {
 			valArray = append(valArray, Vector3f{X: valx, Y: valy, Z: valz})
 		}
 	}
-	s.VectorFieldPositions = posArray
-	s.VectorFieldValues = valArray
-	s.ScalarField = nil
-	s.DataPointsCount = len(valArray)
+	s.setVectorPayload(valArray, posArray)
 }
 
 func (s *PreviewState) UpdateScalarField(scalarField [][][]float32) {
@@ -571,8 +676,7 @@ func (s *PreviewState) UpdateScalarField(scalarField [][][]float32) {
 		s.Min = 0
 		s.Max = 0
 		s.ScalarField = nil
-		s.VectorFieldValues = nil
-		s.VectorFieldPositions = nil
+		s.clearVectorPayload()
 		s.DataPointsCount = 0
 		return
 	}
@@ -580,8 +684,7 @@ func (s *PreviewState) UpdateScalarField(scalarField [][][]float32) {
 	s.Min = min
 	s.Max = max
 	s.ScalarField = valArray
-	s.VectorFieldValues = nil
-	s.VectorFieldPositions = nil
+	s.clearVectorPayload()
 	s.DataPointsCount = len(valArray)
 }
 

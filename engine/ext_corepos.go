@@ -1,6 +1,16 @@
 package engine
 
 var CorePos = NewVectorValue("ext_corepos", "m", "Vortex core position (x,y) + polarization (z)", corePos)
+var CoreTrackingEnabled bool
+
+func init() {
+	DeclFunc("CoreTrack", EnableCoreTracking, "Track ext_corepos in the table and enable the Core Position web UI plot.")
+}
+
+func EnableCoreTracking() {
+	CoreTrackingEnabled = true
+	TableAdd(CorePos)
+}
 
 func corePos() []float64 {
 	m := M.Buffer()

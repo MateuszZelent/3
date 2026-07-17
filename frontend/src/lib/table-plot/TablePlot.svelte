@@ -44,6 +44,23 @@
 	const columnOptions = $derived(
 		$tablePlotState.columns.map((column) => ({ value: column, label: column }))
 	);
+	const coreEnabled = $derived(
+		$tablePlotState.coreEnabled ||
+			($tablePlotState.columns.includes('ext_coreposx') &&
+				$tablePlotState.columns.includes('ext_coreposy'))
+	);
+
+	$effect(() => {
+		if (
+			(activeTab === 'spectrum' || activeTab === 'spectrogram') &&
+			!$fftState.enabled
+		) {
+			activeTab = 'table';
+		}
+		if (activeTab === 'corepos' && !coreEnabled) {
+			activeTab = 'table';
+		}
+	});
 
 	function submitAutoSave(event: Event) {
 		const value = (event.currentTarget as HTMLInputElement).value.trim();
@@ -121,7 +138,7 @@
 
 <Panel
 	title="Plots"
-	subtitle="Time-domain table data, FFT spectrum, and spectrogram."
+	subtitle="Time-domain table data with optional FFT and core-position views."
 	panelId="plots"
 	eyebrow="Visualization"
 >
@@ -130,6 +147,11 @@
 			<StatusBadge
 				label={`${$tablePlotState.data.length} points`}
 				tone={$tablePlotState.data.length ? 'info' : 'default'}
+			/>
+		{:else if activeTab === 'corepos'}
+			<StatusBadge
+				label={`${$tablePlotState.corePos?.length ?? 0} points`}
+				tone={$tablePlotState.corePos?.length ? 'info' : 'default'}
 			/>
 		{:else}
 			<StatusBadge
@@ -147,27 +169,31 @@
 		>
 			Table Plot
 		</button>
-		<button
-			class="plots__tab"
-			class:plots__tab--active={activeTab === 'spectrum'}
-			onclick={() => (activeTab = 'spectrum')}
-		>
-			Spectrum
-		</button>
-		<button
-			class="plots__tab"
-			class:plots__tab--active={activeTab === 'spectrogram'}
-			onclick={() => (activeTab = 'spectrogram')}
-		>
-			Spectrogram
-		</button>
-		<button
-			class="plots__tab"
-			class:plots__tab--active={activeTab === 'corepos'}
-			onclick={() => (activeTab = 'corepos')}
-		>
-			Core Position
-		</button>
+		{#if $fftState.enabled}
+			<button
+				class="plots__tab"
+				class:plots__tab--active={activeTab === 'spectrum'}
+				onclick={() => (activeTab = 'spectrum')}
+			>
+				Spectrum
+			</button>
+			<button
+				class="plots__tab"
+				class:plots__tab--active={activeTab === 'spectrogram'}
+				onclick={() => (activeTab = 'spectrogram')}
+			>
+				Spectrogram
+			</button>
+		{/if}
+		{#if coreEnabled}
+			<button
+				class="plots__tab"
+				class:plots__tab--active={activeTab === 'corepos'}
+				onclick={() => (activeTab = 'corepos')}
+			>
+				Core Position
+			</button>
+		{/if}
 	</div>
 
 	<!-- Table Plot tab -->

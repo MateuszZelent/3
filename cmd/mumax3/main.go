@@ -25,6 +25,7 @@ import (
 
 var (
 	flag_failfast = flag.Bool("failfast", false, "If one simulation fails, stop entire batch immediately")
+	flag_maxGPUs  = flag.Int("max_gpus", 0, "Maximum number of GPUs used by a batch (0 uses all available GPUs)")
 	flag_test     = flag.Bool("test", false, "Cuda test (internal)")
 	flag_version  = flag.Bool("v", true, "Print version")
 	flag_vet      = flag.Bool("vet", false, "Check input files for errors, but don't run them")
@@ -37,6 +38,9 @@ func main() {
 	log.SetPrefix("")
 	log.SetFlags(0)
 	engine.FftEnabled = *engine.Flag_fft
+	if *engine.Flag_core {
+		engine.EnableCoreTracking()
+	}
 	switch strings.ToLower(*engine.Flag_storage) {
 	case "ovf":
 		engine.StorageFormat = engine.StorageFormatOVF
@@ -191,12 +195,15 @@ func goServeGUI() string {
 	if err != nil {
 		log.Fatal(err)
 	}
-	go webui.Start(host, port, basePath, *engine.Flag_tunnel, *engine.Flag_webdebug)
+	actualPort, err := webui.Start(host, port, basePath, *engine.Flag_tunnel, *engine.Flag_webdebug)
+	if err != nil {
+		log.Fatal(err)
+	}
 	browserHost := host
 	if browserHost == "0.0.0.0" || browserHost == "::" {
 		browserHost = "127.0.0.1"
 	}
-	url := "http://" + net.JoinHostPort(browserHost, strconv.Itoa(port)) + basePath
+	url := "http://" + net.JoinHostPort(browserHost, strconv.Itoa(actualPort)) + basePath + "/"
 	fmt.Print("//starting new web UI at ", url, "\n")
 	return url
 }

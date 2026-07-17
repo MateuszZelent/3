@@ -115,6 +115,13 @@ func newLValueWrapper(lv LValue) script.LValue {
 func (w *lValueWrapper) Child() []script.Expr { return nil }
 func (w *lValueWrapper) Fix() script.Expr     { return script.NewConst(w) }
 
+func (w *lValueWrapper) AllowScriptDefineShadow() bool {
+	shadowable, ok := w.LValue.(interface {
+		AllowScriptDefineShadow() bool
+	})
+	return ok && shadowable.AllowScriptDefineShadow()
+}
+
 func (w *lValueWrapper) InputType() reflect.Type {
 	if i, ok := w.LValue.(interface {
 		InputType() reflect.Type

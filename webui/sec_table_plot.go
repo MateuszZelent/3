@@ -25,6 +25,7 @@ type TablePlotState struct {
 	MaxPoints        int         `msgpack:"maxPoints"`
 	Step             int         `msgpack:"step"`
 	CorePos          [][]float64 `msgpack:"corePos"`
+	CoreEnabled      bool        `msgpack:"coreEnabled"`
 }
 
 func initTablePlotAPI(e *echo.Group, ws *WebSocketManager) *TablePlotState {
@@ -46,6 +47,7 @@ func initTablePlotAPI(e *echo.Group, ws *WebSocketManager) *TablePlotState {
 }
 
 func (t *TablePlotState) Update() {
+	t.CoreEnabled = engine.CoreTrackingEnabled
 	t.AutoSaveInterval = engine.TableAutoSavePeriod()
 	t.Columns = t.GetTableNames()
 	t.XColumnUnit = t.GetUnit(t.XColumn)
@@ -165,6 +167,9 @@ func (t *TablePlotState) ColumnExists(name string) bool {
 
 func (t *TablePlotState) GetTableNames() []string {
 	columns, _, _ := engine.TableHistorySnapshot()
+	if columns == nil {
+		return []string{}
+	}
 	return columns
 }
 

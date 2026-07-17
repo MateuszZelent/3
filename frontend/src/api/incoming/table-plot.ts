@@ -15,6 +15,7 @@ export interface TablePlot {
     maxPoints: number;
     step: number;
     corePos: number[][] | null;
+	coreEnabled: boolean;
 }
 
 export const tablePlotState = writable<TablePlot>({
@@ -32,4 +33,5 @@ export const tablePlotState = writable<TablePlot>({
     maxPoints: 0,
     step: 0,
     corePos: null,
+	coreEnabled: false,
 });

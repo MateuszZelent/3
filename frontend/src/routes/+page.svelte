@@ -22,6 +22,8 @@
 	let showShortcuts = $state(false);
 	let PreviewComponent = $state<Component | null>(null);
 	let TablePlotComponent = $state<Component | null>(null);
+	let previewLoadError = $state('');
+	let tablePlotLoadError = $state('');
 
 	const compactTabs: { id: CompactTab; label: string }[] = [
 		{ id: 'visualization', label: 'Visuals' },
@@ -103,15 +105,21 @@
 		window.addEventListener('resize', syncWorkspaceMode);
 		window.addEventListener('keydown', handleShortcuts);
 
-		void Promise.all([
-			import('$lib/preview/Preview.svelte'),
-			import('$lib/table-plot/TablePlot.svelte')
-		]).then(
-			([previewModule, tablePlotModule]) => {
-				PreviewComponent = previewModule.default;
-				TablePlotComponent = tablePlotModule.default;
-			}
-		);
+		void import('$lib/preview/Preview.svelte')
+			.then((module) => {
+				PreviewComponent = module.default;
+			})
+			.catch((error: unknown) => {
+				previewLoadError = error instanceof Error ? error.message : String(error);
+			});
+
+		void import('$lib/table-plot/TablePlot.svelte')
+			.then((module) => {
+				TablePlotComponent = module.default;
+			})
+			.catch((error: unknown) => {
+				tablePlotLoadError = error instanceof Error ? error.message : String(error);
+			});
 	});
 
 	onDestroy(() => {
@@ -146,6 +154,10 @@
 		<div class="zone-viz">
 			{#if PreviewComponent}
 				<PreviewComponent />
+			{:else if previewLoadError}
+				<div class="workspace-loading-card workspace-loading-card--error">
+					Preview failed to load: {previewLoadError}
+				</div>
 			{:else}
 				<div class="workspace-loading-card">Loading preview surface…</div>
 			{/if}
@@ -153,6 +165,10 @@
 		<div class="zone-table">
 			{#if TablePlotComponent}
 				<TablePlotComponent />
+			{:else if tablePlotLoadError}
+				<div class="workspace-loading-card workspace-loading-card--error">
+					Plots failed to load: {tablePlotLoadError}
+				</div>
 			{:else}
 				<div class="workspace-loading-card">Loading analytical plot…</div>
 			{/if}

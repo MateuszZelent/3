@@ -66,6 +66,14 @@ func newTable(name string) *DataTable {
 }
 
 func TableAdd(col Quantity) {
+	if NameOf(col) == NameOf(CorePos) {
+		CoreTrackingEnabled = true
+		for _, output := range Table.outputs {
+			if NameOf(output) == NameOf(CorePos) {
+				return
+			}
+		}
+	}
 	Table.Add(col)
 }
 

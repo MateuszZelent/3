@@ -12,7 +12,7 @@ import (
 func fftLogf(format string, args ...interface{}) { LogOut(fmt.Sprintf(format, args...)) }
 func fftErrf(format string, args ...interface{}) { LogErr(fmt.Sprintf(format, args...)) }
 
-// FftEnabled is set from the CLI --fft flag. When false, no FFT work is done.
+// FftEnabled is set by the CLI --fft flag or by FftTrack in a script.
 var FftEnabled bool
 
 // fftTracker holds the NUDFT accumulator state for real-time FFT computation.
@@ -95,8 +95,8 @@ func init() {
 // freqs in GHz for user convenience.
 func FftTrack(q Quantity, minFreqGHz, maxFreqGHz, dFreqGHz float64) {
 	if !FftEnabled {
-		fftLogf("FftTrack called but --fft flag is not set. FFT is disabled.")
-		return
+		FftEnabled = true
+		fftLogf("FftTrack enabled real-time FFT mode.")
 	}
 
 	globalFft.mu.Lock()

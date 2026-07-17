@@ -25,11 +25,13 @@ interface QualityConfig {
 
 interface ThreeDPreview {
 	mesh: THREE.InstancedMesh;
+	meshCapacity: number;
 	scene: THREE.Scene;
 	camera: THREE.PerspectiveCamera;
 	renderer: THREE.WebGLRenderer;
 	controls: TrackballControls;
 	rendererMode: Preview3DRenderMode;
+	shapeKey: string;
 }
 
 const QUALITY_CONFIGS: Record<QualityLevel, QualityConfig> = {
@@ -95,11 +97,17 @@ function getWorldExtents() {
 	};
 }
 
-function setWorldPositionFromSimulation(
-	target: THREE.Vector3,
-	position: { x: number; y: number; z: number }
-) {
-	return target.set(position.x, position.z, position.y);
+function getPreviewShapeKey() {
+	const state = get(previewState);
+	return `${getPreviewWidthCells()}x${getPreviewHeightCells()}x${getDepthCells()}:${state.allLayers}`;
+}
+
+function nextMeshCapacity(required: number) {
+	let capacity = 1;
+	while (capacity < required) {
+		capacity *= 2;
+	}
+	return capacity;
 }
 
 function setWorldDirectionFromSimulation(
@@ -125,13 +133,15 @@ export const voxelColorMode = writable<VoxelColorMode>(loadVoxelColorMode());
 export const voxelSampling = writable<VoxelSampling>(loadVoxelSampling());
 export const threeDPreview = writable<ThreeDPreview | null>(null);
 export const visibleRenderCount = writable<number>(0);
+export const cameraRevision = writable<number>(0);
 export const topoEnabled = writable<boolean>(loadTopoEnabled());
 export const topoComponent = writable<TopoComponent>(loadTopoComponent());
 export const topoMultiplier = writable<number>(
 	loadClampedNumber(STORAGE_KEYS.topoMultiplier, 5, 0.5, 50)
 );
 
-let animationFrameId: number | null = null;
+let renderFrameId: number | null = null;
+let controlsActive = false;
 let resizeObserver: ResizeObserver | null = null;
 
 function loadClampedNumber(key: string, fallback: number, min: number, max: number) {
@@ -247,21 +257,23 @@ function getPreviewHeightCells() {
 }
 
 function componentValue(
-	vector: { x: number; y: number; z: number },
+	x: number,
+	y: number,
+	z: number,
 	mode: Exclude<VoxelColorMode, 'orientation'>
 ) {
 	switch (mode) {
 		case 'x':
-			return vector.x;
+			return x;
 		case 'y':
-			return vector.y;
+			return y;
 		case 'z':
-			return vector.z;
+			return z;
 	}
 }
 
-function vectorMagnitude(vector: { x: number; y: number; z: number }) {
-	return Math.sqrt(vector.x * vector.x + vector.y * vector.y + vector.z * vector.z);
+function vectorMagnitude(x: number, y: number, z: number) {
+	return Math.sqrt(x * x + y * y + z * z);
 }
 
 function magnetizationHSL(vx: number, vy: number, vz: number, color: THREE.Color) {
@@ -282,15 +294,19 @@ function applyComponentColor(value: number, color: THREE.Color) {
 	color.copy(COMPONENT_NEUTRAL).lerp(COMPONENT_POSITIVE, normalized);
 }
 
-function applyVoxelColor(vector: { x: number; y: number; z: number }, color: THREE.Color) {
-	const mode = get(voxelColorMode);
-
+function applyVoxelColor(
+	x: number,
+	y: number,
+	z: number,
+	mode: VoxelColorMode,
+	color: THREE.Color
+) {
 	if (mode === 'orientation') {
-		magnetizationHSL(vector.x, vector.y, vector.z, color);
+		magnetizationHSL(x, y, z, color);
 		return;
 	}
 
-	applyComponentColor(componentValue(vector, mode), color);
+	applyComponentColor(componentValue(x, y, z, mode), color);
 }
 
 function createArrowGeometry() {
@@ -344,20 +360,19 @@ function createMaterial(mode: Preview3DRenderMode): THREE.Material {
 	return new THREE.MeshBasicMaterial();
 }
 
-function createMesh(): THREE.InstancedMesh {
+function createMesh(requiredCapacity = get(previewState).vectorCount): THREE.InstancedMesh {
 	const mode = get(renderMode);
 	const geometry = mode === 'voxel' ? createVoxelGeometry() : createArrowGeometry();
 	const material = createMaterial(mode);
-	const count = get(previewState).vectorFieldValues.length;
-	const mesh = new THREE.InstancedMesh(geometry, material, count);
+	const capacity = nextMeshCapacity(Math.max(requiredCapacity, 1));
+	const mesh = new THREE.InstancedMesh(geometry, material, capacity);
 
 	mesh.frustumCulled = false;
 	mesh.renderOrder = mode === 'voxel' ? 2 : 1;
+	mesh.count = 0;
 	mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-	mesh.instanceColor = new THREE.InstancedBufferAttribute(
-		new Float32Array(Math.max(count, 1) * 3),
-		3
-	);
+	mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
+	mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
 
 	return mesh;
 }
@@ -367,9 +382,18 @@ function createCamera() {
 	const width = container?.offsetWidth || 1;
 	const height = container?.offsetHeight || 1;
 	const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
-	const { centerX, centerY, centerZ, orbitDistance } = getWorldExtents();
-	camera.position.set(centerX, centerY, centerZ + orbitDistance);
+	setDefaultCameraPose(camera);
 	return camera;
+}
+
+function setDefaultCameraPose(camera: THREE.PerspectiveCamera) {
+	const { centerX, centerY, centerZ, orbitDistance } = getWorldExtents();
+
+	// Simulation Z maps to world Y, so looking down the +Z simulation axis
+	// presents the film's XY plane. Keep simulation +Y pointing upward.
+	camera.position.set(centerX, centerY + orbitDistance, centerZ);
+	camera.up.set(0, 0, 1);
+	camera.lookAt(centerX, centerY, centerZ);
 }
 
 function createRenderer() {
@@ -473,20 +497,82 @@ function updateMaterialAppearance() {
 	display.mesh.material.transparent = true;
 	display.mesh.material.opacity = get(voxelOpacity);
 	display.mesh.material.depthWrite = false;
-	display.mesh.material.needsUpdate = true;
+	requestPreview3DRender();
 }
 
-function isSampledPosition(position: { x: number; y: number; z: number }) {
-	const step = get(voxelSampling);
+function disposeMesh(mesh: THREE.InstancedMesh) {
+	mesh.geometry.dispose();
+	if (Array.isArray(mesh.material)) {
+		mesh.material.forEach((material) => material.dispose());
+	} else {
+		mesh.material.dispose();
+	}
+}
+
+function replacePreviewMesh(requiredCapacity: number) {
+	const display = get(threeDPreview);
+	if (!display) {
+		return;
+	}
+
+	display.scene.remove(display.mesh);
+	disposeMesh(display.mesh);
+	display.mesh = createMesh(requiredCapacity);
+	display.meshCapacity = nextMeshCapacity(Math.max(requiredCapacity, 1));
+	display.rendererMode = get(renderMode);
+	display.scene.add(display.mesh);
+}
+
+function ensureMeshCapacity(required: number) {
+	const display = get(threeDPreview);
+	if (!display) {
+		return;
+	}
+
+	if (display.rendererMode !== get(renderMode) || required > display.meshCapacity) {
+		replacePreviewMesh(required);
+	}
+}
+
+function renderPreviewFrame() {
+	renderFrameId = null;
+	const display = get(threeDPreview);
+	if (!display) {
+		return;
+	}
+
+	display.controls.update();
+	display.renderer.render(display.scene, display.camera);
+	cameraRevision.update((revision) => revision + 1);
+
+	if (controlsActive) {
+		requestPreview3DRender();
+	}
+}
+
+export function requestPreview3DRender() {
+	if (renderFrameId !== null || !get(threeDPreview)) {
+		return;
+	}
+	renderFrameId = requestAnimationFrame(renderPreviewFrame);
+}
+
+function isSampledPosition(
+	x: number,
+	y: number,
+	z: number,
+	step: VoxelSampling,
+	allLayers: boolean
+) {
 	if (step === 1) {
 		return true;
 	}
 
-	if (position.x % step !== 0 || position.y % step !== 0) {
+	if (x % step !== 0 || y % step !== 0) {
 		return false;
 	}
 
-	if (get(previewState).allLayers && position.z % step !== 0) {
+	if (allLayers && z % step !== 0) {
 		return false;
 	}
 
@@ -494,9 +580,16 @@ function isSampledPosition(position: { x: number; y: number; z: number }) {
 }
 
 function updateGlyphMesh(mesh: THREE.InstancedMesh) {
-	const values = get(previewState).vectorFieldValues;
-	const positions = get(previewState).vectorFieldPositions;
-	const count = Math.min(values.length, positions.length, mesh.count);
+	const preview = get(previewState);
+	const values = preview.vectorFieldValues;
+	const positions = preview.vectorFieldPositions;
+	const display = get(threeDPreview);
+	const count = Math.min(
+		preview.vectorCount,
+		Math.floor(values.length / 3),
+		Math.floor(positions.length / 3),
+		display?.meshCapacity ?? 0
+	);
 	const instanceColor = mesh.instanceColor;
 
 	if (!instanceColor) {
@@ -508,40 +601,46 @@ function updateGlyphMesh(mesh: THREE.InstancedMesh) {
 	let visibleCount = 0;
 
 	for (let i = 0; i < count; i++) {
-		const vector = values[i];
-		const position = positions[i];
-		const isVisible = vector.x !== 0 || vector.y !== 0 || vector.z !== 0;
+		const offset = i * 3;
+		const vx = values[offset];
+		const vy = values[offset + 1];
+		const vz = values[offset + 2];
+		const isVisible = vx !== 0 || vy !== 0 || vz !== 0;
 
-		setWorldPositionFromSimulation(_dummy.position, position);
+		if (!isVisible) continue;
 
-		if (!isVisible) {
-			_dummy.scale.set(0, 0, 0);
-			_dummy.quaternion.identity();
-		} else {
-			visibleCount += 1;
-			_dummy.scale.set(1, 1, 1);
-			setWorldDirectionFromSimulation(_tempVec, vector).normalize();
-			_dummy.quaternion.setFromUnitVectors(_defaultUp, _tempVec);
-		}
+		_dummy.position.set(positions[offset], positions[offset + 2], positions[offset + 1]);
+		_dummy.scale.set(1, 1, 1);
+		_tempVec.set(vx, vz, vy).normalize();
+		_dummy.quaternion.setFromUnitVectors(_defaultUp, _tempVec);
 
-		magnetizationHSL(vector.x, vector.y, vector.z, _color);
-		colors[i * 3 + 0] = _color.r;
-		colors[i * 3 + 1] = _color.g;
-		colors[i * 3 + 2] = _color.b;
+		magnetizationHSL(vx, vy, vz, _color);
+		colors[visibleCount * 3 + 0] = _color.r;
+		colors[visibleCount * 3 + 1] = _color.g;
+		colors[visibleCount * 3 + 2] = _color.b;
 
 		_dummy.updateMatrix();
-		mesh.setMatrixAt(i, _dummy.matrix);
+		mesh.setMatrixAt(visibleCount, _dummy.matrix);
+		visibleCount += 1;
 	}
 
+	mesh.count = visibleCount;
 	visibleRenderCount.set(visibleCount);
 	mesh.instanceMatrix.needsUpdate = true;
 	instanceColor.needsUpdate = true;
 }
 
 function updateVoxelMesh(mesh: THREE.InstancedMesh) {
-	const values = get(previewState).vectorFieldValues;
-	const positions = get(previewState).vectorFieldPositions;
-	const count = Math.min(values.length, positions.length, mesh.count);
+	const preview = get(previewState);
+	const values = preview.vectorFieldValues;
+	const positions = preview.vectorFieldPositions;
+	const display = get(threeDPreview);
+	const count = Math.min(
+		preview.vectorCount,
+		Math.floor(values.length / 3),
+		Math.floor(positions.length / 3),
+		display?.meshCapacity ?? 0
+	);
 	const instanceColor = mesh.instanceColor;
 
 	if (!instanceColor) {
@@ -552,7 +651,8 @@ function updateVoxelMesh(mesh: THREE.InstancedMesh) {
 	const colors = instanceColor.array as Float32Array;
 	const step = get(voxelSampling);
 	const baseScale = Math.max(0.12, step * (1 - get(voxelGap)));
-	const depthScale = get(previewState).allLayers ? baseScale : Math.max(0.22, baseScale * 0.42);
+	const allLayers = preview.allLayers;
+	const depthScale = allLayers ? baseScale : Math.max(0.22, baseScale * 0.42);
 	const threshold = get(voxelThreshold);
 	const colorMode = get(voxelColorMode);
 	const topo = get(topoEnabled);
@@ -561,42 +661,45 @@ function updateVoxelMesh(mesh: THREE.InstancedMesh) {
 	let visibleCount = 0;
 
 	for (let i = 0; i < count; i++) {
-		const vector = values[i];
-		const position = positions[i];
+		const offset = i * 3;
+		const vx = values[offset];
+		const vy = values[offset + 1];
+		const vz = values[offset + 2];
+		const px = positions[offset];
+		const py = positions[offset + 1];
+		const pz = positions[offset + 2];
 		const metric =
 			colorMode === 'orientation'
-				? vectorMagnitude(vector)
-				: Math.abs(componentValue(vector, colorMode));
-		const isVisible = isSampledPosition(position) && metric >= threshold;
+				? vectorMagnitude(vx, vy, vz)
+				: Math.abs(componentValue(vx, vy, vz, colorMode));
+		const isVisible = isSampledPosition(px, py, pz, step, allLayers) && metric >= threshold;
+		if (!isVisible) continue;
 
-		let worldY = position.z;
+		let worldY = pz;
 		let voxelHeight = depthScale;
 		if (topo) {
-			const topoDisplacement = componentValue(vector, topoComp) * topoMul;
-			const topography = resolveVoxelTopography(position.z, depthScale, topoDisplacement);
+			const topoDisplacement = componentValue(vx, vy, vz, topoComp) * topoMul;
+			const topography = resolveVoxelTopography(pz, depthScale, topoDisplacement);
 			worldY = topography.centerZ;
 			voxelHeight = topography.depthScale;
 		}
 
-		_dummy.position.set(position.x, worldY, position.y);
+		_dummy.position.set(px, worldY, py);
 		_dummy.quaternion.identity();
 
-		if (!isVisible) {
-			_dummy.scale.set(0, 0, 0);
-		} else {
-			visibleCount += 1;
-			_dummy.scale.set(baseScale, voxelHeight, baseScale);
-		}
+		_dummy.scale.set(baseScale, voxelHeight, baseScale);
 
-		applyVoxelColor(vector, _color);
-		colors[i * 3 + 0] = _color.r;
-		colors[i * 3 + 1] = _color.g;
-		colors[i * 3 + 2] = _color.b;
+		applyVoxelColor(vx, vy, vz, colorMode, _color);
+		colors[visibleCount * 3 + 0] = _color.r;
+		colors[visibleCount * 3 + 1] = _color.g;
+		colors[visibleCount * 3 + 2] = _color.b;
 
 		_dummy.updateMatrix();
-		mesh.setMatrixAt(i, _dummy.matrix);
+		mesh.setMatrixAt(visibleCount, _dummy.matrix);
+		visibleCount += 1;
 	}
 
+	mesh.count = visibleCount;
 	visibleRenderCount.set(visibleCount);
 	mesh.instanceMatrix.needsUpdate = true;
 	instanceColor.needsUpdate = true;
@@ -614,11 +717,21 @@ function init() {
 
 	threeDPreview.set({
 		mesh,
+		meshCapacity: nextMeshCapacity(Math.max(get(previewState).vectorCount, 1)),
 		scene,
 		camera,
 		renderer,
 		controls,
-		rendererMode: get(renderMode)
+		rendererMode: get(renderMode),
+		shapeKey: getPreviewShapeKey()
+	});
+	controls.addEventListener('start', () => {
+		controlsActive = true;
+		requestPreview3DRender();
+	});
+	controls.addEventListener('end', () => {
+		controlsActive = false;
+		requestPreview3DRender();
 	});
 
 	update();
@@ -637,6 +750,7 @@ function init() {
 				renderer.setSize(width, height);
 				camera.aspect = width / height;
 				camera.updateProjectionMatrix();
+				requestPreview3DRender();
 			});
 		}
 
@@ -644,32 +758,28 @@ function init() {
 		resizeObserver.observe(container);
 	}
 
-	function animate() {
-		animationFrameId = requestAnimationFrame(animate);
-		controls.update();
-		renderer.render(scene, camera);
-	}
-
-	animate();
+	requestPreview3DRender();
 }
 
 function update() {
-	const display = get(threeDPreview);
+	let display = get(threeDPreview);
 	if (!display) {
 		return;
 	}
 
-	if (display.rendererMode !== get(renderMode)) {
-		rebuildPreview3D();
-		return;
-	}
+	const state = get(previewState);
+	const required = state.vectorCount;
+	ensureMeshCapacity(required);
+	display = get(threeDPreview);
+	if (!display) return;
 
 	if (display.rendererMode === 'voxel') {
 		updateVoxelMesh(display.mesh);
-		return;
+	} else {
+		updateGlyphMesh(display.mesh);
 	}
 
-	updateGlyphMesh(display.mesh);
+	requestPreview3DRender();
 }
 
 export function preview3D() {
@@ -678,11 +788,20 @@ export function preview3D() {
 		return;
 	}
 
-	if (get(previewState).refresh) {
+	const display = get(threeDPreview);
+	if (!display) {
 		disposePreview2D();
-		disposePreview3D();
 		init();
 		return;
+	}
+
+	if (get(previewState).refresh) {
+		disposePreview2D();
+		const shapeKey = getPreviewShapeKey();
+		if (shapeKey !== display.shapeKey) {
+			display.shapeKey = shapeKey;
+			resetCamera();
+		}
 	}
 
 	update();
@@ -693,9 +812,10 @@ export function disposePreview3D() {
 	const display = get(threeDPreview);
 	visibleRenderCount.set(0);
 
-	if (animationFrameId !== null) {
-		cancelAnimationFrame(animationFrameId);
-		animationFrameId = null;
+	controlsActive = false;
+	if (renderFrameId !== null) {
+		cancelAnimationFrame(renderFrameId);
+		renderFrameId = null;
 	}
 
 	if (display) {
@@ -751,6 +871,7 @@ export function resizeECharts() {
 		display.renderer.setSize(container.clientWidth, container.clientHeight);
 		display.camera.aspect = container.clientWidth / container.clientHeight;
 		display.camera.updateProjectionMatrix();
+		requestPreview3DRender();
 	}
 }
 
@@ -759,6 +880,7 @@ export function setBrightness(value: number) {
 	persistSetting(STORAGE_KEYS.brightness, clamped);
 	brightness.set(clamped);
 	updateSceneLights();
+	requestPreview3DRender();
 }
 
 export function setQuality(level: QualityLevel) {
@@ -770,7 +892,11 @@ export function setQuality(level: QualityLevel) {
 export function setRenderMode(mode: Preview3DRenderMode) {
 	persistSetting(STORAGE_KEYS.renderMode, mode);
 	renderMode.set(mode);
-	rebuildPreview3D();
+	const count = get(previewState).vectorCount;
+	if (get(threeDPreview)) {
+		replacePreviewMesh(count);
+		update();
+	}
 }
 
 export function setVoxelOpacity(value: number) {
@@ -840,18 +966,17 @@ export function setTopoMultiplier(value: number) {
 }
 
 export function resetCamera() {
-	const { centerX, centerY, centerZ, orbitDistance } = getWorldExtents();
 	const display = get(threeDPreview);
 
 	if (!display) {
 		return;
 	}
 
-	display.camera.position.set(centerX, centerY, centerZ + orbitDistance);
-	display.camera.up.set(0, 1, 0);
-	display.camera.lookAt(centerX, centerY, centerZ);
+	const { centerX, centerY, centerZ } = getWorldExtents();
+	setDefaultCameraPose(display.camera);
 	display.controls.target.set(centerX, centerY, centerZ);
 	display.controls.update();
+	requestPreview3DRender();
 }
 
 export function setCameraViewDirection(dx: number, dy: number, dz: number) {
@@ -874,7 +999,7 @@ export function setCameraViewDirection(dx: number, dy: number, dz: number) {
 	if (Math.abs(worldDir.y) > 0.9) {
 		ux = 0;
 		uy = 0;
-		uz = worldDir.y > 0 ? -1 : 1;
+		uz = worldDir.y > 0 ? 1 : -1;
 	}
 
 	display.camera.position.set(
@@ -886,6 +1011,7 @@ export function setCameraViewDirection(dx: number, dy: number, dz: number) {
 	display.camera.lookAt(centerX, centerY, centerZ);
 	display.controls.target.set(centerX, centerY, centerZ);
 	display.controls.update();
+	requestPreview3DRender();
 }
 
 export function orbitCamera(deltaX: number, deltaY: number) {
@@ -912,6 +1038,7 @@ export function orbitCamera(deltaX: number, deltaY: number) {
 	camera.up.set(0, 1, 0);
 	camera.lookAt(target);
 	display.controls.update();
+	requestPreview3DRender();
 }
 
 export function getCameraMatrix(): string {

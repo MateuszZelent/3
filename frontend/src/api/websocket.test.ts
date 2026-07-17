@@ -2,10 +2,7 @@ import { encode } from '@msgpack/msgpack';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
-vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-	callback(0);
-	return 1;
-});
+vi.stubGlobal('requestAnimationFrame', (_callback: FrameRequestCallback) => 1);
 
 vi.mock('$lib/preview/preview3D', () => ({
 	preview3D: vi.fn(),
@@ -79,7 +76,8 @@ function resetStores() {
 		ymax: 0,
 		maxPoints: 0,
 		step: 0,
-		corePos: null
+		corePos: null,
+		coreEnabled: false
 	});
 	previewState.set({
 		quantity: '',
@@ -88,8 +86,10 @@ function resetStores() {
 		layer: 0,
 		allLayers: false,
 		type: '',
-		vectorFieldValues: [],
-		vectorFieldPositions: [],
+		vectorFieldValues: new Float32Array(),
+		vectorFieldPositions: new Int32Array(),
+		vectorCount: 0,
+		topologyRevision: 0,
 		scalarField: [],
 		min: 0,
 		max: 0,
@@ -216,6 +216,31 @@ describe('websocket parsing', () => {
 		expect(get(metricsState).pid).toBe(42);
 	});
 
+	it('normalizes nullable table arrays from the backend', () => {
+		parseMsgpack(
+			toArrayBuffer({
+				tablePlot: {
+					autoSaveInterval: 0,
+					columns: null,
+					xColumn: 't',
+					yColumn: 'mx',
+					xColumnUnit: '',
+					yColumnUnit: '',
+					data: null,
+					xmin: 0,
+					xmax: 0,
+					ymin: 0,
+					ymax: 0,
+					maxPoints: 10000,
+					step: 1,
+					corePos: null
+				}
+			})
+		);
+
+		expect(get(tablePlotState)).toMatchObject({ columns: [], data: [], corePos: null });
+	});
+
 	it('updates preview state from the dedicated preview channel', () => {
 		parsePreviewMsgpack(
 			toArrayBuffer({
@@ -255,5 +280,35 @@ describe('websocket parsing', () => {
 			xChosenSize: 32,
 			yChosenSize: 32
 		});
+	});
+
+	it('decodes packed vector buffers and reuses an unchanged topology', () => {
+		const values = new Float32Array([1, 2, 3, -1, -2, -3]);
+		const positions = new Int32Array([4, 5, 6, 7, 8, 9]);
+		parsePreviewMsgpack(
+			toArrayBuffer({
+				type: '3D',
+				vectorValuesBinary: new Uint8Array(values.buffer),
+				vectorPositionsBinary: new Uint8Array(positions.buffer),
+				vectorCount: 2,
+				topologyRevision: 11
+			})
+		);
+
+		expect(Array.from(get(previewState).vectorFieldValues)).toEqual([1, 2, 3, -1, -2, -3]);
+		expect(Array.from(get(previewState).vectorFieldPositions)).toEqual([4, 5, 6, 7, 8, 9]);
+
+		const nextValues = new Float32Array([0.5, 0.25, 0, -0.5, -0.25, 0]);
+		parsePreviewMsgpack(
+			toArrayBuffer({
+				type: '3D',
+				vectorValuesBinary: new Uint8Array(nextValues.buffer),
+				vectorCount: 2,
+				topologyRevision: 11
+			})
+		);
+
+		expect(Array.from(get(previewState).vectorFieldValues)).toEqual([0.5, 0.25, 0, -0.5, -0.25, 0]);
+		expect(Array.from(get(previewState).vectorFieldPositions)).toEqual([4, 5, 6, 7, 8, 9]);
 	});
 });

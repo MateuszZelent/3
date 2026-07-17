@@ -23,7 +23,8 @@ type meshCompatFloat struct {
 	kind byte // 'd' or 'T'
 }
 
-func (value *meshCompatFloat) Type() reflect.Type { return reflect.TypeOf(float64(0)) }
+func (*meshCompatFloat) AllowScriptDefineShadow() bool { return true }
+func (value *meshCompatFloat) Type() reflect.Type      { return reflect.TypeOf(float64(0)) }
 func (value *meshCompatFloat) Eval() interface{} {
 	if MeshReady() {
 		if value.kind == 'd' {
@@ -58,7 +59,8 @@ type meshCompatInt struct {
 	kind byte // 'N' or 'P'
 }
 
-func (value *meshCompatInt) Type() reflect.Type { return reflect.TypeOf(int(0)) }
+func (*meshCompatInt) AllowScriptDefineShadow() bool { return true }
+func (value *meshCompatInt) Type() reflect.Type      { return reflect.TypeOf(int(0)) }
 func (value *meshCompatInt) Eval() interface{} {
 	if MeshReady() {
 		if value.kind == 'N' {

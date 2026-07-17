@@ -27,13 +27,22 @@ type WebSocketManager struct {
 }
 
 type connectionManager struct {
-	conns map[*websocket.Conn]struct{}
+	conns map[*websocket.Conn]*managedConnection
 	mu    sync.Mutex
+}
+
+type managedConnection struct {
+	ws       *websocket.Conn
+	send     chan []byte
+	stop     chan struct{}
+	failed   chan struct{}
+	stopOnce sync.Once
+	failOnce sync.Once
 }
 
 func newConnectionManager() *connectionManager {
 	return &connectionManager{
-		conns: make(map[*websocket.Conn]struct{}),
+		conns: make(map[*websocket.Conn]*managedConnection),
 		mu:    sync.Mutex{},
 	}
 }
@@ -53,16 +62,28 @@ func newWebSocketManager() *WebSocketManager {
 	}
 }
 
-func (cm *connectionManager) add(ws *websocket.Conn) {
+func (cm *connectionManager) add(ws *websocket.Conn) *managedConnection {
+	managed := &managedConnection{
+		ws:     ws,
+		send:   make(chan []byte, 1),
+		stop:   make(chan struct{}),
+		failed: make(chan struct{}),
+	}
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	cm.conns[ws] = struct{}{}
+	cm.conns[ws] = managed
+	cm.mu.Unlock()
+	go managed.writeLoop()
+	return managed
 }
 
 func (cm *connectionManager) remove(ws *websocket.Conn) {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
+	managed := cm.conns[ws]
 	delete(cm.conns, ws)
+	cm.mu.Unlock()
+	if managed != nil {
+		managed.stopOnce.Do(func() { close(managed.stop) })
+	}
 }
 
 func (cm *connectionManager) count() int {
@@ -73,15 +94,51 @@ func (cm *connectionManager) count() int {
 
 func (cm *connectionManager) broadcast(msg []byte) {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
-	for ws := range cm.conns {
-		err := ws.WriteMessage(websocket.BinaryMessage, msg)
-		if err != nil {
-			log.Log.Err("Error sending message via WebSocket: %v", err)
-			if cerr := ws.Close(); cerr != nil {
-				log.Log.Err("Error closing WebSocket: %v", cerr)
+	connections := make([]*managedConnection, 0, len(cm.conns))
+	for _, managed := range cm.conns {
+		connections = append(connections, managed)
+	}
+	cm.mu.Unlock()
+
+	for _, managed := range connections {
+		select {
+		case <-managed.stop:
+			continue
+		default:
+		}
+		select {
+		case managed.send <- msg:
+		default:
+			// Keep latency bounded: discard the stale queued frame and retain
+			// only the newest complete state for this client.
+			select {
+			case <-managed.send:
+			default:
 			}
-			delete(cm.conns, ws)
+			select {
+			case managed.send <- msg:
+			case <-managed.stop:
+			default:
+			}
+		}
+	}
+}
+
+func (managed *managedConnection) writeLoop() {
+	for {
+		select {
+		case <-managed.stop:
+			return
+		case msg := <-managed.send:
+			if err := managed.ws.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				log.Log.Warn("Could not set WebSocket write deadline: %v", err)
+			}
+			if err := managed.ws.WriteMessage(websocket.BinaryMessage, msg); err != nil {
+				log.Log.Err("Error sending message via WebSocket: %v", err)
+				managed.failOnce.Do(func() { close(managed.failed) })
+				_ = managed.ws.Close()
+				return
+			}
 		}
 	}
 }
@@ -109,7 +166,7 @@ func (wsManager *WebSocketManager) websocketEntrypointFor(c echo.Context, cm *co
 		}
 	}()
 
-	cm.add(ws)
+	managed := cm.add(ws)
 	defer cm.remove(ws)
 	wsManager.engineState.Preview.Refresh = true
 	onConnect()
@@ -131,6 +188,8 @@ func (wsManager *WebSocketManager) websocketEntrypointFor(c echo.Context, cm *co
 		log.Log.Debug("%s websocket connection closed by client", name)
 		return nil
 	case <-wsManager.broadcastStop:
+		return nil
+	case <-managed.failed:
 		return nil
 	}
 }

@@ -125,6 +125,41 @@ func TestScope(t *testing.T) {
 	w.MustEval("sin(0)")
 }
 
+type shadowableInt struct{ value int }
+
+func (v *shadowableInt) Type() reflect.Type          { return reflect.TypeOf(int(0)) }
+func (v *shadowableInt) Eval() interface{}           { return v.value }
+func (v *shadowableInt) SetValue(raw interface{})    { v.value = raw.(int) }
+func (*shadowableInt) Child() []Expr                 { return nil }
+func (*shadowableInt) Fix() Expr                     { panic(invalid_closure) }
+func (*shadowableInt) AllowScriptDefineShadow() bool { return true }
+
+func TestDefineCanShadowExplicitCompatibilityValue(t *testing.T) {
+	w := NewWorld()
+	meshNx := &shadowableInt{value: 7}
+	w.LValue("Nx", meshNx)
+
+	w.MustExec("Nx := 128; Ny := Nx / 2")
+	if got := w.MustEval("Nx"); got != 128 {
+		t.Fatalf("shadowed Nx = %v, want 128", got)
+	}
+	if got := w.MustEval("Ny"); got != float64(64) {
+		t.Fatalf("Ny = %v, want 64", got)
+	}
+	if meshNx.value != 7 {
+		t.Fatalf("compatibility Nx was modified to %d", meshNx.value)
+	}
+}
+
+func TestDefineStillRejectsOrdinaryRedeclaration(t *testing.T) {
+	w := NewWorld()
+	x := 1
+	w.Var("x", &x)
+	if _, err := w.Compile("x := 2"); err == nil {
+		t.Fatal("ordinary variable redeclaration should fail")
+	}
+}
+
 func BenchmarkEval1(b *testing.B) {
 	b.StopTimer()
 	w := NewWorld()

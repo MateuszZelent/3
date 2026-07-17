@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 
-export type VectorField = Array<{ x: number; y: number; z: number }>;
+export type VectorField = Float32Array;
+export type VectorPositions = Int32Array;
 export type ScalarField = Array<Array<number>>;
 
 export interface Preview {
@@ -11,7 +12,9 @@ export interface Preview {
 	allLayers: boolean;
 	type: string;
 	vectorFieldValues: VectorField;
-	vectorFieldPositions: VectorField;
+	vectorFieldPositions: VectorPositions;
+	vectorCount: number;
+	topologyRevision: number;
 	scalarField: ScalarField;
 	min: number;
 	max: number;
@@ -40,8 +43,10 @@ export const previewState = writable<Preview>({
 	allLayers: false,
 	maxPoints: 0,
 	type: '',
-	vectorFieldValues: [],
-	vectorFieldPositions: [],
+	vectorFieldValues: new Float32Array(),
+	vectorFieldPositions: new Int32Array(),
+	vectorCount: 0,
+	topologyRevision: 0,
 	scalarField: [],
 	min: 0,
 	max: 0,
