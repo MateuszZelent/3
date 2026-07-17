@@ -13,6 +13,7 @@ func init() {
 	DeclFunc("Uniform", Uniform, "Uniform magnetization in given direction")
 	DeclFunc("Vortex", Vortex, "Vortex magnetization with given circulation and core polarization")
 	DeclFunc("Antivortex", AntiVortex, "Antivortex magnetization with given circulation and core polarization")
+	DeclFunc("Radial", Radial, "In-plane radial magnetization with given charge and center polarization")
 	DeclFunc("NeelSkyrmion", NeelSkyrmion, "Néél skyrmion magnetization with given charge and core polarization")
 	DeclFunc("BlochSkyrmion", BlochSkyrmion, "Bloch skyrmion magnetization with given chirality and core polarization")
 	DeclFunc("TwoDomain", TwoDomain, "Twodomain magnetization with with given magnetization in left domain, wall, and right domain")
@@ -110,6 +111,15 @@ func AntiVortex(circ, pol int) Config {
 		my := y * float64(circ) / r
 		mz := 1.5 * float64(pol) * math.Exp(-r2/diam2)
 		return noNaN(data.Vector{mx, my, mz}, pol)
+	}
+}
+
+// Radial creates an in-plane radial texture. At the singular center cell the
+// polarization argument selects the fallback z direction, matching Amumax.
+func Radial(charge, pol int) Config {
+	return func(x, y, z float64) data.Vector {
+		r := math.Sqrt(x*x + y*y)
+		return noNaN(data.Vector{x * float64(charge) / r, y * float64(charge) / r, 0}, pol)
 	}
 }
 

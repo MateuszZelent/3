@@ -14,6 +14,7 @@ func init() {
 	DeclFunc("SetGridSize", SetGridSize, `Sets the number of cells for X,Y,Z`)
 	DeclFunc("SetCellSize", SetCellSize, `Sets the X,Y,Z cell size in meters`)
 	DeclFunc("SetMesh", SetMesh, `Sets GridSize, CellSize and PBC at the same time`)
+	DeclFunc("SmoothMesh", SmoothMesh, `Rounds selected grid dimensions down to a 7-smooth size while preserving the physical world size`)
 	DeclFunc("SetPBC", SetPBC, "Sets the number of repetitions in X,Y,Z to create periodic boundary "+
 		"conditions. The number of repetitions determines the cutoff range for the demagnetization.")
 }
@@ -139,6 +140,49 @@ func SetPBC(nx, ny, nz int) {
 			lazy_cellsize[X], lazy_cellsize[Y], lazy_cellsize[Z],
 			lazy_pbc[X], lazy_pbc[Y], lazy_pbc[Z])
 	}
+}
+
+// SmoothMesh rounds selected grid dimensions down to the nearest 7-smooth
+// number. A 7-smooth size has no prime factors larger than 7 and is generally
+// handled efficiently by the FFT implementation. Cell sizes are adjusted so
+// the physical world size remains unchanged.
+//
+// This ports Amumax's SmoothMesh scripting API into the current mumax3 mesh
+// lifecycle instead of mutating a parallel mesh object.
+func SmoothMesh(smoothX, smoothY, smoothZ bool) {
+	checkMesh()
+
+	oldSize := Mesh().Size()
+	newSize := oldSize
+	selected := [3]bool{smoothX, smoothY, smoothZ}
+	for axis := range newSize {
+		if selected[axis] {
+			newSize[axis] = closestSevenSmooth(oldSize[axis])
+		}
+	}
+	if newSize == oldSize {
+		return
+	}
+
+	world := Mesh().WorldSize()
+	cell := [3]float64{
+		world[X] / float64(newSize[X]),
+		world[Y] / float64(newSize[Y]),
+		world[Z] / float64(newSize[Z]),
+	}
+	pbc := Mesh().PBC()
+	SetMesh(newSize[X], newSize[Y], newSize[Z], cell[X], cell[Y], cell[Z], pbc[X], pbc[Y], pbc[Z])
+}
+
+func closestSevenSmooth(n int) int {
+	arg("SmoothMesh", n > 0)
+	for candidate := n; candidate > 1; candidate-- {
+		factors := primeFactors(candidate)
+		if slices.Max(factors) <= 7 {
+			return candidate
+		}
+	}
+	return 1
 }
 
 // check if mesh is set

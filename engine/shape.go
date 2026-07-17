@@ -20,10 +20,19 @@ func init() {
 		"<br>If the height is positive, the tip points in the +z direction.")
 	DeclFunc("Cylinder", Cylinder, "3D Cylinder with diameter and height in meter")
 	DeclFunc("Circle", Circle, "2D Circle with diameter in meter")
+	DeclFunc("Wave", Wave, "Infinite cosine-edged waveguide with period and minimum/maximum width in meter")
+	DeclFunc("SinWaveguide", SinWaveguide, "Finite sinusoidal waveguide along x with arguments length, width, height, period and centerline amplitude")
+	DeclFunc("SinWaveguide2", SinWaveguide2, "Finite sinusoidal waveguide along x with arguments length, width, height, period, centerline amplitude, phase and z offset")
+	DeclFunc("ArchWaveguide", ArchWaveguide, "Finite half-sine arch waveguide along x with arguments length, width, height, arch height and z offset")
 	DeclFunc("Cuboid", Cuboid, "Cuboid with sides in meter")
 	DeclFunc("Rect", Rect, "2D rectangle with size in meter")
 	DeclFunc("Square", Square, "2D square with size in meter")
 	DeclFunc("Triangle", Triangle, "2D triangle with vertices (x0, y0), (x1, y1) and (x2, y2)")
+	DeclFunc("EqTriangle", EqTriangle, "2D equilateral triangle centered at the origin")
+	DeclFunc("RTriangle", RTriangle, "2D equilateral triangle clipped by a circle")
+	DeclFunc("Hexagon", Hexagon, "2D regular hexagon centered at the origin")
+	DeclFunc("Diamond", Diamond, "2D diamond with x and y diagonals in meter")
+	DeclFunc("Squircle", Squircle, "3D rounded rectangle with x/y side lengths, thickness and squareness parameter")
 	DeclFunc("Line", Line, "3D line segment between (x1, y1, z1) and (x2, y2, z2), with given diameter, in meter."+
 		"<br>Last element specifies the line cap, which can be 'infinite', 'round' or 'flat'."+
 		"<br>Using zero diameter creates a minimally connected geometry, unless it is later scaled/rotated.")
@@ -91,6 +100,57 @@ func Circle(diam float64) Shape {
 	return Cylinder(diam, math.Inf(1))
 }
 
+// Wave creates an infinitely long waveguide whose width varies periodically
+// along x. This retains the geometry and parameter convention used by Amumax.
+func Wave(period, minWidth, maxWidth float64) Shape {
+	if period <= 0 || minWidth <= 0 || maxWidth < minWidth {
+		panic(UserErr("Wave: require period > 0 and 0 < minWidth <= maxWidth"))
+	}
+	return func(x, y, z float64) bool {
+		edge := (math.Cos(x/period*2*math.Pi)/2 - 0.5) * (maxWidth - minWidth) / 2
+		return y > edge-minWidth/2 && y < -edge+minWidth/2
+	}
+}
+
+// SinWaveguide creates a finite strip along x whose centerline oscillates in z.
+func SinWaveguide(length, width, height, period, amplitude float64) Shape {
+	return SinWaveguide2(length, width, height, period, amplitude, 0, 0)
+}
+
+// SinWaveguide2 is SinWaveguide with explicit phase and vertical offset.
+func SinWaveguide2(length, width, height, period, amplitude, phase, z0 float64) Shape {
+	validateWaveguideDimensions("SinWaveguide2", length, width, height, period)
+	halfLength, halfWidth, halfHeight := length/2, width/2, height/2
+	k := 2 * math.Pi / period
+	return func(x, y, z float64) bool {
+		if x < -halfLength || x > halfLength || y < -halfWidth || y > halfWidth {
+			return false
+		}
+		center := z0 + amplitude*math.Sin(k*x+phase)
+		return z >= center-halfHeight && z < center+halfHeight
+	}
+}
+
+// ArchWaveguide creates a single half-sine arch with both ends at z0.
+func ArchWaveguide(length, width, height, archHeight, z0 float64) Shape {
+	validateWaveguideDimensions("ArchWaveguide", length, width, height, length)
+	halfLength, halfWidth, halfHeight := length/2, width/2, height/2
+	return func(x, y, z float64) bool {
+		if x < -halfLength || x > halfLength || y < -halfWidth || y > halfWidth {
+			return false
+		}
+		t := (x + halfLength) / length
+		center := z0 + archHeight*math.Sin(math.Pi*t)
+		return z >= center-halfHeight && z < center+halfHeight
+	}
+}
+
+func validateWaveguideDimensions(name string, length, width, height, period float64) {
+	if length <= 0 || width <= 0 || height <= 0 || period <= 0 {
+		panic(UserErr(name + ": length, width, height and period must be positive"))
+	}
+}
+
 // cylinder along z.
 func Cylinder(diam, height float64) Shape {
 	return func(x, y, z float64) bool {
@@ -141,6 +201,62 @@ func Triangle(x0, y0, x1, y1, x2, y2 float64) Shape {
 		s := Sc + Sx*x + Sy*y
 		t := Tc + Tx*x + Ty*y
 		return ((0 <= s) && (0 <= t) && (s+t <= 1))
+	}
+}
+
+// EqTriangle creates an equilateral triangle centered at the origin.
+func EqTriangle(side float64) Shape {
+	if side <= 0 {
+		panic(UserErr("EqTriangle: side must be positive"))
+	}
+	c := math.Sqrt(3)
+	return func(x, y, z float64) bool {
+		return y > -side/(2*c) && y < x*c+side/c && y < -x*c+side/c
+	}
+}
+
+// RTriangle is an equilateral triangle clipped by a circle of diameter diam.
+func RTriangle(side, diam float64) Shape {
+	triangle := EqTriangle(side)
+	if diam <= 0 {
+		panic(UserErr("RTriangle: diameter must be positive"))
+	}
+	radius2 := diam * diam / 4
+	return func(x, y, z float64) bool {
+		return triangle(x, y, z) && x*x+y*y < radius2
+	}
+}
+
+func Hexagon(side float64) Shape {
+	if side <= 0 {
+		panic(UserErr("Hexagon: side must be positive"))
+	}
+	a, b := math.Sqrt(3), math.Sqrt(3)*side
+	return func(x, y, z float64) bool {
+		return y < b/2 && y < -a*x+b && y > a*x-b && y > -b/2 && y > -a*x-b && y < a*x+b
+	}
+}
+
+func Diamond(sideX, sideY float64) Shape {
+	if sideX <= 0 || sideY <= 0 {
+		panic(UserErr("Diamond: both diagonals must be positive"))
+	}
+	a, b := sideY/sideX, sideY/2
+	return func(x, y, z float64) bool {
+		return y < a*x+b && y < -a*x+b && y > a*x-b && y > -a*x-b
+	}
+}
+
+// Squircle creates a rounded rectangular prism. Parameter a controls the
+// transition from ellipse (a=0) towards a rectangle (a approaching 1).
+func Squircle(sideX, sideY, sideZ, a float64) Shape {
+	if sideX <= 0 || sideY <= 0 || sideZ <= 0 || a < 0 || a > 1 {
+		panic(UserErr("Squircle: sides must be positive and a must be in [0, 1]"))
+	}
+	return func(x, y, z float64) bool {
+		nx, ny := x/(sideX/2), y/(sideY/2)
+		insideXY := nx*nx+ny*ny-a*nx*nx*ny*ny <= 1
+		return insideXY && z >= -sideZ/2 && z <= sideZ/2
 	}
 }
 

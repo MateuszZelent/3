@@ -22,6 +22,11 @@ var (
 	Flag_silent      = flag.Bool("s", false, "Silent") // provided for backwards compatibility
 	Flag_sync        = flag.Bool("sync", false, "Synchronize all CUDA calls (debug)")
 	Flag_forceclean  = flag.Bool("f", false, "Force start, clean existing output directory")
+	Flag_fft         = flag.Bool("fft", false, "Enable real-time FFT data for the web interface")
+	Flag_storage     = flag.String("storage-format", "ovf", "Storage backend used by Save/AutoSave: ovf, zarr, or h5")
+	Flag_legacygui   = flag.Bool("legacy-gui", false, "Use the original mumax3 web GUI")
+	Flag_tunnel      = flag.String("tunnel", "", "SSH host used for an optional reverse web-UI tunnel")
+	Flag_webdebug    = flag.Bool("webui-debug", false, "Enable web API request logging")
 )
 
 func FlagPassed(name string) bool {

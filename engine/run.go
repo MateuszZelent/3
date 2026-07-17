@@ -205,6 +205,7 @@ func step(output bool) {
 	}
 	if output {
 		DoOutput()
+		doFftStep()
 	}
 }
 

@@ -16,8 +16,10 @@ import (
 )
 
 func init() {
-	DeclFunc("Save", Save, "Save space-dependent quantity once, with auto filename")
-	DeclFunc("SaveAs", SaveAs, "Save space-dependent quantity with custom filename")
+	DeclFunc("Save", Save, "Save a quantity using StorageFormat")
+	DeclFunc("SaveAs", SaveAs, "Save a quantity with a custom OVF filename or structured dataset name")
+	DeclFunc("SaveOvf", SaveOVF, "Save a quantity once in the selected OVF/DUMP OutputFormat")
+	DeclFunc("SaveOvfAs", SaveAsOVF, "Save a quantity to a custom OVF/DUMP filename")
 
 	DeclLValue("FilenameFormat", &fformat{}, "printf formatting string for output filenames.")
 	DeclLValue("OutputFormat", &oformat{}, "Format for data files: OVF1_TEXT, OVF1_BINARY, OVF2_TEXT or OVF2_BINARY")
@@ -52,14 +54,31 @@ func (*oformat) Type() reflect.Type     { return reflect.TypeOf(OutputFormat(OVF
 
 // Save once, with auto file name
 func Save(q Quantity) {
+	if StorageFormat != StorageFormatOVF {
+		saveStructured(q, NameOf(q), Chunk(1, 1, 1, 1), StorageFormat)
+		return
+	}
+	SaveOVF(q)
+}
+
+// SaveOVF preserves the upstream mumax3 file-per-step output path.
+func SaveOVF(q Quantity) {
 	qname := NameOf(q)
 	fname := autoFname(NameOf(q), outputFormat, autonum[qname])
-	SaveAs(q, fname)
+	SaveAsOVF(q, fname)
 	autonum[qname]++
 }
 
 // Save under given file name (transparent async I/O).
 func SaveAs(q Quantity, fname string) {
+	if StorageFormat != StorageFormatOVF {
+		saveStructured(q, fname, Chunk(1, 1, 1, 1), StorageFormat)
+		return
+	}
+	SaveAsOVF(q, fname)
+}
+
+func SaveAsOVF(q Quantity, fname string) {
 
 	if !strings.HasPrefix(fname, OD()) {
 		fname = OD() + fname // don't clean, turns http:// in http:/

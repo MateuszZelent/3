@@ -8,7 +8,7 @@ GO_BUILDFLAGS=-compiler gc
 CGO_CFLAGS_ALLOW='(-fno-schedule-insns|-malign-double|-ffast-math)'
 
 
-.PHONY: all cudakernels clean realclean checktests runtests hooks
+.PHONY: all cudakernels frontend clean realclean checktests runtests hooks
 
 
 all: cudakernels hooks
@@ -17,6 +17,11 @@ all: cudakernels hooks
 
 cudakernels:
 	cd cuda && $(MAKE) NVCC_CCBIN=$(NVCC_CCBIN)
+
+frontend:
+	cd frontend && npm ci && npm run check && npm run test:unit && npm run build
+	rm -rf webui/static
+	cp -R frontend/dist webui/static
 
 doc:
 	cd doc && $(MAKE)

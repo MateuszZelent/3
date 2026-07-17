@@ -10,7 +10,8 @@ var (
 )
 
 func init() {
-	DeclFunc("AutoSave", AutoSave, "Auto save space-dependent quantity every period (s).")
+	DeclFunc("AutoSave", AutoSave, "Auto-save a quantity using StorageFormat every period (s).")
+	DeclFunc("AutoSaveOvf", AutoSaveOVF, "Auto-save a quantity as OVF/DUMP every period (s).")
 	DeclFunc("AutoSnapshot", AutoSnapshot, "Auto save image of quantity every period (s).")
 }
 
@@ -22,6 +23,7 @@ func DoOutput() {
 			a.count++
 		}
 	}
+	structuredOutput.saveIfNeeded()
 	if Table.needSave() {
 		Table.Save()
 	}
@@ -30,7 +32,15 @@ func DoOutput() {
 // Register quant to be auto-saved every period.
 // period == 0 stops autosaving.
 func AutoSave(q Quantity, period float64) {
-	autoSave(q, period, Save)
+	if StorageFormat != StorageFormatOVF {
+		autoSaveStructured(q, period)
+		return
+	}
+	AutoSaveOVF(q, period)
+}
+
+func AutoSaveOVF(q Quantity, period float64) {
+	autoSave(q, period, SaveOVF)
 }
 
 // Register quant to be auto-saved as image, every period.

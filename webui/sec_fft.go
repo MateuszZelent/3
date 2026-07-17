@@ -1,0 +1,102 @@
+package webui
+
+import (
+	"net/http"
+
+	"github.com/labstack/echo/v4"
+
+	"github.com/mumax/3/engine"
+	"github.com/mumax/3/log"
+)
+
+// FftState holds the FFT data for WebSocket broadcast.
+type FftState struct {
+	ws *WebSocketManager
+
+	Enabled              bool             `msgpack:"enabled"`
+	FreqAxis             []float64        `msgpack:"freqAxis"`
+	Labels               []string         `msgpack:"labels"`
+	MaxFreqGHz           float64          `msgpack:"maxFreqGHz"`
+	SampleIntervalNs     float64          `msgpack:"sampleIntervalNs"`
+	Spectrum             [][]float64      `msgpack:"spectrum"`
+	Spectrogram          [][]float64      `msgpack:"spectrogram"`
+	SpectrogramTimes     []float64        `msgpack:"spectrogramTimes"`
+	SpectrogramComponent int              `msgpack:"spectrogramComponent"`
+	SegProgress          float64          `msgpack:"segProgress"`
+	SegDurationNs        float64          `msgpack:"segDurationNs"`
+	SegElapsedNs         float64          `msgpack:"segElapsedNs"`
+	TotalSegments        int              `msgpack:"totalSegments"`
+	Peaks                []engine.FftPeak `msgpack:"peaks"`
+}
+
+func initFftAPI(e *echo.Group, ws *WebSocketManager) *FftState {
+	fftState := &FftState{
+		ws:      ws,
+		Enabled: engine.FftEnabled,
+	}
+
+	e.POST("/api/fft/component", fftState.postFftComponent)
+	e.POST("/api/fft/clear", fftState.postFftClear)
+	e.POST("/api/fft/max-frequency", fftState.postFftMaxFrequency)
+
+	return fftState
+}
+
+func (s *FftState) Update() {
+	s.Enabled = engine.FftEnabled
+	if !s.Enabled {
+		return
+	}
+
+	s.FreqAxis = engine.GetFftFreqAxis()
+	s.Labels = engine.GetFftLabels()
+	s.MaxFreqGHz = engine.GetFftMaxFreqGHz()
+	s.SampleIntervalNs = engine.GetFftSampleIntervalNs()
+	s.Spectrum = engine.GetFftSpectrum()
+	spectro, times := engine.GetFftSpectrogram()
+	s.Spectrogram = spectro
+	s.SpectrogramTimes = times
+	s.SegProgress, s.SegDurationNs, s.SegElapsedNs, s.TotalSegments = engine.GetFftSegmentProgress()
+	s.Peaks = engine.GetFftPeaks()
+}
+
+func (s *FftState) postFftComponent(c echo.Context) error {
+	type Request struct {
+		Component int `msgpack:"component"`
+	}
+	req := new(Request)
+	if err := c.Bind(req); err != nil {
+		log.Log.Err("%v", err)
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+	}
+	engine.SetFftSpectrogramComponent(req.Component)
+	s.SpectrogramComponent = req.Component
+	s.ws.broadcastEngineState()
+	return c.JSON(http.StatusOK, nil)
+}
+
+func (s *FftState) postFftClear(c echo.Context) error {
+	engine.ClearFft()
+	s.ws.broadcastEngineState()
+	return c.JSON(http.StatusOK, nil)
+}
+
+func (s *FftState) postFftMaxFrequency(c echo.Context) error {
+	type Request struct {
+		MaxFreqGHz float64 `msgpack:"maxFreqGHz"`
+	}
+	req := new(Request)
+	if err := c.Bind(req); err != nil {
+		log.Log.Err("%v", err)
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+	}
+	if req.MaxFreqGHz <= 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "maxFreqGHz must be > 0"})
+	}
+
+	if err := engine.SetFftMaxFreqGHz(req.MaxFreqGHz); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": err.Error()})
+	}
+	s.ws.broadcastEngineState()
+	return c.JSON(http.StatusOK, nil)
+}

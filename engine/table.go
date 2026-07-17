@@ -115,14 +115,25 @@ func (t *DataTable) Save() {
 		timer.Start("io")
 	}
 	t.init()
+	columns := []string{"t"}
+	units := []string{"s"}
+	values := []float64{Time}
 	fprint(t, Time)
 	for _, o := range t.outputs {
 		vec := AverageOf(o)
-		for _, v := range vec {
+		for component, v := range vec {
 			fprint(t, "\t", float32(v))
+			name := NameOf(o)
+			if o.NComp() > 1 {
+				name += compname[component]
+			}
+			columns = append(columns, name)
+			units = append(units, UnitOf(o))
+			values = append(values, v)
 		}
 	}
 	fprintln(t)
+	recordTableHistory(columns, units, values)
 	//t.flush()
 	t.count++
 

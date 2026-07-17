@@ -7,10 +7,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/mumax/3/engine"
 	"github.com/mumax/3/script"
 	"github.com/mumax/3/util"
+	"github.com/mumax/3/webui"
 )
 
 var (
@@ -33,6 +36,17 @@ func main() {
 	flag.Parse()
 	log.SetPrefix("")
 	log.SetFlags(0)
+	engine.FftEnabled = *engine.Flag_fft
+	switch strings.ToLower(*engine.Flag_storage) {
+	case "ovf":
+		engine.StorageFormat = engine.StorageFormatOVF
+	case "zarr":
+		engine.StorageFormat = engine.StorageFormatZarr
+	case "h5", "hdf5":
+		engine.StorageFormat = engine.StorageFormatHDF5
+	default:
+		log.Fatalf("invalid -storage-format %q (want ovf, zarr, or h5)", *engine.Flag_storage)
+	}
 
 	cuda.Init(*engine.Flag_gpu)
 
@@ -72,7 +86,11 @@ func runInteractive() {
 
 	// setup output dir
 	now := time.Now()
-	outdir := fmt.Sprintf("mumax-%v-%02d-%02d_%02dh%02d.out", now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute())
+	extension := ".out"
+	if engine.StorageFormat != engine.StorageFormatOVF {
+		extension = ".zarr"
+	}
+	outdir := fmt.Sprintf("mumax-%v-%02d-%02d_%02dh%02d%s", now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute(), extension)
 	engine.InitIO(outdir, outdir, *engine.Flag_forceclean)
 
 	engine.Timeout = 365 * 24 * time.Hour // basically forever
@@ -84,8 +102,8 @@ func runInteractive() {
 		Aex = 10e-12
 		alpha = 1
 		m = RandomMag()`)
-	addr := goServeGUI()
-	openbrowser("http://127.0.0.1" + addr)
+	webURL := goServeGUI()
+	openbrowser(webURL)
 	engine.RunInteractive()
 }
 
@@ -98,7 +116,11 @@ func runFileAndServe(fname string) {
 }
 
 func runScript(fname string) {
-	outDir := util.NoExt(fname) + ".out"
+	extension := ".out"
+	if engine.StorageFormat != engine.StorageFormatOVF {
+		extension = ".zarr"
+	}
+	outDir := util.NoExt(fname) + extension
 	if *engine.Flag_od != "" {
 		outDir = *engine.Flag_od
 	}
@@ -115,10 +137,10 @@ func runScript(fname string) {
 	}
 
 	// now the parser is not used anymore so it can handle web requests
-	addr := goServeGUI()
+	webURL := goServeGUI()
 
 	if *engine.Flag_interactive {
-		openbrowser("http://127.0.0.1" + addr)
+		openbrowser(webURL)
 	}
 
 	// start executing the tree, possibly injecting commands from web gui
@@ -159,9 +181,44 @@ func goServeGUI() string {
 		log.Println(`//not starting GUI (-http="")`)
 		return ""
 	}
-	addr := engine.GoServe(*engine.Flag_port)
-	fmt.Print("//starting GUI at http://127.0.0.1", addr, "\n")
-	return addr
+	if *engine.Flag_legacygui {
+		addr := engine.GoServe(*engine.Flag_port)
+		url := "http://127.0.0.1" + addr
+		fmt.Print("//starting legacy GUI at ", url, "\n")
+		return url
+	}
+	host, port, basePath, err := parseWebUIAddress(*engine.Flag_port)
+	if err != nil {
+		log.Fatal(err)
+	}
+	go webui.Start(host, port, basePath, *engine.Flag_tunnel, *engine.Flag_webdebug)
+	browserHost := host
+	if browserHost == "0.0.0.0" || browserHost == "::" {
+		browserHost = "127.0.0.1"
+	}
+	url := "http://" + net.JoinHostPort(browserHost, strconv.Itoa(port)) + basePath
+	fmt.Print("//starting new web UI at ", url, "\n")
+	return url
+}
+
+func parseWebUIAddress(raw string) (host string, port int, basePath string, err error) {
+	addressAndPath := strings.SplitN(raw, "/", 2)
+	address := addressAndPath[0]
+	if len(addressAndPath) == 2 && addressAndPath[1] != "" {
+		basePath = "/" + strings.Trim(addressAndPath[1], "/")
+	}
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return "", 0, "", fmt.Errorf("invalid -http address %q: %w", raw, err)
+	}
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port, err = strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return "", 0, "", fmt.Errorf("invalid -http port %q", portText)
+	}
+	return host, port, basePath, nil
 }
 
 // print version to stdout

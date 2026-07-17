@@ -6,15 +6,18 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/mumax/3/cuda"
 	"github.com/mumax/3/data"
 	"github.com/mumax/3/dump"
+	structuredhdf5 "github.com/mumax/3/hdf5"
 	"github.com/mumax/3/httpfs"
 	"github.com/mumax/3/mag"
 	"github.com/mumax/3/oommf"
 	"github.com/mumax/3/util"
+	"github.com/mumax/3/zarr"
 )
 
 func init() {
@@ -26,7 +29,7 @@ func init() {
 	DeclFunc("Vector", Vector, "Constructs a vector with given components")
 	DeclConst("Mu0", mag.Mu0, "Vacuum permeability (Tm/A)")
 	DeclFunc("Print", myprint, "Print to standard output")
-	DeclFunc("LoadFile", LoadFile, "Load a data file (ovf or dump)")
+	DeclFunc("LoadFile", LoadFile, "Load OVF, DUMP, a Zarr dataset/chunk, or an HDF5 file reference file.h5:/dataset")
 	DeclFunc("Index2Coord", Index2Coord, "Convert cell index to x,y,z coordinate in meter")
 	DeclFunc("NewSlice", NewSlice, "Makes a 4D array with a specified number of components (first argument) "+
 		"and a specified size nx,ny,nz (remaining arguments)")
@@ -87,6 +90,21 @@ func Fprintln(filename string, msg ...interface{}) {
 
 // Read a magnetization state from .dump file.
 func LoadFile(fname string) *data.Slice {
+	if h5File, dataset, ok := parseHDF5Reference(fname); ok {
+		s, err := structuredhdf5.ReadArray(h5File, dataset)
+		util.FatalErr(err)
+		return s
+	}
+	if datasetDir, step, ok := parseZarrReference(fname); ok {
+		s, err := zarr.ReadStep(datasetDir, step)
+		util.FatalErr(err)
+		return s
+	}
+	if _, err := zarr.ReadMetadata(fname); err == nil {
+		s, readErr := zarr.ReadStep(fname, 0)
+		util.FatalErr(readErr)
+		return s
+	}
 	in, err := httpfs.Open(fname)
 	util.FatalErr(err)
 	var s *data.Slice
@@ -97,6 +115,48 @@ func LoadFile(fname string) *data.Slice {
 	}
 	util.FatalErr(err)
 	return s
+}
+
+func parseHDF5Reference(reference string) (filename, dataset string, ok bool) {
+	marker := strings.LastIndex(strings.ToLower(reference), ".h5:")
+	if marker < 0 {
+		return "", "", false
+	}
+	filename = reference[:marker+3]
+	dataset = reference[marker+4:]
+	if dataset == "" {
+		dataset = "/0"
+	} else if !strings.HasPrefix(dataset, "/") {
+		dataset = "/" + dataset
+	}
+	return filename, dataset, true
+}
+
+func parseZarrReference(reference string) (datasetDir string, step int, ok bool) {
+	if strings.HasSuffix(reference, "/.zarray") {
+		return path.Dir(reference), 0, true
+	}
+	base := path.Base(reference)
+	parts := strings.Split(base, ".")
+	if len(parts) == 5 {
+		indices := make([]int, len(parts))
+		for i, part := range parts {
+			value, err := strconv.Atoi(part)
+			if err != nil {
+				return "", 0, false
+			}
+			indices[i] = value
+		}
+		return path.Dir(reference), indices[0], true
+	}
+	colon := strings.LastIndex(reference, ":")
+	if colon > strings.LastIndex(reference, "/") {
+		parsedStep, err := strconv.Atoi(reference[colon+1:])
+		if err == nil {
+			return reference[:colon], parsedStep, true
+		}
+	}
+	return "", 0, false
 }
 
 // Download a quantity to host,
