@@ -24,3 +24,4 @@ doc/doc.exe
 node_modules/
 **/.svelte-kit/
 /frontend/dist/
+/mumax3
