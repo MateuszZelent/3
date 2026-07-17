@@ -26,7 +26,8 @@ func init() {
 func SetTotalSize(tx, ty, tz float64) {
 	arg("TotalSize", tx > 0 && ty > 0 && tz > 0)
 	if lazy_gridsize == nil {
-		panic(UserErr("SetTotalSize: set the grid size first"))
+		compatibilitySetTotalSize([3]float64{tx, ty, tz})
+		return
 	}
 	SetCellSize(tx/float64(lazy_gridsize[X]), ty/float64(lazy_gridsize[Y]), tz/float64(lazy_gridsize[Z]))
 }
@@ -122,6 +123,7 @@ func SetMesh(Nx, Ny, Nz int, cellSizeX, cellSizeY, cellSizeZ float64, pbcx, pbcy
 	lazy_gridsize = []int{Nx, Ny, Nz}
 	lazy_cellsize = []float64{cellSizeX, cellSizeY, cellSizeZ}
 	lazy_pbc = []int{pbcx, pbcy, pbcz}
+	syncMeshCompatibility([3]int{Nx, Ny, Nz}, [3]float64{cellSizeX, cellSizeY, cellSizeZ}, [3]int{pbcx, pbcy, pbcz})
 }
 
 func printf(f float64) float32 {
@@ -139,6 +141,8 @@ func SetGridSize(Nx, Ny, Nz int) {
 	lazy_gridsize = []int{Nx, Ny, Nz}
 	if lazy_cellsize != nil {
 		SetMesh(Nx, Ny, Nz, lazy_cellsize[X], lazy_cellsize[Y], lazy_cellsize[Z], lazy_pbc[X], lazy_pbc[Y], lazy_pbc[Z])
+	} else {
+		compatibilitySetGridSize([3]int{Nx, Ny, Nz})
 	}
 }
 
@@ -146,6 +150,8 @@ func SetCellSize(cx, cy, cz float64) {
 	lazy_cellsize = []float64{cx, cy, cz}
 	if lazy_gridsize != nil {
 		SetMesh(lazy_gridsize[X], lazy_gridsize[Y], lazy_gridsize[Z], cx, cy, cz, lazy_pbc[X], lazy_pbc[Y], lazy_pbc[Z])
+	} else {
+		compatibilitySetCellSize([3]float64{cx, cy, cz})
 	}
 }
 
