@@ -6,81 +6,82 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for scaleemergentfield kernel
-var scaleemergentfield_code cu.Function
+var scaleemergentfieldCode cu.Function
 
 // Stores the arguments for scaleemergentfield kernel invocation
-type scaleemergentfield_args_t struct {
-	arg_Fx_scale unsafe.Pointer
-	arg_Fy_scale unsafe.Pointer
-	arg_Fz_scale unsafe.Pointer
-	arg_Fx       unsafe.Pointer
-	arg_Fy       unsafe.Pointer
-	arg_Fz       unsafe.Pointer
-	arg_cx       float32
-	arg_cy       float32
-	arg_cz       float32
-	arg_Nx       int
-	arg_Ny       int
-	arg_Nz       int
-	argptr       [12]unsafe.Pointer
+type scaleemergentfieldArgsT struct {
+	argFxScale unsafe.Pointer
+	argFyScale unsafe.Pointer
+	argFzScale unsafe.Pointer
+	argFx      unsafe.Pointer
+	argFy      unsafe.Pointer
+	argFz      unsafe.Pointer
+	argCx      float32
+	argCy      float32
+	argCz      float32
+	argNx      int
+	argNy      int
+	argNz      int
+	argptr     [12]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for scaleemergentfield kernel invocation
-var scaleemergentfield_args scaleemergentfield_args_t
+var scaleemergentfieldArgs scaleemergentfieldArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	scaleemergentfield_args.argptr[0] = unsafe.Pointer(&scaleemergentfield_args.arg_Fx_scale)
-	scaleemergentfield_args.argptr[1] = unsafe.Pointer(&scaleemergentfield_args.arg_Fy_scale)
-	scaleemergentfield_args.argptr[2] = unsafe.Pointer(&scaleemergentfield_args.arg_Fz_scale)
-	scaleemergentfield_args.argptr[3] = unsafe.Pointer(&scaleemergentfield_args.arg_Fx)
-	scaleemergentfield_args.argptr[4] = unsafe.Pointer(&scaleemergentfield_args.arg_Fy)
-	scaleemergentfield_args.argptr[5] = unsafe.Pointer(&scaleemergentfield_args.arg_Fz)
-	scaleemergentfield_args.argptr[6] = unsafe.Pointer(&scaleemergentfield_args.arg_cx)
-	scaleemergentfield_args.argptr[7] = unsafe.Pointer(&scaleemergentfield_args.arg_cy)
-	scaleemergentfield_args.argptr[8] = unsafe.Pointer(&scaleemergentfield_args.arg_cz)
-	scaleemergentfield_args.argptr[9] = unsafe.Pointer(&scaleemergentfield_args.arg_Nx)
-	scaleemergentfield_args.argptr[10] = unsafe.Pointer(&scaleemergentfield_args.arg_Ny)
-	scaleemergentfield_args.argptr[11] = unsafe.Pointer(&scaleemergentfield_args.arg_Nz)
+	scaleemergentfieldArgs.argptr[0] = unsafe.Pointer(&scaleemergentfieldArgs.argFxScale)
+	scaleemergentfieldArgs.argptr[1] = unsafe.Pointer(&scaleemergentfieldArgs.argFyScale)
+	scaleemergentfieldArgs.argptr[2] = unsafe.Pointer(&scaleemergentfieldArgs.argFzScale)
+	scaleemergentfieldArgs.argptr[3] = unsafe.Pointer(&scaleemergentfieldArgs.argFx)
+	scaleemergentfieldArgs.argptr[4] = unsafe.Pointer(&scaleemergentfieldArgs.argFy)
+	scaleemergentfieldArgs.argptr[5] = unsafe.Pointer(&scaleemergentfieldArgs.argFz)
+	scaleemergentfieldArgs.argptr[6] = unsafe.Pointer(&scaleemergentfieldArgs.argCx)
+	scaleemergentfieldArgs.argptr[7] = unsafe.Pointer(&scaleemergentfieldArgs.argCy)
+	scaleemergentfieldArgs.argptr[8] = unsafe.Pointer(&scaleemergentfieldArgs.argCz)
+	scaleemergentfieldArgs.argptr[9] = unsafe.Pointer(&scaleemergentfieldArgs.argNx)
+	scaleemergentfieldArgs.argptr[10] = unsafe.Pointer(&scaleemergentfieldArgs.argNy)
+	scaleemergentfieldArgs.argptr[11] = unsafe.Pointer(&scaleemergentfieldArgs.argNz)
 }
 
 // Wrapper for scaleemergentfield CUDA kernel, asynchronous.
-func k_scaleemergentfield_async(Fx_scale unsafe.Pointer, Fy_scale unsafe.Pointer, Fz_scale unsafe.Pointer, Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, cx float32, cy float32, cz float32, Nx int, Ny int, Nz int, cfg *config) {
+func kScaleemergentfieldAsync(Fx_scale unsafe.Pointer, Fy_scale unsafe.Pointer, Fz_scale unsafe.Pointer, Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, cx float32, cy float32, cz float32, Nx int, Ny int, Nz int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("scaleemergentfield")
 	}
 
-	scaleemergentfield_args.Lock()
-	defer scaleemergentfield_args.Unlock()
+	scaleemergentfieldArgs.Lock()
+	defer scaleemergentfieldArgs.Unlock()
 
-	if scaleemergentfield_code == 0 {
-		scaleemergentfield_code = fatbinLoad(scaleemergentfield_map, "scaleemergentfield")
+	if scaleemergentfieldCode == 0 {
+		scaleemergentfieldCode = fatbinLoad(scaleemergentfieldMap, "scaleemergentfield")
 	}
 
-	scaleemergentfield_args.arg_Fx_scale = Fx_scale
-	scaleemergentfield_args.arg_Fy_scale = Fy_scale
-	scaleemergentfield_args.arg_Fz_scale = Fz_scale
-	scaleemergentfield_args.arg_Fx = Fx
-	scaleemergentfield_args.arg_Fy = Fy
-	scaleemergentfield_args.arg_Fz = Fz
-	scaleemergentfield_args.arg_cx = cx
-	scaleemergentfield_args.arg_cy = cy
-	scaleemergentfield_args.arg_cz = cz
-	scaleemergentfield_args.arg_Nx = Nx
-	scaleemergentfield_args.arg_Ny = Ny
-	scaleemergentfield_args.arg_Nz = Nz
+	scaleemergentfieldArgs.argFxScale = Fx_scale
+	scaleemergentfieldArgs.argFyScale = Fy_scale
+	scaleemergentfieldArgs.argFzScale = Fz_scale
+	scaleemergentfieldArgs.argFx = Fx
+	scaleemergentfieldArgs.argFy = Fy
+	scaleemergentfieldArgs.argFz = Fz
+	scaleemergentfieldArgs.argCx = cx
+	scaleemergentfieldArgs.argCy = cy
+	scaleemergentfieldArgs.argCz = cz
+	scaleemergentfieldArgs.argNx = Nx
+	scaleemergentfieldArgs.argNy = Ny
+	scaleemergentfieldArgs.argNz = Nz
 
-	args := scaleemergentfield_args.argptr[:]
-	cu.LaunchKernel(scaleemergentfield_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := scaleemergentfieldArgs.argptr[:]
+	cu.LaunchKernel(scaleemergentfieldCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -88,27 +89,38 @@ func k_scaleemergentfield_async(Fx_scale unsafe.Pointer, Fy_scale unsafe.Pointer
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_scaleemergentfield_async(Fx_scale unsafe.Pointer, Fy_scale unsafe.Pointer, Fz_scale unsafe.Pointer, Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, cx float32, cy float32, cz float32, Nx int, Ny int, Nz int, cfg *config) {
+	kScaleemergentfieldAsync(Fx_scale, Fy_scale, Fz_scale, Fx, Fy, Fz, cx, cy, cz, Nx, Ny, Nz, cfg)
+}
+
 // maps compute capability on PTX code for scaleemergentfield kernel.
-var scaleemergentfield_map = map[int]string{0: "",
-	50: scaleemergentfield_ptx_50,
-	52: scaleemergentfield_ptx_52,
-	53: scaleemergentfield_ptx_53,
-	60: scaleemergentfield_ptx_60,
-	61: scaleemergentfield_ptx_61,
-	62: scaleemergentfield_ptx_62,
-	70: scaleemergentfield_ptx_70,
-	72: scaleemergentfield_ptx_72,
-	75: scaleemergentfield_ptx_75,
-	80: scaleemergentfield_ptx_80,
-	86: scaleemergentfield_ptx_86,
-	87: scaleemergentfield_ptx_87,
-	89: scaleemergentfield_ptx_89,
-	90: scaleemergentfield_ptx_90}
+var scaleemergentfieldMap = map[int]string{
+	0:  "",
+	50: scaleemergentfieldPtx50,
+	52: scaleemergentfieldPtx52,
+	53: scaleemergentfieldPtx53,
+	60: scaleemergentfieldPtx60,
+	61: scaleemergentfieldPtx61,
+	62: scaleemergentfieldPtx62,
+	70: scaleemergentfieldPtx70,
+	72: scaleemergentfieldPtx72,
+	75: scaleemergentfieldPtx75,
+	80: scaleemergentfieldPtx80,
+	86: scaleemergentfieldPtx86,
+	87: scaleemergentfieldPtx87,
+	89: scaleemergentfieldPtx89,
+	90: scaleemergentfieldPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var scaleemergentfield_map = scaleemergentfieldMap
 
 // scaleemergentfield PTX code for various compute capabilities.
 const (
-	scaleemergentfield_ptx_50 = `
-.version 8.5
+	scaleemergentfieldPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -200,8 +212,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_52 = `
-.version 8.5
+	scaleemergentfieldPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -293,8 +305,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_53 = `
-.version 8.5
+	scaleemergentfieldPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -386,8 +398,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_60 = `
-.version 8.5
+	scaleemergentfieldPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -479,8 +491,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_61 = `
-.version 8.5
+	scaleemergentfieldPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -572,8 +584,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_62 = `
-.version 8.5
+	scaleemergentfieldPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -665,8 +677,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_70 = `
-.version 8.5
+	scaleemergentfieldPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -758,8 +770,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_72 = `
-.version 8.5
+	scaleemergentfieldPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -851,8 +863,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_75 = `
-.version 8.5
+	scaleemergentfieldPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -944,8 +956,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_80 = `
-.version 8.5
+	scaleemergentfieldPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1037,8 +1049,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_86 = `
-.version 8.5
+	scaleemergentfieldPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1130,8 +1142,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_87 = `
-.version 8.5
+	scaleemergentfieldPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1223,8 +1235,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_89 = `
-.version 8.5
+	scaleemergentfieldPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1316,8 +1328,8 @@ $L__BB0_2:
 }
 
 `
-	scaleemergentfield_ptx_90 = `
-.version 8.5
+	scaleemergentfieldPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

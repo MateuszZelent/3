@@ -6,57 +6,58 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for pointwise_div kernel
-var pointwise_div_code cu.Function
+var pointwiseDivCode cu.Function
 
 // Stores the arguments for pointwise_div kernel invocation
-type pointwise_div_args_t struct {
-	arg_dst unsafe.Pointer
-	arg_a   unsafe.Pointer
-	arg_b   unsafe.Pointer
-	arg_N   int
-	argptr  [4]unsafe.Pointer
+type pointwiseDivArgsT struct {
+	argDst unsafe.Pointer
+	argA   unsafe.Pointer
+	argB   unsafe.Pointer
+	argN   int
+	argptr [4]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for pointwise_div kernel invocation
-var pointwise_div_args pointwise_div_args_t
+var pointwiseDivArgs pointwiseDivArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	pointwise_div_args.argptr[0] = unsafe.Pointer(&pointwise_div_args.arg_dst)
-	pointwise_div_args.argptr[1] = unsafe.Pointer(&pointwise_div_args.arg_a)
-	pointwise_div_args.argptr[2] = unsafe.Pointer(&pointwise_div_args.arg_b)
-	pointwise_div_args.argptr[3] = unsafe.Pointer(&pointwise_div_args.arg_N)
+	pointwiseDivArgs.argptr[0] = unsafe.Pointer(&pointwiseDivArgs.argDst)
+	pointwiseDivArgs.argptr[1] = unsafe.Pointer(&pointwiseDivArgs.argA)
+	pointwiseDivArgs.argptr[2] = unsafe.Pointer(&pointwiseDivArgs.argB)
+	pointwiseDivArgs.argptr[3] = unsafe.Pointer(&pointwiseDivArgs.argN)
 }
 
 // Wrapper for pointwise_div CUDA kernel, asynchronous.
-func k_pointwise_div_async(dst unsafe.Pointer, a unsafe.Pointer, b unsafe.Pointer, N int, cfg *config) {
+func kPointwiseDivAsync(dst unsafe.Pointer, a unsafe.Pointer, b unsafe.Pointer, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("pointwise_div")
 	}
 
-	pointwise_div_args.Lock()
-	defer pointwise_div_args.Unlock()
+	pointwiseDivArgs.Lock()
+	defer pointwiseDivArgs.Unlock()
 
-	if pointwise_div_code == 0 {
-		pointwise_div_code = fatbinLoad(pointwise_div_map, "pointwise_div")
+	if pointwiseDivCode == 0 {
+		pointwiseDivCode = fatbinLoad(pointwiseDivMap, "pointwise_div")
 	}
 
-	pointwise_div_args.arg_dst = dst
-	pointwise_div_args.arg_a = a
-	pointwise_div_args.arg_b = b
-	pointwise_div_args.arg_N = N
+	pointwiseDivArgs.argDst = dst
+	pointwiseDivArgs.argA = a
+	pointwiseDivArgs.argB = b
+	pointwiseDivArgs.argN = N
 
-	args := pointwise_div_args.argptr[:]
-	cu.LaunchKernel(pointwise_div_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := pointwiseDivArgs.argptr[:]
+	cu.LaunchKernel(pointwiseDivCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -64,27 +65,38 @@ func k_pointwise_div_async(dst unsafe.Pointer, a unsafe.Pointer, b unsafe.Pointe
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_pointwise_div_async(dst unsafe.Pointer, a unsafe.Pointer, b unsafe.Pointer, N int, cfg *config) {
+	kPointwiseDivAsync(dst, a, b, N, cfg)
+}
+
 // maps compute capability on PTX code for pointwise_div kernel.
-var pointwise_div_map = map[int]string{0: "",
-	50: pointwise_div_ptx_50,
-	52: pointwise_div_ptx_52,
-	53: pointwise_div_ptx_53,
-	60: pointwise_div_ptx_60,
-	61: pointwise_div_ptx_61,
-	62: pointwise_div_ptx_62,
-	70: pointwise_div_ptx_70,
-	72: pointwise_div_ptx_72,
-	75: pointwise_div_ptx_75,
-	80: pointwise_div_ptx_80,
-	86: pointwise_div_ptx_86,
-	87: pointwise_div_ptx_87,
-	89: pointwise_div_ptx_89,
-	90: pointwise_div_ptx_90}
+var pointwiseDivMap = map[int]string{
+	0:  "",
+	50: pointwiseDivPtx50,
+	52: pointwiseDivPtx52,
+	53: pointwiseDivPtx53,
+	60: pointwiseDivPtx60,
+	61: pointwiseDivPtx61,
+	62: pointwiseDivPtx62,
+	70: pointwiseDivPtx70,
+	72: pointwiseDivPtx72,
+	75: pointwiseDivPtx75,
+	80: pointwiseDivPtx80,
+	86: pointwiseDivPtx86,
+	87: pointwiseDivPtx87,
+	89: pointwiseDivPtx89,
+	90: pointwiseDivPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var pointwise_div_map = pointwiseDivMap
 
 // pointwise_div PTX code for various compute capabilities.
 const (
-	pointwise_div_ptx_50 = `
-.version 8.5
+	pointwiseDivPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -147,8 +159,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_52 = `
-.version 8.5
+	pointwiseDivPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -211,8 +223,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_53 = `
-.version 8.5
+	pointwiseDivPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -275,8 +287,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_60 = `
-.version 8.5
+	pointwiseDivPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -339,8 +351,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_61 = `
-.version 8.5
+	pointwiseDivPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -403,8 +415,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_62 = `
-.version 8.5
+	pointwiseDivPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -467,8 +479,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_70 = `
-.version 8.5
+	pointwiseDivPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -531,8 +543,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_72 = `
-.version 8.5
+	pointwiseDivPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -595,8 +607,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_75 = `
-.version 8.5
+	pointwiseDivPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -659,8 +671,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_80 = `
-.version 8.5
+	pointwiseDivPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -723,8 +735,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_86 = `
-.version 8.5
+	pointwiseDivPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -787,8 +799,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_87 = `
-.version 8.5
+	pointwiseDivPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -851,8 +863,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_89 = `
-.version 8.5
+	pointwiseDivPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -915,8 +927,8 @@ $L__BB0_4:
 }
 
 `
-	pointwise_div_ptx_90 = `
-.version 8.5
+	pointwiseDivPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

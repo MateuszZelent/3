@@ -6,72 +6,73 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for settopologicalchargelattice kernel
-var settopologicalchargelattice_code cu.Function
+var settopologicalchargelatticeCode cu.Function
 
 // Stores the arguments for settopologicalchargelattice kernel invocation
-type settopologicalchargelattice_args_t struct {
-	arg_s     unsafe.Pointer
-	arg_mx    unsafe.Pointer
-	arg_my    unsafe.Pointer
-	arg_mz    unsafe.Pointer
-	arg_icxcy float32
-	arg_Nx    int
-	arg_Ny    int
-	arg_Nz    int
-	arg_PBC   byte
-	argptr    [9]unsafe.Pointer
+type settopologicalchargelatticeArgsT struct {
+	argS     unsafe.Pointer
+	argMx    unsafe.Pointer
+	argMy    unsafe.Pointer
+	argMz    unsafe.Pointer
+	argIcxcy float32
+	argNx    int
+	argNy    int
+	argNz    int
+	argPBC   byte
+	argptr   [9]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for settopologicalchargelattice kernel invocation
-var settopologicalchargelattice_args settopologicalchargelattice_args_t
+var settopologicalchargelatticeArgs settopologicalchargelatticeArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	settopologicalchargelattice_args.argptr[0] = unsafe.Pointer(&settopologicalchargelattice_args.arg_s)
-	settopologicalchargelattice_args.argptr[1] = unsafe.Pointer(&settopologicalchargelattice_args.arg_mx)
-	settopologicalchargelattice_args.argptr[2] = unsafe.Pointer(&settopologicalchargelattice_args.arg_my)
-	settopologicalchargelattice_args.argptr[3] = unsafe.Pointer(&settopologicalchargelattice_args.arg_mz)
-	settopologicalchargelattice_args.argptr[4] = unsafe.Pointer(&settopologicalchargelattice_args.arg_icxcy)
-	settopologicalchargelattice_args.argptr[5] = unsafe.Pointer(&settopologicalchargelattice_args.arg_Nx)
-	settopologicalchargelattice_args.argptr[6] = unsafe.Pointer(&settopologicalchargelattice_args.arg_Ny)
-	settopologicalchargelattice_args.argptr[7] = unsafe.Pointer(&settopologicalchargelattice_args.arg_Nz)
-	settopologicalchargelattice_args.argptr[8] = unsafe.Pointer(&settopologicalchargelattice_args.arg_PBC)
+	settopologicalchargelatticeArgs.argptr[0] = unsafe.Pointer(&settopologicalchargelatticeArgs.argS)
+	settopologicalchargelatticeArgs.argptr[1] = unsafe.Pointer(&settopologicalchargelatticeArgs.argMx)
+	settopologicalchargelatticeArgs.argptr[2] = unsafe.Pointer(&settopologicalchargelatticeArgs.argMy)
+	settopologicalchargelatticeArgs.argptr[3] = unsafe.Pointer(&settopologicalchargelatticeArgs.argMz)
+	settopologicalchargelatticeArgs.argptr[4] = unsafe.Pointer(&settopologicalchargelatticeArgs.argIcxcy)
+	settopologicalchargelatticeArgs.argptr[5] = unsafe.Pointer(&settopologicalchargelatticeArgs.argNx)
+	settopologicalchargelatticeArgs.argptr[6] = unsafe.Pointer(&settopologicalchargelatticeArgs.argNy)
+	settopologicalchargelatticeArgs.argptr[7] = unsafe.Pointer(&settopologicalchargelatticeArgs.argNz)
+	settopologicalchargelatticeArgs.argptr[8] = unsafe.Pointer(&settopologicalchargelatticeArgs.argPBC)
 }
 
 // Wrapper for settopologicalchargelattice CUDA kernel, asynchronous.
-func k_settopologicalchargelattice_async(s unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+func kSettopologicalchargelatticeAsync(s unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("settopologicalchargelattice")
 	}
 
-	settopologicalchargelattice_args.Lock()
-	defer settopologicalchargelattice_args.Unlock()
+	settopologicalchargelatticeArgs.Lock()
+	defer settopologicalchargelatticeArgs.Unlock()
 
-	if settopologicalchargelattice_code == 0 {
-		settopologicalchargelattice_code = fatbinLoad(settopologicalchargelattice_map, "settopologicalchargelattice")
+	if settopologicalchargelatticeCode == 0 {
+		settopologicalchargelatticeCode = fatbinLoad(settopologicalchargelatticeMap, "settopologicalchargelattice")
 	}
 
-	settopologicalchargelattice_args.arg_s = s
-	settopologicalchargelattice_args.arg_mx = mx
-	settopologicalchargelattice_args.arg_my = my
-	settopologicalchargelattice_args.arg_mz = mz
-	settopologicalchargelattice_args.arg_icxcy = icxcy
-	settopologicalchargelattice_args.arg_Nx = Nx
-	settopologicalchargelattice_args.arg_Ny = Ny
-	settopologicalchargelattice_args.arg_Nz = Nz
-	settopologicalchargelattice_args.arg_PBC = PBC
+	settopologicalchargelatticeArgs.argS = s
+	settopologicalchargelatticeArgs.argMx = mx
+	settopologicalchargelatticeArgs.argMy = my
+	settopologicalchargelatticeArgs.argMz = mz
+	settopologicalchargelatticeArgs.argIcxcy = icxcy
+	settopologicalchargelatticeArgs.argNx = Nx
+	settopologicalchargelatticeArgs.argNy = Ny
+	settopologicalchargelatticeArgs.argNz = Nz
+	settopologicalchargelatticeArgs.argPBC = PBC
 
-	args := settopologicalchargelattice_args.argptr[:]
-	cu.LaunchKernel(settopologicalchargelattice_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := settopologicalchargelatticeArgs.argptr[:]
+	cu.LaunchKernel(settopologicalchargelatticeCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -79,27 +80,38 @@ func k_settopologicalchargelattice_async(s unsafe.Pointer, mx unsafe.Pointer, my
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_settopologicalchargelattice_async(s unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+	kSettopologicalchargelatticeAsync(s, mx, my, mz, icxcy, Nx, Ny, Nz, PBC, cfg)
+}
+
 // maps compute capability on PTX code for settopologicalchargelattice kernel.
-var settopologicalchargelattice_map = map[int]string{0: "",
-	50: settopologicalchargelattice_ptx_50,
-	52: settopologicalchargelattice_ptx_52,
-	53: settopologicalchargelattice_ptx_53,
-	60: settopologicalchargelattice_ptx_60,
-	61: settopologicalchargelattice_ptx_61,
-	62: settopologicalchargelattice_ptx_62,
-	70: settopologicalchargelattice_ptx_70,
-	72: settopologicalchargelattice_ptx_72,
-	75: settopologicalchargelattice_ptx_75,
-	80: settopologicalchargelattice_ptx_80,
-	86: settopologicalchargelattice_ptx_86,
-	87: settopologicalchargelattice_ptx_87,
-	89: settopologicalchargelattice_ptx_89,
-	90: settopologicalchargelattice_ptx_90}
+var settopologicalchargelatticeMap = map[int]string{
+	0:  "",
+	50: settopologicalchargelatticePtx50,
+	52: settopologicalchargelatticePtx52,
+	53: settopologicalchargelatticePtx53,
+	60: settopologicalchargelatticePtx60,
+	61: settopologicalchargelatticePtx61,
+	62: settopologicalchargelatticePtx62,
+	70: settopologicalchargelatticePtx70,
+	72: settopologicalchargelatticePtx72,
+	75: settopologicalchargelatticePtx75,
+	80: settopologicalchargelatticePtx80,
+	86: settopologicalchargelatticePtx86,
+	87: settopologicalchargelatticePtx87,
+	89: settopologicalchargelatticePtx89,
+	90: settopologicalchargelatticePtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var settopologicalchargelattice_map = settopologicalchargelatticeMap
 
 // settopologicalchargelattice PTX code for various compute capabilities.
 const (
-	settopologicalchargelattice_ptx_50 = `
-.version 8.5
+	settopologicalchargelatticePtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -883,8 +895,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_52 = `
-.version 8.5
+	settopologicalchargelatticePtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -1668,8 +1680,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_53 = `
-.version 8.5
+	settopologicalchargelatticePtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -2453,8 +2465,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_60 = `
-.version 8.5
+	settopologicalchargelatticePtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -3238,8 +3250,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_61 = `
-.version 8.5
+	settopologicalchargelatticePtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -4023,8 +4035,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_62 = `
-.version 8.5
+	settopologicalchargelatticePtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -4808,8 +4820,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_70 = `
-.version 8.5
+	settopologicalchargelatticePtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -5593,8 +5605,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_72 = `
-.version 8.5
+	settopologicalchargelatticePtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -6378,8 +6390,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_75 = `
-.version 8.5
+	settopologicalchargelatticePtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -7163,8 +7175,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_80 = `
-.version 8.5
+	settopologicalchargelatticePtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -7948,8 +7960,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_86 = `
-.version 8.5
+	settopologicalchargelatticePtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -8733,8 +8745,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_87 = `
-.version 8.5
+	settopologicalchargelatticePtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -9518,8 +9530,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_89 = `
-.version 8.5
+	settopologicalchargelatticePtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -10303,8 +10315,8 @@ $L__BB0_71:
 }
 
 `
-	settopologicalchargelattice_ptx_90 = `
-.version 8.5
+	settopologicalchargelatticePtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

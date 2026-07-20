@@ -6,66 +6,67 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for shiftbytes kernel
-var shiftbytes_code cu.Function
+var shiftbytesCode cu.Function
 
 // Stores the arguments for shiftbytes kernel invocation
-type shiftbytes_args_t struct {
-	arg_dst   unsafe.Pointer
-	arg_src   unsafe.Pointer
-	arg_Nx    int
-	arg_Ny    int
-	arg_Nz    int
-	arg_shx   int
-	arg_clamp byte
-	argptr    [7]unsafe.Pointer
+type shiftbytesArgsT struct {
+	argDst   unsafe.Pointer
+	argSrc   unsafe.Pointer
+	argNx    int
+	argNy    int
+	argNz    int
+	argShx   int
+	argClamp byte
+	argptr   [7]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for shiftbytes kernel invocation
-var shiftbytes_args shiftbytes_args_t
+var shiftbytesArgs shiftbytesArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	shiftbytes_args.argptr[0] = unsafe.Pointer(&shiftbytes_args.arg_dst)
-	shiftbytes_args.argptr[1] = unsafe.Pointer(&shiftbytes_args.arg_src)
-	shiftbytes_args.argptr[2] = unsafe.Pointer(&shiftbytes_args.arg_Nx)
-	shiftbytes_args.argptr[3] = unsafe.Pointer(&shiftbytes_args.arg_Ny)
-	shiftbytes_args.argptr[4] = unsafe.Pointer(&shiftbytes_args.arg_Nz)
-	shiftbytes_args.argptr[5] = unsafe.Pointer(&shiftbytes_args.arg_shx)
-	shiftbytes_args.argptr[6] = unsafe.Pointer(&shiftbytes_args.arg_clamp)
+	shiftbytesArgs.argptr[0] = unsafe.Pointer(&shiftbytesArgs.argDst)
+	shiftbytesArgs.argptr[1] = unsafe.Pointer(&shiftbytesArgs.argSrc)
+	shiftbytesArgs.argptr[2] = unsafe.Pointer(&shiftbytesArgs.argNx)
+	shiftbytesArgs.argptr[3] = unsafe.Pointer(&shiftbytesArgs.argNy)
+	shiftbytesArgs.argptr[4] = unsafe.Pointer(&shiftbytesArgs.argNz)
+	shiftbytesArgs.argptr[5] = unsafe.Pointer(&shiftbytesArgs.argShx)
+	shiftbytesArgs.argptr[6] = unsafe.Pointer(&shiftbytesArgs.argClamp)
 }
 
 // Wrapper for shiftbytes CUDA kernel, asynchronous.
-func k_shiftbytes_async(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int, Nz int, shx int, clamp byte, cfg *config) {
+func kShiftbytesAsync(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int, Nz int, shx int, clamp byte, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("shiftbytes")
 	}
 
-	shiftbytes_args.Lock()
-	defer shiftbytes_args.Unlock()
+	shiftbytesArgs.Lock()
+	defer shiftbytesArgs.Unlock()
 
-	if shiftbytes_code == 0 {
-		shiftbytes_code = fatbinLoad(shiftbytes_map, "shiftbytes")
+	if shiftbytesCode == 0 {
+		shiftbytesCode = fatbinLoad(shiftbytesMap, "shiftbytes")
 	}
 
-	shiftbytes_args.arg_dst = dst
-	shiftbytes_args.arg_src = src
-	shiftbytes_args.arg_Nx = Nx
-	shiftbytes_args.arg_Ny = Ny
-	shiftbytes_args.arg_Nz = Nz
-	shiftbytes_args.arg_shx = shx
-	shiftbytes_args.arg_clamp = clamp
+	shiftbytesArgs.argDst = dst
+	shiftbytesArgs.argSrc = src
+	shiftbytesArgs.argNx = Nx
+	shiftbytesArgs.argNy = Ny
+	shiftbytesArgs.argNz = Nz
+	shiftbytesArgs.argShx = shx
+	shiftbytesArgs.argClamp = clamp
 
-	args := shiftbytes_args.argptr[:]
-	cu.LaunchKernel(shiftbytes_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := shiftbytesArgs.argptr[:]
+	cu.LaunchKernel(shiftbytesCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -73,27 +74,38 @@ func k_shiftbytes_async(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int, 
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_shiftbytes_async(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int, Nz int, shx int, clamp byte, cfg *config) {
+	kShiftbytesAsync(dst, src, Nx, Ny, Nz, shx, clamp, cfg)
+}
+
 // maps compute capability on PTX code for shiftbytes kernel.
-var shiftbytes_map = map[int]string{0: "",
-	50: shiftbytes_ptx_50,
-	52: shiftbytes_ptx_52,
-	53: shiftbytes_ptx_53,
-	60: shiftbytes_ptx_60,
-	61: shiftbytes_ptx_61,
-	62: shiftbytes_ptx_62,
-	70: shiftbytes_ptx_70,
-	72: shiftbytes_ptx_72,
-	75: shiftbytes_ptx_75,
-	80: shiftbytes_ptx_80,
-	86: shiftbytes_ptx_86,
-	87: shiftbytes_ptx_87,
-	89: shiftbytes_ptx_89,
-	90: shiftbytes_ptx_90}
+var shiftbytesMap = map[int]string{
+	0:  "",
+	50: shiftbytesPtx50,
+	52: shiftbytesPtx52,
+	53: shiftbytesPtx53,
+	60: shiftbytesPtx60,
+	61: shiftbytesPtx61,
+	62: shiftbytesPtx62,
+	70: shiftbytesPtx70,
+	72: shiftbytesPtx72,
+	75: shiftbytesPtx75,
+	80: shiftbytesPtx80,
+	86: shiftbytesPtx86,
+	87: shiftbytesPtx87,
+	89: shiftbytesPtx89,
+	90: shiftbytesPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var shiftbytes_map = shiftbytesMap
 
 // shiftbytes PTX code for various compute capabilities.
 const (
-	shiftbytes_ptx_50 = `
-.version 8.5
+	shiftbytesPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -168,8 +180,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_52 = `
-.version 8.5
+	shiftbytesPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -244,8 +256,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_53 = `
-.version 8.5
+	shiftbytesPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -320,8 +332,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_60 = `
-.version 8.5
+	shiftbytesPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -396,8 +408,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_61 = `
-.version 8.5
+	shiftbytesPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -472,8 +484,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_62 = `
-.version 8.5
+	shiftbytesPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -548,8 +560,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_70 = `
-.version 8.5
+	shiftbytesPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -624,8 +636,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_72 = `
-.version 8.5
+	shiftbytesPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -700,8 +712,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_75 = `
-.version 8.5
+	shiftbytesPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -776,8 +788,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_80 = `
-.version 8.5
+	shiftbytesPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -852,8 +864,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_86 = `
-.version 8.5
+	shiftbytesPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -928,8 +940,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_87 = `
-.version 8.5
+	shiftbytesPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1004,8 +1016,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_89 = `
-.version 8.5
+	shiftbytesPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1080,8 +1092,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytes_ptx_90 = `
-.version 8.5
+	shiftbytesPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

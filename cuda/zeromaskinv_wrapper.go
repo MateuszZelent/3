@@ -6,57 +6,58 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for zeromaskinv kernel
-var zeromaskinv_code cu.Function
+var zeromaskinvCode cu.Function
 
 // Stores the arguments for zeromaskinv kernel invocation
-type zeromaskinv_args_t struct {
-	arg_dst     unsafe.Pointer
-	arg_maskLUT unsafe.Pointer
-	arg_regions unsafe.Pointer
-	arg_N       int
-	argptr      [4]unsafe.Pointer
+type zeromaskinvArgsT struct {
+	argDst     unsafe.Pointer
+	argMaskLUT unsafe.Pointer
+	argRegions unsafe.Pointer
+	argN       int
+	argptr     [4]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for zeromaskinv kernel invocation
-var zeromaskinv_args zeromaskinv_args_t
+var zeromaskinvArgs zeromaskinvArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	zeromaskinv_args.argptr[0] = unsafe.Pointer(&zeromaskinv_args.arg_dst)
-	zeromaskinv_args.argptr[1] = unsafe.Pointer(&zeromaskinv_args.arg_maskLUT)
-	zeromaskinv_args.argptr[2] = unsafe.Pointer(&zeromaskinv_args.arg_regions)
-	zeromaskinv_args.argptr[3] = unsafe.Pointer(&zeromaskinv_args.arg_N)
+	zeromaskinvArgs.argptr[0] = unsafe.Pointer(&zeromaskinvArgs.argDst)
+	zeromaskinvArgs.argptr[1] = unsafe.Pointer(&zeromaskinvArgs.argMaskLUT)
+	zeromaskinvArgs.argptr[2] = unsafe.Pointer(&zeromaskinvArgs.argRegions)
+	zeromaskinvArgs.argptr[3] = unsafe.Pointer(&zeromaskinvArgs.argN)
 }
 
 // Wrapper for zeromaskinv CUDA kernel, asynchronous.
-func k_zeromaskinv_async(dst unsafe.Pointer, maskLUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
+func kZeromaskinvAsync(dst unsafe.Pointer, maskLUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("zeromaskinv")
 	}
 
-	zeromaskinv_args.Lock()
-	defer zeromaskinv_args.Unlock()
+	zeromaskinvArgs.Lock()
+	defer zeromaskinvArgs.Unlock()
 
-	if zeromaskinv_code == 0 {
-		zeromaskinv_code = fatbinLoad(zeromaskinv_map, "zeromaskinv")
+	if zeromaskinvCode == 0 {
+		zeromaskinvCode = fatbinLoad(zeromaskinvMap, "zeromaskinv")
 	}
 
-	zeromaskinv_args.arg_dst = dst
-	zeromaskinv_args.arg_maskLUT = maskLUT
-	zeromaskinv_args.arg_regions = regions
-	zeromaskinv_args.arg_N = N
+	zeromaskinvArgs.argDst = dst
+	zeromaskinvArgs.argMaskLUT = maskLUT
+	zeromaskinvArgs.argRegions = regions
+	zeromaskinvArgs.argN = N
 
-	args := zeromaskinv_args.argptr[:]
-	cu.LaunchKernel(zeromaskinv_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := zeromaskinvArgs.argptr[:]
+	cu.LaunchKernel(zeromaskinvCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -64,27 +65,38 @@ func k_zeromaskinv_async(dst unsafe.Pointer, maskLUT unsafe.Pointer, regions uns
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_zeromaskinv_async(dst unsafe.Pointer, maskLUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
+	kZeromaskinvAsync(dst, maskLUT, regions, N, cfg)
+}
+
 // maps compute capability on PTX code for zeromaskinv kernel.
-var zeromaskinv_map = map[int]string{0: "",
-	50: zeromaskinv_ptx_50,
-	52: zeromaskinv_ptx_52,
-	53: zeromaskinv_ptx_53,
-	60: zeromaskinv_ptx_60,
-	61: zeromaskinv_ptx_61,
-	62: zeromaskinv_ptx_62,
-	70: zeromaskinv_ptx_70,
-	72: zeromaskinv_ptx_72,
-	75: zeromaskinv_ptx_75,
-	80: zeromaskinv_ptx_80,
-	86: zeromaskinv_ptx_86,
-	87: zeromaskinv_ptx_87,
-	89: zeromaskinv_ptx_89,
-	90: zeromaskinv_ptx_90}
+var zeromaskinvMap = map[int]string{
+	0:  "",
+	50: zeromaskinvPtx50,
+	52: zeromaskinvPtx52,
+	53: zeromaskinvPtx53,
+	60: zeromaskinvPtx60,
+	61: zeromaskinvPtx61,
+	62: zeromaskinvPtx62,
+	70: zeromaskinvPtx70,
+	72: zeromaskinvPtx72,
+	75: zeromaskinvPtx75,
+	80: zeromaskinvPtx80,
+	86: zeromaskinvPtx86,
+	87: zeromaskinvPtx87,
+	89: zeromaskinvPtx89,
+	90: zeromaskinvPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var zeromaskinv_map = zeromaskinvMap
 
 // zeromaskinv PTX code for various compute capabilities.
 const (
-	zeromaskinv_ptx_50 = `
-.version 8.5
+	zeromaskinvPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -143,8 +155,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_52 = `
-.version 8.5
+	zeromaskinvPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -203,8 +215,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_53 = `
-.version 8.5
+	zeromaskinvPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -263,8 +275,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_60 = `
-.version 8.5
+	zeromaskinvPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -323,8 +335,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_61 = `
-.version 8.5
+	zeromaskinvPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -383,8 +395,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_62 = `
-.version 8.5
+	zeromaskinvPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -443,8 +455,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_70 = `
-.version 8.5
+	zeromaskinvPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -503,8 +515,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_72 = `
-.version 8.5
+	zeromaskinvPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -563,8 +575,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_75 = `
-.version 8.5
+	zeromaskinvPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -623,8 +635,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_80 = `
-.version 8.5
+	zeromaskinvPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -683,8 +695,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_86 = `
-.version 8.5
+	zeromaskinvPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -743,8 +755,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_87 = `
-.version 8.5
+	zeromaskinvPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -803,8 +815,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_89 = `
-.version 8.5
+	zeromaskinvPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -863,8 +875,8 @@ $L__BB0_3:
 }
 
 `
-	zeromaskinv_ptx_90 = `
-.version 8.5
+	zeromaskinvPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

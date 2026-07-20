@@ -6,66 +6,67 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for cellindices kernel
-var cellindices_code cu.Function
+var cellindicesCode cu.Function
 
 // Stores the arguments for cellindices kernel invocation
-type cellindices_args_t struct {
-	arg_dstx unsafe.Pointer
-	arg_dsty unsafe.Pointer
-	arg_dstz unsafe.Pointer
-	arg_nx   float32
-	arg_ny   float32
-	arg_nz   float32
-	arg_N    int
-	argptr   [7]unsafe.Pointer
+type cellindicesArgsT struct {
+	argDstx unsafe.Pointer
+	argDsty unsafe.Pointer
+	argDstz unsafe.Pointer
+	argNx   float32
+	argNy   float32
+	argNz   float32
+	argN    int
+	argptr  [7]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for cellindices kernel invocation
-var cellindices_args cellindices_args_t
+var cellindicesArgs cellindicesArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	cellindices_args.argptr[0] = unsafe.Pointer(&cellindices_args.arg_dstx)
-	cellindices_args.argptr[1] = unsafe.Pointer(&cellindices_args.arg_dsty)
-	cellindices_args.argptr[2] = unsafe.Pointer(&cellindices_args.arg_dstz)
-	cellindices_args.argptr[3] = unsafe.Pointer(&cellindices_args.arg_nx)
-	cellindices_args.argptr[4] = unsafe.Pointer(&cellindices_args.arg_ny)
-	cellindices_args.argptr[5] = unsafe.Pointer(&cellindices_args.arg_nz)
-	cellindices_args.argptr[6] = unsafe.Pointer(&cellindices_args.arg_N)
+	cellindicesArgs.argptr[0] = unsafe.Pointer(&cellindicesArgs.argDstx)
+	cellindicesArgs.argptr[1] = unsafe.Pointer(&cellindicesArgs.argDsty)
+	cellindicesArgs.argptr[2] = unsafe.Pointer(&cellindicesArgs.argDstz)
+	cellindicesArgs.argptr[3] = unsafe.Pointer(&cellindicesArgs.argNx)
+	cellindicesArgs.argptr[4] = unsafe.Pointer(&cellindicesArgs.argNy)
+	cellindicesArgs.argptr[5] = unsafe.Pointer(&cellindicesArgs.argNz)
+	cellindicesArgs.argptr[6] = unsafe.Pointer(&cellindicesArgs.argN)
 }
 
 // Wrapper for cellindices CUDA kernel, asynchronous.
-func k_cellindices_async(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.Pointer, nx float32, ny float32, nz float32, N int, cfg *config) {
+func kCellindicesAsync(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.Pointer, nx float32, ny float32, nz float32, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("cellindices")
 	}
 
-	cellindices_args.Lock()
-	defer cellindices_args.Unlock()
+	cellindicesArgs.Lock()
+	defer cellindicesArgs.Unlock()
 
-	if cellindices_code == 0 {
-		cellindices_code = fatbinLoad(cellindices_map, "cellindices")
+	if cellindicesCode == 0 {
+		cellindicesCode = fatbinLoad(cellindicesMap, "cellindices")
 	}
 
-	cellindices_args.arg_dstx = dstx
-	cellindices_args.arg_dsty = dsty
-	cellindices_args.arg_dstz = dstz
-	cellindices_args.arg_nx = nx
-	cellindices_args.arg_ny = ny
-	cellindices_args.arg_nz = nz
-	cellindices_args.arg_N = N
+	cellindicesArgs.argDstx = dstx
+	cellindicesArgs.argDsty = dsty
+	cellindicesArgs.argDstz = dstz
+	cellindicesArgs.argNx = nx
+	cellindicesArgs.argNy = ny
+	cellindicesArgs.argNz = nz
+	cellindicesArgs.argN = N
 
-	args := cellindices_args.argptr[:]
-	cu.LaunchKernel(cellindices_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := cellindicesArgs.argptr[:]
+	cu.LaunchKernel(cellindicesCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -73,27 +74,38 @@ func k_cellindices_async(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.P
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_cellindices_async(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.Pointer, nx float32, ny float32, nz float32, N int, cfg *config) {
+	kCellindicesAsync(dstx, dsty, dstz, nx, ny, nz, N, cfg)
+}
+
 // maps compute capability on PTX code for cellindices kernel.
-var cellindices_map = map[int]string{0: "",
-	50: cellindices_ptx_50,
-	52: cellindices_ptx_52,
-	53: cellindices_ptx_53,
-	60: cellindices_ptx_60,
-	61: cellindices_ptx_61,
-	62: cellindices_ptx_62,
-	70: cellindices_ptx_70,
-	72: cellindices_ptx_72,
-	75: cellindices_ptx_75,
-	80: cellindices_ptx_80,
-	86: cellindices_ptx_86,
-	87: cellindices_ptx_87,
-	89: cellindices_ptx_89,
-	90: cellindices_ptx_90}
+var cellindicesMap = map[int]string{
+	0:  "",
+	50: cellindicesPtx50,
+	52: cellindicesPtx52,
+	53: cellindicesPtx53,
+	60: cellindicesPtx60,
+	61: cellindicesPtx61,
+	62: cellindicesPtx62,
+	70: cellindicesPtx70,
+	72: cellindicesPtx72,
+	75: cellindicesPtx75,
+	80: cellindicesPtx80,
+	86: cellindicesPtx86,
+	87: cellindicesPtx87,
+	89: cellindicesPtx89,
+	90: cellindicesPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var cellindices_map = cellindicesMap
 
 // cellindices PTX code for various compute capabilities.
 const (
-	cellindices_ptx_50 = `
-.version 8.5
+	cellindicesPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -364,8 +376,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_52 = `
-.version 8.5
+	cellindicesPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -636,8 +648,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_53 = `
-.version 8.5
+	cellindicesPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -908,8 +920,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_60 = `
-.version 8.5
+	cellindicesPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -1180,8 +1192,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_61 = `
-.version 8.5
+	cellindicesPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -1452,8 +1464,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_62 = `
-.version 8.5
+	cellindicesPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -1724,8 +1736,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_70 = `
-.version 8.5
+	cellindicesPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1996,8 +2008,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_72 = `
-.version 8.5
+	cellindicesPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -2268,8 +2280,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_75 = `
-.version 8.5
+	cellindicesPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -2540,8 +2552,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_80 = `
-.version 8.5
+	cellindicesPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -2812,8 +2824,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_86 = `
-.version 8.5
+	cellindicesPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -3084,8 +3096,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_87 = `
-.version 8.5
+	cellindicesPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -3356,8 +3368,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_89 = `
-.version 8.5
+	cellindicesPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -3628,8 +3640,8 @@ $L__BB0_26:
 }
 
 `
-	cellindices_ptx_90 = `
-.version 8.5
+	cellindicesPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

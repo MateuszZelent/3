@@ -6,75 +6,76 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for crossproduct kernel
-var crossproduct_code cu.Function
+var crossproductCode cu.Function
 
 // Stores the arguments for crossproduct kernel invocation
-type crossproduct_args_t struct {
-	arg_dstx unsafe.Pointer
-	arg_dsty unsafe.Pointer
-	arg_dstz unsafe.Pointer
-	arg_ax   unsafe.Pointer
-	arg_ay   unsafe.Pointer
-	arg_az   unsafe.Pointer
-	arg_bx   unsafe.Pointer
-	arg_by   unsafe.Pointer
-	arg_bz   unsafe.Pointer
-	arg_N    int
-	argptr   [10]unsafe.Pointer
+type crossproductArgsT struct {
+	argDstx unsafe.Pointer
+	argDsty unsafe.Pointer
+	argDstz unsafe.Pointer
+	argAx   unsafe.Pointer
+	argAy   unsafe.Pointer
+	argAz   unsafe.Pointer
+	argBx   unsafe.Pointer
+	argBy   unsafe.Pointer
+	argBz   unsafe.Pointer
+	argN    int
+	argptr  [10]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for crossproduct kernel invocation
-var crossproduct_args crossproduct_args_t
+var crossproductArgs crossproductArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	crossproduct_args.argptr[0] = unsafe.Pointer(&crossproduct_args.arg_dstx)
-	crossproduct_args.argptr[1] = unsafe.Pointer(&crossproduct_args.arg_dsty)
-	crossproduct_args.argptr[2] = unsafe.Pointer(&crossproduct_args.arg_dstz)
-	crossproduct_args.argptr[3] = unsafe.Pointer(&crossproduct_args.arg_ax)
-	crossproduct_args.argptr[4] = unsafe.Pointer(&crossproduct_args.arg_ay)
-	crossproduct_args.argptr[5] = unsafe.Pointer(&crossproduct_args.arg_az)
-	crossproduct_args.argptr[6] = unsafe.Pointer(&crossproduct_args.arg_bx)
-	crossproduct_args.argptr[7] = unsafe.Pointer(&crossproduct_args.arg_by)
-	crossproduct_args.argptr[8] = unsafe.Pointer(&crossproduct_args.arg_bz)
-	crossproduct_args.argptr[9] = unsafe.Pointer(&crossproduct_args.arg_N)
+	crossproductArgs.argptr[0] = unsafe.Pointer(&crossproductArgs.argDstx)
+	crossproductArgs.argptr[1] = unsafe.Pointer(&crossproductArgs.argDsty)
+	crossproductArgs.argptr[2] = unsafe.Pointer(&crossproductArgs.argDstz)
+	crossproductArgs.argptr[3] = unsafe.Pointer(&crossproductArgs.argAx)
+	crossproductArgs.argptr[4] = unsafe.Pointer(&crossproductArgs.argAy)
+	crossproductArgs.argptr[5] = unsafe.Pointer(&crossproductArgs.argAz)
+	crossproductArgs.argptr[6] = unsafe.Pointer(&crossproductArgs.argBx)
+	crossproductArgs.argptr[7] = unsafe.Pointer(&crossproductArgs.argBy)
+	crossproductArgs.argptr[8] = unsafe.Pointer(&crossproductArgs.argBz)
+	crossproductArgs.argptr[9] = unsafe.Pointer(&crossproductArgs.argN)
 }
 
 // Wrapper for crossproduct CUDA kernel, asynchronous.
-func k_crossproduct_async(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.Pointer, ax unsafe.Pointer, ay unsafe.Pointer, az unsafe.Pointer, bx unsafe.Pointer, by unsafe.Pointer, bz unsafe.Pointer, N int, cfg *config) {
+func kCrossproductAsync(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.Pointer, ax unsafe.Pointer, ay unsafe.Pointer, az unsafe.Pointer, bx unsafe.Pointer, by unsafe.Pointer, bz unsafe.Pointer, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("crossproduct")
 	}
 
-	crossproduct_args.Lock()
-	defer crossproduct_args.Unlock()
+	crossproductArgs.Lock()
+	defer crossproductArgs.Unlock()
 
-	if crossproduct_code == 0 {
-		crossproduct_code = fatbinLoad(crossproduct_map, "crossproduct")
+	if crossproductCode == 0 {
+		crossproductCode = fatbinLoad(crossproductMap, "crossproduct")
 	}
 
-	crossproduct_args.arg_dstx = dstx
-	crossproduct_args.arg_dsty = dsty
-	crossproduct_args.arg_dstz = dstz
-	crossproduct_args.arg_ax = ax
-	crossproduct_args.arg_ay = ay
-	crossproduct_args.arg_az = az
-	crossproduct_args.arg_bx = bx
-	crossproduct_args.arg_by = by
-	crossproduct_args.arg_bz = bz
-	crossproduct_args.arg_N = N
+	crossproductArgs.argDstx = dstx
+	crossproductArgs.argDsty = dsty
+	crossproductArgs.argDstz = dstz
+	crossproductArgs.argAx = ax
+	crossproductArgs.argAy = ay
+	crossproductArgs.argAz = az
+	crossproductArgs.argBx = bx
+	crossproductArgs.argBy = by
+	crossproductArgs.argBz = bz
+	crossproductArgs.argN = N
 
-	args := crossproduct_args.argptr[:]
-	cu.LaunchKernel(crossproduct_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := crossproductArgs.argptr[:]
+	cu.LaunchKernel(crossproductCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -82,27 +83,38 @@ func k_crossproduct_async(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_crossproduct_async(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.Pointer, ax unsafe.Pointer, ay unsafe.Pointer, az unsafe.Pointer, bx unsafe.Pointer, by unsafe.Pointer, bz unsafe.Pointer, N int, cfg *config) {
+	kCrossproductAsync(dstx, dsty, dstz, ax, ay, az, bx, by, bz, N, cfg)
+}
+
 // maps compute capability on PTX code for crossproduct kernel.
-var crossproduct_map = map[int]string{0: "",
-	50: crossproduct_ptx_50,
-	52: crossproduct_ptx_52,
-	53: crossproduct_ptx_53,
-	60: crossproduct_ptx_60,
-	61: crossproduct_ptx_61,
-	62: crossproduct_ptx_62,
-	70: crossproduct_ptx_70,
-	72: crossproduct_ptx_72,
-	75: crossproduct_ptx_75,
-	80: crossproduct_ptx_80,
-	86: crossproduct_ptx_86,
-	87: crossproduct_ptx_87,
-	89: crossproduct_ptx_89,
-	90: crossproduct_ptx_90}
+var crossproductMap = map[int]string{
+	0:  "",
+	50: crossproductPtx50,
+	52: crossproductPtx52,
+	53: crossproductPtx53,
+	60: crossproductPtx60,
+	61: crossproductPtx61,
+	62: crossproductPtx62,
+	70: crossproductPtx70,
+	72: crossproductPtx72,
+	75: crossproductPtx75,
+	80: crossproductPtx80,
+	86: crossproductPtx86,
+	87: crossproductPtx87,
+	89: crossproductPtx89,
+	90: crossproductPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var crossproduct_map = crossproductMap
 
 // crossproduct PTX code for various compute capabilities.
 const (
-	crossproduct_ptx_50 = `
-.version 8.5
+	crossproductPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -191,8 +203,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_52 = `
-.version 8.5
+	crossproductPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -281,8 +293,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_53 = `
-.version 8.5
+	crossproductPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -371,8 +383,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_60 = `
-.version 8.5
+	crossproductPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -461,8 +473,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_61 = `
-.version 8.5
+	crossproductPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -551,8 +563,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_62 = `
-.version 8.5
+	crossproductPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -641,8 +653,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_70 = `
-.version 8.5
+	crossproductPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -731,8 +743,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_72 = `
-.version 8.5
+	crossproductPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -821,8 +833,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_75 = `
-.version 8.5
+	crossproductPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -911,8 +923,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_80 = `
-.version 8.5
+	crossproductPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1001,8 +1013,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_86 = `
-.version 8.5
+	crossproductPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1091,8 +1103,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_87 = `
-.version 8.5
+	crossproductPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1181,8 +1193,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_89 = `
-.version 8.5
+	crossproductPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1271,8 +1283,8 @@ $L__BB0_2:
 }
 
 `
-	crossproduct_ptx_90 = `
-.version 8.5
+	crossproductPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

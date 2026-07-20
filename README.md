@@ -14,6 +14,16 @@ Paper on the design and verification of MuMax3: <http://scitation.aip.org/conten
 
 Documentation of several tools, like `mumax3-convert`, is available [here](https://godoc.org/github.com/mumax/3/cmd).
 
+### Quick install (Linux x86_64)
+
+The releases of this repository can be installed without a local Go or CUDA toolkit:
+
+```bash
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/MateuszZelent/3/main/install.sh)"
+```
+
+The default destination is `~/.local/bin`; pass a destination as the first argument to `install.sh` when needed. The target machine still needs a compatible NVIDIA driver. Maintainers can prepare the three GitHub Release assets consumed by the installer with `just package-release`.
+
 ## Contributing
 
 Contributions are gratefully accepted. To contribute code, fork our GitHub repo and send a pull request.

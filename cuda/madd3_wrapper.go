@@ -6,69 +6,70 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for madd3 kernel
-var madd3_code cu.Function
+var madd3Code cu.Function
 
 // Stores the arguments for madd3 kernel invocation
-type madd3_args_t struct {
-	arg_dst  unsafe.Pointer
-	arg_src1 unsafe.Pointer
-	arg_fac1 float32
-	arg_src2 unsafe.Pointer
-	arg_fac2 float32
-	arg_src3 unsafe.Pointer
-	arg_fac3 float32
-	arg_N    int
-	argptr   [8]unsafe.Pointer
+type madd3ArgsT struct {
+	argDst  unsafe.Pointer
+	argSrc1 unsafe.Pointer
+	argFac1 float32
+	argSrc2 unsafe.Pointer
+	argFac2 float32
+	argSrc3 unsafe.Pointer
+	argFac3 float32
+	argN    int
+	argptr  [8]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for madd3 kernel invocation
-var madd3_args madd3_args_t
+var madd3Args madd3ArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	madd3_args.argptr[0] = unsafe.Pointer(&madd3_args.arg_dst)
-	madd3_args.argptr[1] = unsafe.Pointer(&madd3_args.arg_src1)
-	madd3_args.argptr[2] = unsafe.Pointer(&madd3_args.arg_fac1)
-	madd3_args.argptr[3] = unsafe.Pointer(&madd3_args.arg_src2)
-	madd3_args.argptr[4] = unsafe.Pointer(&madd3_args.arg_fac2)
-	madd3_args.argptr[5] = unsafe.Pointer(&madd3_args.arg_src3)
-	madd3_args.argptr[6] = unsafe.Pointer(&madd3_args.arg_fac3)
-	madd3_args.argptr[7] = unsafe.Pointer(&madd3_args.arg_N)
+	madd3Args.argptr[0] = unsafe.Pointer(&madd3Args.argDst)
+	madd3Args.argptr[1] = unsafe.Pointer(&madd3Args.argSrc1)
+	madd3Args.argptr[2] = unsafe.Pointer(&madd3Args.argFac1)
+	madd3Args.argptr[3] = unsafe.Pointer(&madd3Args.argSrc2)
+	madd3Args.argptr[4] = unsafe.Pointer(&madd3Args.argFac2)
+	madd3Args.argptr[5] = unsafe.Pointer(&madd3Args.argSrc3)
+	madd3Args.argptr[6] = unsafe.Pointer(&madd3Args.argFac3)
+	madd3Args.argptr[7] = unsafe.Pointer(&madd3Args.argN)
 }
 
 // Wrapper for madd3 CUDA kernel, asynchronous.
-func k_madd3_async(dst unsafe.Pointer, src1 unsafe.Pointer, fac1 float32, src2 unsafe.Pointer, fac2 float32, src3 unsafe.Pointer, fac3 float32, N int, cfg *config) {
+func kMadd3Async(dst unsafe.Pointer, src1 unsafe.Pointer, fac1 float32, src2 unsafe.Pointer, fac2 float32, src3 unsafe.Pointer, fac3 float32, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("madd3")
 	}
 
-	madd3_args.Lock()
-	defer madd3_args.Unlock()
+	madd3Args.Lock()
+	defer madd3Args.Unlock()
 
-	if madd3_code == 0 {
-		madd3_code = fatbinLoad(madd3_map, "madd3")
+	if madd3Code == 0 {
+		madd3Code = fatbinLoad(madd3Map, "madd3")
 	}
 
-	madd3_args.arg_dst = dst
-	madd3_args.arg_src1 = src1
-	madd3_args.arg_fac1 = fac1
-	madd3_args.arg_src2 = src2
-	madd3_args.arg_fac2 = fac2
-	madd3_args.arg_src3 = src3
-	madd3_args.arg_fac3 = fac3
-	madd3_args.arg_N = N
+	madd3Args.argDst = dst
+	madd3Args.argSrc1 = src1
+	madd3Args.argFac1 = fac1
+	madd3Args.argSrc2 = src2
+	madd3Args.argFac2 = fac2
+	madd3Args.argSrc3 = src3
+	madd3Args.argFac3 = fac3
+	madd3Args.argN = N
 
-	args := madd3_args.argptr[:]
-	cu.LaunchKernel(madd3_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := madd3Args.argptr[:]
+	cu.LaunchKernel(madd3Code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -76,27 +77,38 @@ func k_madd3_async(dst unsafe.Pointer, src1 unsafe.Pointer, fac1 float32, src2 u
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_madd3_async(dst unsafe.Pointer, src1 unsafe.Pointer, fac1 float32, src2 unsafe.Pointer, fac2 float32, src3 unsafe.Pointer, fac3 float32, N int, cfg *config) {
+	kMadd3Async(dst, src1, fac1, src2, fac2, src3, fac3, N, cfg)
+}
+
 // maps compute capability on PTX code for madd3 kernel.
-var madd3_map = map[int]string{0: "",
-	50: madd3_ptx_50,
-	52: madd3_ptx_52,
-	53: madd3_ptx_53,
-	60: madd3_ptx_60,
-	61: madd3_ptx_61,
-	62: madd3_ptx_62,
-	70: madd3_ptx_70,
-	72: madd3_ptx_72,
-	75: madd3_ptx_75,
-	80: madd3_ptx_80,
-	86: madd3_ptx_86,
-	87: madd3_ptx_87,
-	89: madd3_ptx_89,
-	90: madd3_ptx_90}
+var madd3Map = map[int]string{
+	0:  "",
+	50: madd3Ptx50,
+	52: madd3Ptx52,
+	53: madd3Ptx53,
+	60: madd3Ptx60,
+	61: madd3Ptx61,
+	62: madd3Ptx62,
+	70: madd3Ptx70,
+	72: madd3Ptx72,
+	75: madd3Ptx75,
+	80: madd3Ptx80,
+	86: madd3Ptx86,
+	87: madd3Ptx87,
+	89: madd3Ptx89,
+	90: madd3Ptx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var madd3_map = madd3Map
 
 // madd3 PTX code for various compute capabilities.
 const (
-	madd3_ptx_50 = `
-.version 8.5
+	madd3Ptx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -160,8 +172,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_52 = `
-.version 8.5
+	madd3Ptx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -225,8 +237,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_53 = `
-.version 8.5
+	madd3Ptx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -290,8 +302,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_60 = `
-.version 8.5
+	madd3Ptx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -355,8 +367,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_61 = `
-.version 8.5
+	madd3Ptx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -420,8 +432,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_62 = `
-.version 8.5
+	madd3Ptx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -485,8 +497,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_70 = `
-.version 8.5
+	madd3Ptx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -550,8 +562,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_72 = `
-.version 8.5
+	madd3Ptx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -615,8 +627,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_75 = `
-.version 8.5
+	madd3Ptx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -680,8 +692,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_80 = `
-.version 8.5
+	madd3Ptx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -745,8 +757,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_86 = `
-.version 8.5
+	madd3Ptx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -810,8 +822,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_87 = `
-.version 8.5
+	madd3Ptx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -875,8 +887,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_89 = `
-.version 8.5
+	madd3Ptx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -940,8 +952,8 @@ $L__BB0_2:
 }
 
 `
-	madd3_ptx_90 = `
-.version 8.5
+	madd3Ptx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

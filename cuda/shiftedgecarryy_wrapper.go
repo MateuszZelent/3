@@ -6,75 +6,76 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for shiftedgecarryY kernel
-var shiftedgecarryY_code cu.Function
+var shiftedgecarryYCode cu.Function
 
 // Stores the arguments for shiftedgecarryY kernel invocation
-type shiftedgecarryY_args_t struct {
-	arg_dst         unsafe.Pointer
-	arg_src         unsafe.Pointer
-	arg_othercomp   unsafe.Pointer
-	arg_anothercomp unsafe.Pointer
-	arg_Nx          int
-	arg_Ny          int
-	arg_Nz          int
-	arg_shy         int
-	arg_clampD      float32
-	arg_clampU      float32
-	argptr          [10]unsafe.Pointer
+type shiftedgecarryYArgsT struct {
+	argDst         unsafe.Pointer
+	argSrc         unsafe.Pointer
+	argOthercomp   unsafe.Pointer
+	argAnothercomp unsafe.Pointer
+	argNx          int
+	argNy          int
+	argNz          int
+	argShy         int
+	argClampD      float32
+	argClampU      float32
+	argptr         [10]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for shiftedgecarryY kernel invocation
-var shiftedgecarryY_args shiftedgecarryY_args_t
+var shiftedgecarryYArgs shiftedgecarryYArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	shiftedgecarryY_args.argptr[0] = unsafe.Pointer(&shiftedgecarryY_args.arg_dst)
-	shiftedgecarryY_args.argptr[1] = unsafe.Pointer(&shiftedgecarryY_args.arg_src)
-	shiftedgecarryY_args.argptr[2] = unsafe.Pointer(&shiftedgecarryY_args.arg_othercomp)
-	shiftedgecarryY_args.argptr[3] = unsafe.Pointer(&shiftedgecarryY_args.arg_anothercomp)
-	shiftedgecarryY_args.argptr[4] = unsafe.Pointer(&shiftedgecarryY_args.arg_Nx)
-	shiftedgecarryY_args.argptr[5] = unsafe.Pointer(&shiftedgecarryY_args.arg_Ny)
-	shiftedgecarryY_args.argptr[6] = unsafe.Pointer(&shiftedgecarryY_args.arg_Nz)
-	shiftedgecarryY_args.argptr[7] = unsafe.Pointer(&shiftedgecarryY_args.arg_shy)
-	shiftedgecarryY_args.argptr[8] = unsafe.Pointer(&shiftedgecarryY_args.arg_clampD)
-	shiftedgecarryY_args.argptr[9] = unsafe.Pointer(&shiftedgecarryY_args.arg_clampU)
+	shiftedgecarryYArgs.argptr[0] = unsafe.Pointer(&shiftedgecarryYArgs.argDst)
+	shiftedgecarryYArgs.argptr[1] = unsafe.Pointer(&shiftedgecarryYArgs.argSrc)
+	shiftedgecarryYArgs.argptr[2] = unsafe.Pointer(&shiftedgecarryYArgs.argOthercomp)
+	shiftedgecarryYArgs.argptr[3] = unsafe.Pointer(&shiftedgecarryYArgs.argAnothercomp)
+	shiftedgecarryYArgs.argptr[4] = unsafe.Pointer(&shiftedgecarryYArgs.argNx)
+	shiftedgecarryYArgs.argptr[5] = unsafe.Pointer(&shiftedgecarryYArgs.argNy)
+	shiftedgecarryYArgs.argptr[6] = unsafe.Pointer(&shiftedgecarryYArgs.argNz)
+	shiftedgecarryYArgs.argptr[7] = unsafe.Pointer(&shiftedgecarryYArgs.argShy)
+	shiftedgecarryYArgs.argptr[8] = unsafe.Pointer(&shiftedgecarryYArgs.argClampD)
+	shiftedgecarryYArgs.argptr[9] = unsafe.Pointer(&shiftedgecarryYArgs.argClampU)
 }
 
 // Wrapper for shiftedgecarryY CUDA kernel, asynchronous.
-func k_shiftedgecarryY_async(dst unsafe.Pointer, src unsafe.Pointer, othercomp unsafe.Pointer, anothercomp unsafe.Pointer, Nx int, Ny int, Nz int, shy int, clampD float32, clampU float32, cfg *config) {
+func kShiftedgecarryYAsync(dst unsafe.Pointer, src unsafe.Pointer, othercomp unsafe.Pointer, anothercomp unsafe.Pointer, Nx int, Ny int, Nz int, shy int, clampD float32, clampU float32, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("shiftedgecarryY")
 	}
 
-	shiftedgecarryY_args.Lock()
-	defer shiftedgecarryY_args.Unlock()
+	shiftedgecarryYArgs.Lock()
+	defer shiftedgecarryYArgs.Unlock()
 
-	if shiftedgecarryY_code == 0 {
-		shiftedgecarryY_code = fatbinLoad(shiftedgecarryY_map, "shiftedgecarryY")
+	if shiftedgecarryYCode == 0 {
+		shiftedgecarryYCode = fatbinLoad(shiftedgecarryYMap, "shiftedgecarryY")
 	}
 
-	shiftedgecarryY_args.arg_dst = dst
-	shiftedgecarryY_args.arg_src = src
-	shiftedgecarryY_args.arg_othercomp = othercomp
-	shiftedgecarryY_args.arg_anothercomp = anothercomp
-	shiftedgecarryY_args.arg_Nx = Nx
-	shiftedgecarryY_args.arg_Ny = Ny
-	shiftedgecarryY_args.arg_Nz = Nz
-	shiftedgecarryY_args.arg_shy = shy
-	shiftedgecarryY_args.arg_clampD = clampD
-	shiftedgecarryY_args.arg_clampU = clampU
+	shiftedgecarryYArgs.argDst = dst
+	shiftedgecarryYArgs.argSrc = src
+	shiftedgecarryYArgs.argOthercomp = othercomp
+	shiftedgecarryYArgs.argAnothercomp = anothercomp
+	shiftedgecarryYArgs.argNx = Nx
+	shiftedgecarryYArgs.argNy = Ny
+	shiftedgecarryYArgs.argNz = Nz
+	shiftedgecarryYArgs.argShy = shy
+	shiftedgecarryYArgs.argClampD = clampD
+	shiftedgecarryYArgs.argClampU = clampU
 
-	args := shiftedgecarryY_args.argptr[:]
-	cu.LaunchKernel(shiftedgecarryY_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := shiftedgecarryYArgs.argptr[:]
+	cu.LaunchKernel(shiftedgecarryYCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -82,27 +83,38 @@ func k_shiftedgecarryY_async(dst unsafe.Pointer, src unsafe.Pointer, othercomp u
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_shiftedgecarryY_async(dst unsafe.Pointer, src unsafe.Pointer, othercomp unsafe.Pointer, anothercomp unsafe.Pointer, Nx int, Ny int, Nz int, shy int, clampD float32, clampU float32, cfg *config) {
+	kShiftedgecarryYAsync(dst, src, othercomp, anothercomp, Nx, Ny, Nz, shy, clampD, clampU, cfg)
+}
+
 // maps compute capability on PTX code for shiftedgecarryY kernel.
-var shiftedgecarryY_map = map[int]string{0: "",
-	50: shiftedgecarryY_ptx_50,
-	52: shiftedgecarryY_ptx_52,
-	53: shiftedgecarryY_ptx_53,
-	60: shiftedgecarryY_ptx_60,
-	61: shiftedgecarryY_ptx_61,
-	62: shiftedgecarryY_ptx_62,
-	70: shiftedgecarryY_ptx_70,
-	72: shiftedgecarryY_ptx_72,
-	75: shiftedgecarryY_ptx_75,
-	80: shiftedgecarryY_ptx_80,
-	86: shiftedgecarryY_ptx_86,
-	87: shiftedgecarryY_ptx_87,
-	89: shiftedgecarryY_ptx_89,
-	90: shiftedgecarryY_ptx_90}
+var shiftedgecarryYMap = map[int]string{
+	0:  "",
+	50: shiftedgecarryYPtx50,
+	52: shiftedgecarryYPtx52,
+	53: shiftedgecarryYPtx53,
+	60: shiftedgecarryYPtx60,
+	61: shiftedgecarryYPtx61,
+	62: shiftedgecarryYPtx62,
+	70: shiftedgecarryYPtx70,
+	72: shiftedgecarryYPtx72,
+	75: shiftedgecarryYPtx75,
+	80: shiftedgecarryYPtx80,
+	86: shiftedgecarryYPtx86,
+	87: shiftedgecarryYPtx87,
+	89: shiftedgecarryYPtx89,
+	90: shiftedgecarryYPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var shiftedgecarryY_map = shiftedgecarryYMap
 
 // shiftedgecarryY PTX code for various compute capabilities.
 const (
-	shiftedgecarryY_ptx_50 = `
-.version 8.5
+	shiftedgecarryYPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -234,8 +246,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_52 = `
-.version 8.5
+	shiftedgecarryYPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -367,8 +379,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_53 = `
-.version 8.5
+	shiftedgecarryYPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -500,8 +512,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_60 = `
-.version 8.5
+	shiftedgecarryYPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -633,8 +645,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_61 = `
-.version 8.5
+	shiftedgecarryYPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -766,8 +778,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_62 = `
-.version 8.5
+	shiftedgecarryYPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -899,8 +911,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_70 = `
-.version 8.5
+	shiftedgecarryYPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1032,8 +1044,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_72 = `
-.version 8.5
+	shiftedgecarryYPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -1165,8 +1177,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_75 = `
-.version 8.5
+	shiftedgecarryYPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1298,8 +1310,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_80 = `
-.version 8.5
+	shiftedgecarryYPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1431,8 +1443,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_86 = `
-.version 8.5
+	shiftedgecarryYPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1564,8 +1576,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_87 = `
-.version 8.5
+	shiftedgecarryYPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1697,8 +1709,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_89 = `
-.version 8.5
+	shiftedgecarryYPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1830,8 +1842,8 @@ $L__BB0_11:
 }
 
 `
-	shiftedgecarryY_ptx_90 = `
-.version 8.5
+	shiftedgecarryYPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

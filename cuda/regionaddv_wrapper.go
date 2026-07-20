@@ -6,69 +6,70 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for regionaddv kernel
-var regionaddv_code cu.Function
+var regionaddvCode cu.Function
 
 // Stores the arguments for regionaddv kernel invocation
-type regionaddv_args_t struct {
-	arg_dstx    unsafe.Pointer
-	arg_dsty    unsafe.Pointer
-	arg_dstz    unsafe.Pointer
-	arg_LUTx    unsafe.Pointer
-	arg_LUTy    unsafe.Pointer
-	arg_LUTz    unsafe.Pointer
-	arg_regions unsafe.Pointer
-	arg_N       int
-	argptr      [8]unsafe.Pointer
+type regionaddvArgsT struct {
+	argDstx    unsafe.Pointer
+	argDsty    unsafe.Pointer
+	argDstz    unsafe.Pointer
+	argLUTx    unsafe.Pointer
+	argLUTy    unsafe.Pointer
+	argLUTz    unsafe.Pointer
+	argRegions unsafe.Pointer
+	argN       int
+	argptr     [8]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for regionaddv kernel invocation
-var regionaddv_args regionaddv_args_t
+var regionaddvArgs regionaddvArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	regionaddv_args.argptr[0] = unsafe.Pointer(&regionaddv_args.arg_dstx)
-	regionaddv_args.argptr[1] = unsafe.Pointer(&regionaddv_args.arg_dsty)
-	regionaddv_args.argptr[2] = unsafe.Pointer(&regionaddv_args.arg_dstz)
-	regionaddv_args.argptr[3] = unsafe.Pointer(&regionaddv_args.arg_LUTx)
-	regionaddv_args.argptr[4] = unsafe.Pointer(&regionaddv_args.arg_LUTy)
-	regionaddv_args.argptr[5] = unsafe.Pointer(&regionaddv_args.arg_LUTz)
-	regionaddv_args.argptr[6] = unsafe.Pointer(&regionaddv_args.arg_regions)
-	regionaddv_args.argptr[7] = unsafe.Pointer(&regionaddv_args.arg_N)
+	regionaddvArgs.argptr[0] = unsafe.Pointer(&regionaddvArgs.argDstx)
+	regionaddvArgs.argptr[1] = unsafe.Pointer(&regionaddvArgs.argDsty)
+	regionaddvArgs.argptr[2] = unsafe.Pointer(&regionaddvArgs.argDstz)
+	regionaddvArgs.argptr[3] = unsafe.Pointer(&regionaddvArgs.argLUTx)
+	regionaddvArgs.argptr[4] = unsafe.Pointer(&regionaddvArgs.argLUTy)
+	regionaddvArgs.argptr[5] = unsafe.Pointer(&regionaddvArgs.argLUTz)
+	regionaddvArgs.argptr[6] = unsafe.Pointer(&regionaddvArgs.argRegions)
+	regionaddvArgs.argptr[7] = unsafe.Pointer(&regionaddvArgs.argN)
 }
 
 // Wrapper for regionaddv CUDA kernel, asynchronous.
-func k_regionaddv_async(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.Pointer, LUTx unsafe.Pointer, LUTy unsafe.Pointer, LUTz unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
+func kRegionaddvAsync(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.Pointer, LUTx unsafe.Pointer, LUTy unsafe.Pointer, LUTz unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("regionaddv")
 	}
 
-	regionaddv_args.Lock()
-	defer regionaddv_args.Unlock()
+	regionaddvArgs.Lock()
+	defer regionaddvArgs.Unlock()
 
-	if regionaddv_code == 0 {
-		regionaddv_code = fatbinLoad(regionaddv_map, "regionaddv")
+	if regionaddvCode == 0 {
+		regionaddvCode = fatbinLoad(regionaddvMap, "regionaddv")
 	}
 
-	regionaddv_args.arg_dstx = dstx
-	regionaddv_args.arg_dsty = dsty
-	regionaddv_args.arg_dstz = dstz
-	regionaddv_args.arg_LUTx = LUTx
-	regionaddv_args.arg_LUTy = LUTy
-	regionaddv_args.arg_LUTz = LUTz
-	regionaddv_args.arg_regions = regions
-	regionaddv_args.arg_N = N
+	regionaddvArgs.argDstx = dstx
+	regionaddvArgs.argDsty = dsty
+	regionaddvArgs.argDstz = dstz
+	regionaddvArgs.argLUTx = LUTx
+	regionaddvArgs.argLUTy = LUTy
+	regionaddvArgs.argLUTz = LUTz
+	regionaddvArgs.argRegions = regions
+	regionaddvArgs.argN = N
 
-	args := regionaddv_args.argptr[:]
-	cu.LaunchKernel(regionaddv_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := regionaddvArgs.argptr[:]
+	cu.LaunchKernel(regionaddvCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -76,27 +77,38 @@ func k_regionaddv_async(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.Po
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_regionaddv_async(dstx unsafe.Pointer, dsty unsafe.Pointer, dstz unsafe.Pointer, LUTx unsafe.Pointer, LUTy unsafe.Pointer, LUTz unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
+	kRegionaddvAsync(dstx, dsty, dstz, LUTx, LUTy, LUTz, regions, N, cfg)
+}
+
 // maps compute capability on PTX code for regionaddv kernel.
-var regionaddv_map = map[int]string{0: "",
-	50: regionaddv_ptx_50,
-	52: regionaddv_ptx_52,
-	53: regionaddv_ptx_53,
-	60: regionaddv_ptx_60,
-	61: regionaddv_ptx_61,
-	62: regionaddv_ptx_62,
-	70: regionaddv_ptx_70,
-	72: regionaddv_ptx_72,
-	75: regionaddv_ptx_75,
-	80: regionaddv_ptx_80,
-	86: regionaddv_ptx_86,
-	87: regionaddv_ptx_87,
-	89: regionaddv_ptx_89,
-	90: regionaddv_ptx_90}
+var regionaddvMap = map[int]string{
+	0:  "",
+	50: regionaddvPtx50,
+	52: regionaddvPtx52,
+	53: regionaddvPtx53,
+	60: regionaddvPtx60,
+	61: regionaddvPtx61,
+	62: regionaddvPtx62,
+	70: regionaddvPtx70,
+	72: regionaddvPtx72,
+	75: regionaddvPtx75,
+	80: regionaddvPtx80,
+	86: regionaddvPtx86,
+	87: regionaddvPtx87,
+	89: regionaddvPtx89,
+	90: regionaddvPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var regionaddv_map = regionaddvMap
 
 // regionaddv PTX code for various compute capabilities.
 const (
-	regionaddv_ptx_50 = `
-.version 8.5
+	regionaddvPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -177,8 +189,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_52 = `
-.version 8.5
+	regionaddvPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -259,8 +271,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_53 = `
-.version 8.5
+	regionaddvPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -341,8 +353,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_60 = `
-.version 8.5
+	regionaddvPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -423,8 +435,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_61 = `
-.version 8.5
+	regionaddvPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -505,8 +517,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_62 = `
-.version 8.5
+	regionaddvPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -587,8 +599,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_70 = `
-.version 8.5
+	regionaddvPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -669,8 +681,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_72 = `
-.version 8.5
+	regionaddvPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -751,8 +763,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_75 = `
-.version 8.5
+	regionaddvPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -833,8 +845,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_80 = `
-.version 8.5
+	regionaddvPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -915,8 +927,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_86 = `
-.version 8.5
+	regionaddvPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -997,8 +1009,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_87 = `
-.version 8.5
+	regionaddvPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1079,8 +1091,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_89 = `
-.version 8.5
+	regionaddvPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1161,8 +1173,8 @@ $L__BB0_2:
 }
 
 `
-	regionaddv_ptx_90 = `
-.version 8.5
+	regionaddvPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

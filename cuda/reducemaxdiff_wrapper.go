@@ -6,60 +6,61 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for reducemaxdiff kernel
-var reducemaxdiff_code cu.Function
+var reducemaxdiffCode cu.Function
 
 // Stores the arguments for reducemaxdiff kernel invocation
-type reducemaxdiff_args_t struct {
-	arg_src1    unsafe.Pointer
-	arg_src2    unsafe.Pointer
-	arg_dst     unsafe.Pointer
-	arg_initVal float32
-	arg_n       int
-	argptr      [5]unsafe.Pointer
+type reducemaxdiffArgsT struct {
+	argSrc1    unsafe.Pointer
+	argSrc2    unsafe.Pointer
+	argDst     unsafe.Pointer
+	argInitVal float32
+	argN       int
+	argptr     [5]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for reducemaxdiff kernel invocation
-var reducemaxdiff_args reducemaxdiff_args_t
+var reducemaxdiffArgs reducemaxdiffArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	reducemaxdiff_args.argptr[0] = unsafe.Pointer(&reducemaxdiff_args.arg_src1)
-	reducemaxdiff_args.argptr[1] = unsafe.Pointer(&reducemaxdiff_args.arg_src2)
-	reducemaxdiff_args.argptr[2] = unsafe.Pointer(&reducemaxdiff_args.arg_dst)
-	reducemaxdiff_args.argptr[3] = unsafe.Pointer(&reducemaxdiff_args.arg_initVal)
-	reducemaxdiff_args.argptr[4] = unsafe.Pointer(&reducemaxdiff_args.arg_n)
+	reducemaxdiffArgs.argptr[0] = unsafe.Pointer(&reducemaxdiffArgs.argSrc1)
+	reducemaxdiffArgs.argptr[1] = unsafe.Pointer(&reducemaxdiffArgs.argSrc2)
+	reducemaxdiffArgs.argptr[2] = unsafe.Pointer(&reducemaxdiffArgs.argDst)
+	reducemaxdiffArgs.argptr[3] = unsafe.Pointer(&reducemaxdiffArgs.argInitVal)
+	reducemaxdiffArgs.argptr[4] = unsafe.Pointer(&reducemaxdiffArgs.argN)
 }
 
 // Wrapper for reducemaxdiff CUDA kernel, asynchronous.
-func k_reducemaxdiff_async(src1 unsafe.Pointer, src2 unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
+func kReducemaxdiffAsync(src1 unsafe.Pointer, src2 unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("reducemaxdiff")
 	}
 
-	reducemaxdiff_args.Lock()
-	defer reducemaxdiff_args.Unlock()
+	reducemaxdiffArgs.Lock()
+	defer reducemaxdiffArgs.Unlock()
 
-	if reducemaxdiff_code == 0 {
-		reducemaxdiff_code = fatbinLoad(reducemaxdiff_map, "reducemaxdiff")
+	if reducemaxdiffCode == 0 {
+		reducemaxdiffCode = fatbinLoad(reducemaxdiffMap, "reducemaxdiff")
 	}
 
-	reducemaxdiff_args.arg_src1 = src1
-	reducemaxdiff_args.arg_src2 = src2
-	reducemaxdiff_args.arg_dst = dst
-	reducemaxdiff_args.arg_initVal = initVal
-	reducemaxdiff_args.arg_n = n
+	reducemaxdiffArgs.argSrc1 = src1
+	reducemaxdiffArgs.argSrc2 = src2
+	reducemaxdiffArgs.argDst = dst
+	reducemaxdiffArgs.argInitVal = initVal
+	reducemaxdiffArgs.argN = n
 
-	args := reducemaxdiff_args.argptr[:]
-	cu.LaunchKernel(reducemaxdiff_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := reducemaxdiffArgs.argptr[:]
+	cu.LaunchKernel(reducemaxdiffCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -67,27 +68,38 @@ func k_reducemaxdiff_async(src1 unsafe.Pointer, src2 unsafe.Pointer, dst unsafe.
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_reducemaxdiff_async(src1 unsafe.Pointer, src2 unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
+	kReducemaxdiffAsync(src1, src2, dst, initVal, n, cfg)
+}
+
 // maps compute capability on PTX code for reducemaxdiff kernel.
-var reducemaxdiff_map = map[int]string{0: "",
-	50: reducemaxdiff_ptx_50,
-	52: reducemaxdiff_ptx_52,
-	53: reducemaxdiff_ptx_53,
-	60: reducemaxdiff_ptx_60,
-	61: reducemaxdiff_ptx_61,
-	62: reducemaxdiff_ptx_62,
-	70: reducemaxdiff_ptx_70,
-	72: reducemaxdiff_ptx_72,
-	75: reducemaxdiff_ptx_75,
-	80: reducemaxdiff_ptx_80,
-	86: reducemaxdiff_ptx_86,
-	87: reducemaxdiff_ptx_87,
-	89: reducemaxdiff_ptx_89,
-	90: reducemaxdiff_ptx_90}
+var reducemaxdiffMap = map[int]string{
+	0:  "",
+	50: reducemaxdiffPtx50,
+	52: reducemaxdiffPtx52,
+	53: reducemaxdiffPtx53,
+	60: reducemaxdiffPtx60,
+	61: reducemaxdiffPtx61,
+	62: reducemaxdiffPtx62,
+	70: reducemaxdiffPtx70,
+	72: reducemaxdiffPtx72,
+	75: reducemaxdiffPtx75,
+	80: reducemaxdiffPtx80,
+	86: reducemaxdiffPtx86,
+	87: reducemaxdiffPtx87,
+	89: reducemaxdiffPtx89,
+	90: reducemaxdiffPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var reducemaxdiff_map = reducemaxdiffMap
 
 // reducemaxdiff PTX code for various compute capabilities.
 const (
-	reducemaxdiff_ptx_50 = `
-.version 8.5
+	reducemaxdiffPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -260,7 +272,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -268,8 +280,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_52 = `
-.version 8.5
+	reducemaxdiffPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -442,7 +454,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -450,8 +462,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_53 = `
-.version 8.5
+	reducemaxdiffPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -624,7 +636,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -632,8 +644,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_60 = `
-.version 8.5
+	reducemaxdiffPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -806,7 +818,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -814,8 +826,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_61 = `
-.version 8.5
+	reducemaxdiffPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -988,7 +1000,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -996,8 +1008,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_62 = `
-.version 8.5
+	reducemaxdiffPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -1170,7 +1182,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1178,8 +1190,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_70 = `
-.version 8.5
+	reducemaxdiffPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1352,7 +1364,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1360,8 +1372,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_72 = `
-.version 8.5
+	reducemaxdiffPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -1534,7 +1546,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1542,8 +1554,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_75 = `
-.version 8.5
+	reducemaxdiffPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1716,7 +1728,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1724,8 +1736,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_80 = `
-.version 8.5
+	reducemaxdiffPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1898,7 +1910,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1906,8 +1918,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_86 = `
-.version 8.5
+	reducemaxdiffPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -2080,7 +2092,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -2088,8 +2100,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_87 = `
-.version 8.5
+	reducemaxdiffPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -2262,7 +2274,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -2270,8 +2282,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_89 = `
-.version 8.5
+	reducemaxdiffPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -2444,7 +2456,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;
@@ -2452,8 +2464,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxdiff_ptx_90 = `
-.version 8.5
+	reducemaxdiffPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 
@@ -2626,7 +2638,7 @@ $L__BB0_13:
 	abs.f32 	%f55, %f54;
 	mov.b32 	%r32, %f55;
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.max.s32 	%r33, [%rd24], %r32;
+	red.global.max.s32 	[%rd24], %r32;
 
 $L__BB0_15:
 	ret;

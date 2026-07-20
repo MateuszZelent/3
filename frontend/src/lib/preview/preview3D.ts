@@ -6,6 +6,7 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js';
 import { get, writable } from 'svelte/store';
 import { disposePreview2D } from './preview2D';
+import { vectorOrientationColor } from './previewColors';
 import { resolveVoxelTopography } from './voxelTopography';
 import { THEME } from '$lib/theme/echarts-theme';
 
@@ -277,10 +278,8 @@ function vectorMagnitude(x: number, y: number, z: number) {
 }
 
 function magnetizationHSL(vx: number, vy: number, vz: number, color: THREE.Color) {
-	const hue = Math.atan2(vy, vx) / (Math.PI * 2);
-	const saturation = Math.min(1, Math.sqrt(vx * vx + vy * vy));
-	const lightness = THREE.MathUtils.clamp((vz + 1) / 2, 0.18, 0.84);
-	color.setHSL((hue + 1) % 1, saturation, lightness);
+	const rgb = vectorOrientationColor(vx, vy, vz);
+	color.setRGB(rgb.r, rgb.g, rgb.b, THREE.SRGBColorSpace);
 }
 
 function applyComponentColor(value: number, color: THREE.Color) {

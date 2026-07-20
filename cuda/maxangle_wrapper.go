@@ -6,75 +6,76 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for setmaxangle kernel
-var setmaxangle_code cu.Function
+var setmaxangleCode cu.Function
 
 // Stores the arguments for setmaxangle kernel invocation
-type setmaxangle_args_t struct {
-	arg_dst     unsafe.Pointer
-	arg_mx      unsafe.Pointer
-	arg_my      unsafe.Pointer
-	arg_mz      unsafe.Pointer
-	arg_aLUT2d  unsafe.Pointer
-	arg_regions unsafe.Pointer
-	arg_Nx      int
-	arg_Ny      int
-	arg_Nz      int
-	arg_PBC     byte
-	argptr      [10]unsafe.Pointer
+type setmaxangleArgsT struct {
+	argDst     unsafe.Pointer
+	argMx      unsafe.Pointer
+	argMy      unsafe.Pointer
+	argMz      unsafe.Pointer
+	argALUT2d  unsafe.Pointer
+	argRegions unsafe.Pointer
+	argNx      int
+	argNy      int
+	argNz      int
+	argPBC     byte
+	argptr     [10]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for setmaxangle kernel invocation
-var setmaxangle_args setmaxangle_args_t
+var setmaxangleArgs setmaxangleArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	setmaxangle_args.argptr[0] = unsafe.Pointer(&setmaxangle_args.arg_dst)
-	setmaxangle_args.argptr[1] = unsafe.Pointer(&setmaxangle_args.arg_mx)
-	setmaxangle_args.argptr[2] = unsafe.Pointer(&setmaxangle_args.arg_my)
-	setmaxangle_args.argptr[3] = unsafe.Pointer(&setmaxangle_args.arg_mz)
-	setmaxangle_args.argptr[4] = unsafe.Pointer(&setmaxangle_args.arg_aLUT2d)
-	setmaxangle_args.argptr[5] = unsafe.Pointer(&setmaxangle_args.arg_regions)
-	setmaxangle_args.argptr[6] = unsafe.Pointer(&setmaxangle_args.arg_Nx)
-	setmaxangle_args.argptr[7] = unsafe.Pointer(&setmaxangle_args.arg_Ny)
-	setmaxangle_args.argptr[8] = unsafe.Pointer(&setmaxangle_args.arg_Nz)
-	setmaxangle_args.argptr[9] = unsafe.Pointer(&setmaxangle_args.arg_PBC)
+	setmaxangleArgs.argptr[0] = unsafe.Pointer(&setmaxangleArgs.argDst)
+	setmaxangleArgs.argptr[1] = unsafe.Pointer(&setmaxangleArgs.argMx)
+	setmaxangleArgs.argptr[2] = unsafe.Pointer(&setmaxangleArgs.argMy)
+	setmaxangleArgs.argptr[3] = unsafe.Pointer(&setmaxangleArgs.argMz)
+	setmaxangleArgs.argptr[4] = unsafe.Pointer(&setmaxangleArgs.argALUT2d)
+	setmaxangleArgs.argptr[5] = unsafe.Pointer(&setmaxangleArgs.argRegions)
+	setmaxangleArgs.argptr[6] = unsafe.Pointer(&setmaxangleArgs.argNx)
+	setmaxangleArgs.argptr[7] = unsafe.Pointer(&setmaxangleArgs.argNy)
+	setmaxangleArgs.argptr[8] = unsafe.Pointer(&setmaxangleArgs.argNz)
+	setmaxangleArgs.argptr[9] = unsafe.Pointer(&setmaxangleArgs.argPBC)
 }
 
 // Wrapper for setmaxangle CUDA kernel, asynchronous.
-func k_setmaxangle_async(dst unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, aLUT2d unsafe.Pointer, regions unsafe.Pointer, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+func kSetmaxangleAsync(dst unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, aLUT2d unsafe.Pointer, regions unsafe.Pointer, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("setmaxangle")
 	}
 
-	setmaxangle_args.Lock()
-	defer setmaxangle_args.Unlock()
+	setmaxangleArgs.Lock()
+	defer setmaxangleArgs.Unlock()
 
-	if setmaxangle_code == 0 {
-		setmaxangle_code = fatbinLoad(setmaxangle_map, "setmaxangle")
+	if setmaxangleCode == 0 {
+		setmaxangleCode = fatbinLoad(setmaxangleMap, "setmaxangle")
 	}
 
-	setmaxangle_args.arg_dst = dst
-	setmaxangle_args.arg_mx = mx
-	setmaxangle_args.arg_my = my
-	setmaxangle_args.arg_mz = mz
-	setmaxangle_args.arg_aLUT2d = aLUT2d
-	setmaxangle_args.arg_regions = regions
-	setmaxangle_args.arg_Nx = Nx
-	setmaxangle_args.arg_Ny = Ny
-	setmaxangle_args.arg_Nz = Nz
-	setmaxangle_args.arg_PBC = PBC
+	setmaxangleArgs.argDst = dst
+	setmaxangleArgs.argMx = mx
+	setmaxangleArgs.argMy = my
+	setmaxangleArgs.argMz = mz
+	setmaxangleArgs.argALUT2d = aLUT2d
+	setmaxangleArgs.argRegions = regions
+	setmaxangleArgs.argNx = Nx
+	setmaxangleArgs.argNy = Ny
+	setmaxangleArgs.argNz = Nz
+	setmaxangleArgs.argPBC = PBC
 
-	args := setmaxangle_args.argptr[:]
-	cu.LaunchKernel(setmaxangle_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := setmaxangleArgs.argptr[:]
+	cu.LaunchKernel(setmaxangleCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -82,27 +83,38 @@ func k_setmaxangle_async(dst unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointe
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_setmaxangle_async(dst unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, aLUT2d unsafe.Pointer, regions unsafe.Pointer, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+	kSetmaxangleAsync(dst, mx, my, mz, aLUT2d, regions, Nx, Ny, Nz, PBC, cfg)
+}
+
 // maps compute capability on PTX code for setmaxangle kernel.
-var setmaxangle_map = map[int]string{0: "",
-	50: setmaxangle_ptx_50,
-	52: setmaxangle_ptx_52,
-	53: setmaxangle_ptx_53,
-	60: setmaxangle_ptx_60,
-	61: setmaxangle_ptx_61,
-	62: setmaxangle_ptx_62,
-	70: setmaxangle_ptx_70,
-	72: setmaxangle_ptx_72,
-	75: setmaxangle_ptx_75,
-	80: setmaxangle_ptx_80,
-	86: setmaxangle_ptx_86,
-	87: setmaxangle_ptx_87,
-	89: setmaxangle_ptx_89,
-	90: setmaxangle_ptx_90}
+var setmaxangleMap = map[int]string{
+	0:  "",
+	50: setmaxanglePtx50,
+	52: setmaxanglePtx52,
+	53: setmaxanglePtx53,
+	60: setmaxanglePtx60,
+	61: setmaxanglePtx61,
+	62: setmaxanglePtx62,
+	70: setmaxanglePtx70,
+	72: setmaxanglePtx72,
+	75: setmaxanglePtx75,
+	80: setmaxanglePtx80,
+	86: setmaxanglePtx86,
+	87: setmaxanglePtx87,
+	89: setmaxanglePtx89,
+	90: setmaxanglePtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var setmaxangle_map = setmaxangleMap
 
 // setmaxangle PTX code for various compute capabilities.
 const (
-	setmaxangle_ptx_50 = `
-.version 8.5
+	setmaxanglePtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -775,8 +787,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_52 = `
-.version 8.5
+	setmaxanglePtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -1449,8 +1461,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_53 = `
-.version 8.5
+	setmaxanglePtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -2123,8 +2135,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_60 = `
-.version 8.5
+	setmaxanglePtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -2797,8 +2809,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_61 = `
-.version 8.5
+	setmaxanglePtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -3471,8 +3483,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_62 = `
-.version 8.5
+	setmaxanglePtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -4145,8 +4157,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_70 = `
-.version 8.5
+	setmaxanglePtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -4819,8 +4831,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_72 = `
-.version 8.5
+	setmaxanglePtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -5493,8 +5505,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_75 = `
-.version 8.5
+	setmaxanglePtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -6167,8 +6179,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_80 = `
-.version 8.5
+	setmaxanglePtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -6841,8 +6853,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_86 = `
-.version 8.5
+	setmaxanglePtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -7515,8 +7527,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_87 = `
-.version 8.5
+	setmaxanglePtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -8189,8 +8201,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_89 = `
-.version 8.5
+	setmaxanglePtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -8863,8 +8875,8 @@ $L__BB0_34:
 }
 
 `
-	setmaxangle_ptx_90 = `
-.version 8.5
+	setmaxanglePtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

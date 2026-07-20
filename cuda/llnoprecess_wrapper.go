@@ -6,75 +6,76 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for llnoprecess kernel
-var llnoprecess_code cu.Function
+var llnoprecessCode cu.Function
 
 // Stores the arguments for llnoprecess kernel invocation
-type llnoprecess_args_t struct {
-	arg_tx unsafe.Pointer
-	arg_ty unsafe.Pointer
-	arg_tz unsafe.Pointer
-	arg_mx unsafe.Pointer
-	arg_my unsafe.Pointer
-	arg_mz unsafe.Pointer
-	arg_hx unsafe.Pointer
-	arg_hy unsafe.Pointer
-	arg_hz unsafe.Pointer
-	arg_N  int
+type llnoprecessArgsT struct {
+	argTx  unsafe.Pointer
+	argTy  unsafe.Pointer
+	argTz  unsafe.Pointer
+	argMx  unsafe.Pointer
+	argMy  unsafe.Pointer
+	argMz  unsafe.Pointer
+	argHx  unsafe.Pointer
+	argHy  unsafe.Pointer
+	argHz  unsafe.Pointer
+	argN   int
 	argptr [10]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for llnoprecess kernel invocation
-var llnoprecess_args llnoprecess_args_t
+var llnoprecessArgs llnoprecessArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	llnoprecess_args.argptr[0] = unsafe.Pointer(&llnoprecess_args.arg_tx)
-	llnoprecess_args.argptr[1] = unsafe.Pointer(&llnoprecess_args.arg_ty)
-	llnoprecess_args.argptr[2] = unsafe.Pointer(&llnoprecess_args.arg_tz)
-	llnoprecess_args.argptr[3] = unsafe.Pointer(&llnoprecess_args.arg_mx)
-	llnoprecess_args.argptr[4] = unsafe.Pointer(&llnoprecess_args.arg_my)
-	llnoprecess_args.argptr[5] = unsafe.Pointer(&llnoprecess_args.arg_mz)
-	llnoprecess_args.argptr[6] = unsafe.Pointer(&llnoprecess_args.arg_hx)
-	llnoprecess_args.argptr[7] = unsafe.Pointer(&llnoprecess_args.arg_hy)
-	llnoprecess_args.argptr[8] = unsafe.Pointer(&llnoprecess_args.arg_hz)
-	llnoprecess_args.argptr[9] = unsafe.Pointer(&llnoprecess_args.arg_N)
+	llnoprecessArgs.argptr[0] = unsafe.Pointer(&llnoprecessArgs.argTx)
+	llnoprecessArgs.argptr[1] = unsafe.Pointer(&llnoprecessArgs.argTy)
+	llnoprecessArgs.argptr[2] = unsafe.Pointer(&llnoprecessArgs.argTz)
+	llnoprecessArgs.argptr[3] = unsafe.Pointer(&llnoprecessArgs.argMx)
+	llnoprecessArgs.argptr[4] = unsafe.Pointer(&llnoprecessArgs.argMy)
+	llnoprecessArgs.argptr[5] = unsafe.Pointer(&llnoprecessArgs.argMz)
+	llnoprecessArgs.argptr[6] = unsafe.Pointer(&llnoprecessArgs.argHx)
+	llnoprecessArgs.argptr[7] = unsafe.Pointer(&llnoprecessArgs.argHy)
+	llnoprecessArgs.argptr[8] = unsafe.Pointer(&llnoprecessArgs.argHz)
+	llnoprecessArgs.argptr[9] = unsafe.Pointer(&llnoprecessArgs.argN)
 }
 
 // Wrapper for llnoprecess CUDA kernel, asynchronous.
-func k_llnoprecess_async(tx unsafe.Pointer, ty unsafe.Pointer, tz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, hx unsafe.Pointer, hy unsafe.Pointer, hz unsafe.Pointer, N int, cfg *config) {
+func kLlnoprecessAsync(tx unsafe.Pointer, ty unsafe.Pointer, tz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, hx unsafe.Pointer, hy unsafe.Pointer, hz unsafe.Pointer, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("llnoprecess")
 	}
 
-	llnoprecess_args.Lock()
-	defer llnoprecess_args.Unlock()
+	llnoprecessArgs.Lock()
+	defer llnoprecessArgs.Unlock()
 
-	if llnoprecess_code == 0 {
-		llnoprecess_code = fatbinLoad(llnoprecess_map, "llnoprecess")
+	if llnoprecessCode == 0 {
+		llnoprecessCode = fatbinLoad(llnoprecessMap, "llnoprecess")
 	}
 
-	llnoprecess_args.arg_tx = tx
-	llnoprecess_args.arg_ty = ty
-	llnoprecess_args.arg_tz = tz
-	llnoprecess_args.arg_mx = mx
-	llnoprecess_args.arg_my = my
-	llnoprecess_args.arg_mz = mz
-	llnoprecess_args.arg_hx = hx
-	llnoprecess_args.arg_hy = hy
-	llnoprecess_args.arg_hz = hz
-	llnoprecess_args.arg_N = N
+	llnoprecessArgs.argTx = tx
+	llnoprecessArgs.argTy = ty
+	llnoprecessArgs.argTz = tz
+	llnoprecessArgs.argMx = mx
+	llnoprecessArgs.argMy = my
+	llnoprecessArgs.argMz = mz
+	llnoprecessArgs.argHx = hx
+	llnoprecessArgs.argHy = hy
+	llnoprecessArgs.argHz = hz
+	llnoprecessArgs.argN = N
 
-	args := llnoprecess_args.argptr[:]
-	cu.LaunchKernel(llnoprecess_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := llnoprecessArgs.argptr[:]
+	cu.LaunchKernel(llnoprecessCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -82,27 +83,38 @@ func k_llnoprecess_async(tx unsafe.Pointer, ty unsafe.Pointer, tz unsafe.Pointer
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_llnoprecess_async(tx unsafe.Pointer, ty unsafe.Pointer, tz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, hx unsafe.Pointer, hy unsafe.Pointer, hz unsafe.Pointer, N int, cfg *config) {
+	kLlnoprecessAsync(tx, ty, tz, mx, my, mz, hx, hy, hz, N, cfg)
+}
+
 // maps compute capability on PTX code for llnoprecess kernel.
-var llnoprecess_map = map[int]string{0: "",
-	50: llnoprecess_ptx_50,
-	52: llnoprecess_ptx_52,
-	53: llnoprecess_ptx_53,
-	60: llnoprecess_ptx_60,
-	61: llnoprecess_ptx_61,
-	62: llnoprecess_ptx_62,
-	70: llnoprecess_ptx_70,
-	72: llnoprecess_ptx_72,
-	75: llnoprecess_ptx_75,
-	80: llnoprecess_ptx_80,
-	86: llnoprecess_ptx_86,
-	87: llnoprecess_ptx_87,
-	89: llnoprecess_ptx_89,
-	90: llnoprecess_ptx_90}
+var llnoprecessMap = map[int]string{
+	0:  "",
+	50: llnoprecessPtx50,
+	52: llnoprecessPtx52,
+	53: llnoprecessPtx53,
+	60: llnoprecessPtx60,
+	61: llnoprecessPtx61,
+	62: llnoprecessPtx62,
+	70: llnoprecessPtx70,
+	72: llnoprecessPtx72,
+	75: llnoprecessPtx75,
+	80: llnoprecessPtx80,
+	86: llnoprecessPtx86,
+	87: llnoprecessPtx87,
+	89: llnoprecessPtx89,
+	90: llnoprecessPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var llnoprecess_map = llnoprecessMap
 
 // llnoprecess PTX code for various compute capabilities.
 const (
-	llnoprecess_ptx_50 = `
-.version 8.5
+	llnoprecessPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -203,8 +215,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_52 = `
-.version 8.5
+	llnoprecessPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -305,8 +317,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_53 = `
-.version 8.5
+	llnoprecessPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -407,8 +419,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_60 = `
-.version 8.5
+	llnoprecessPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -509,8 +521,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_61 = `
-.version 8.5
+	llnoprecessPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -611,8 +623,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_62 = `
-.version 8.5
+	llnoprecessPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -713,8 +725,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_70 = `
-.version 8.5
+	llnoprecessPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -815,8 +827,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_72 = `
-.version 8.5
+	llnoprecessPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -917,8 +929,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_75 = `
-.version 8.5
+	llnoprecessPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1019,8 +1031,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_80 = `
-.version 8.5
+	llnoprecessPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1121,8 +1133,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_86 = `
-.version 8.5
+	llnoprecessPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1223,8 +1235,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_87 = `
-.version 8.5
+	llnoprecessPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1325,8 +1337,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_89 = `
-.version 8.5
+	llnoprecessPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1427,8 +1439,8 @@ $L__BB0_2:
 }
 
 `
-	llnoprecess_ptx_90 = `
-.version 8.5
+	llnoprecessPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

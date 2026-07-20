@@ -6,57 +6,58 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for reducesum kernel
-var reducesum_code cu.Function
+var reducesumCode cu.Function
 
 // Stores the arguments for reducesum kernel invocation
-type reducesum_args_t struct {
-	arg_src     unsafe.Pointer
-	arg_dst     unsafe.Pointer
-	arg_initVal float32
-	arg_n       int
-	argptr      [4]unsafe.Pointer
+type reducesumArgsT struct {
+	argSrc     unsafe.Pointer
+	argDst     unsafe.Pointer
+	argInitVal float32
+	argN       int
+	argptr     [4]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for reducesum kernel invocation
-var reducesum_args reducesum_args_t
+var reducesumArgs reducesumArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	reducesum_args.argptr[0] = unsafe.Pointer(&reducesum_args.arg_src)
-	reducesum_args.argptr[1] = unsafe.Pointer(&reducesum_args.arg_dst)
-	reducesum_args.argptr[2] = unsafe.Pointer(&reducesum_args.arg_initVal)
-	reducesum_args.argptr[3] = unsafe.Pointer(&reducesum_args.arg_n)
+	reducesumArgs.argptr[0] = unsafe.Pointer(&reducesumArgs.argSrc)
+	reducesumArgs.argptr[1] = unsafe.Pointer(&reducesumArgs.argDst)
+	reducesumArgs.argptr[2] = unsafe.Pointer(&reducesumArgs.argInitVal)
+	reducesumArgs.argptr[3] = unsafe.Pointer(&reducesumArgs.argN)
 }
 
 // Wrapper for reducesum CUDA kernel, asynchronous.
-func k_reducesum_async(src unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
+func kReducesumAsync(src unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("reducesum")
 	}
 
-	reducesum_args.Lock()
-	defer reducesum_args.Unlock()
+	reducesumArgs.Lock()
+	defer reducesumArgs.Unlock()
 
-	if reducesum_code == 0 {
-		reducesum_code = fatbinLoad(reducesum_map, "reducesum")
+	if reducesumCode == 0 {
+		reducesumCode = fatbinLoad(reducesumMap, "reducesum")
 	}
 
-	reducesum_args.arg_src = src
-	reducesum_args.arg_dst = dst
-	reducesum_args.arg_initVal = initVal
-	reducesum_args.arg_n = n
+	reducesumArgs.argSrc = src
+	reducesumArgs.argDst = dst
+	reducesumArgs.argInitVal = initVal
+	reducesumArgs.argN = n
 
-	args := reducesum_args.argptr[:]
-	cu.LaunchKernel(reducesum_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := reducesumArgs.argptr[:]
+	cu.LaunchKernel(reducesumCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -64,27 +65,38 @@ func k_reducesum_async(src unsafe.Pointer, dst unsafe.Pointer, initVal float32, 
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_reducesum_async(src unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
+	kReducesumAsync(src, dst, initVal, n, cfg)
+}
+
 // maps compute capability on PTX code for reducesum kernel.
-var reducesum_map = map[int]string{0: "",
-	50: reducesum_ptx_50,
-	52: reducesum_ptx_52,
-	53: reducesum_ptx_53,
-	60: reducesum_ptx_60,
-	61: reducesum_ptx_61,
-	62: reducesum_ptx_62,
-	70: reducesum_ptx_70,
-	72: reducesum_ptx_72,
-	75: reducesum_ptx_75,
-	80: reducesum_ptx_80,
-	86: reducesum_ptx_86,
-	87: reducesum_ptx_87,
-	89: reducesum_ptx_89,
-	90: reducesum_ptx_90}
+var reducesumMap = map[int]string{
+	0:  "",
+	50: reducesumPtx50,
+	52: reducesumPtx52,
+	53: reducesumPtx53,
+	60: reducesumPtx60,
+	61: reducesumPtx61,
+	62: reducesumPtx62,
+	70: reducesumPtx70,
+	72: reducesumPtx72,
+	75: reducesumPtx75,
+	80: reducesumPtx80,
+	86: reducesumPtx86,
+	87: reducesumPtx87,
+	89: reducesumPtx89,
+	90: reducesumPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var reducesum_map = reducesumMap
 
 // reducesum PTX code for various compute capabilities.
 const (
-	reducesum_ptx_50 = `
-.version 8.5
+	reducesumPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -231,7 +243,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -239,8 +251,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_52 = `
-.version 8.5
+	reducesumPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -387,7 +399,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -395,8 +407,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_53 = `
-.version 8.5
+	reducesumPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -543,7 +555,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -551,8 +563,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_60 = `
-.version 8.5
+	reducesumPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -699,7 +711,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -707,8 +719,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_61 = `
-.version 8.5
+	reducesumPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -855,7 +867,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -863,8 +875,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_62 = `
-.version 8.5
+	reducesumPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -1011,7 +1023,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -1019,8 +1031,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_70 = `
-.version 8.5
+	reducesumPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1167,7 +1179,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -1175,8 +1187,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_72 = `
-.version 8.5
+	reducesumPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -1323,7 +1335,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -1331,8 +1343,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_75 = `
-.version 8.5
+	reducesumPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1479,7 +1491,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -1487,8 +1499,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_80 = `
-.version 8.5
+	reducesumPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1635,7 +1647,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -1643,8 +1655,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_86 = `
-.version 8.5
+	reducesumPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1791,7 +1803,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -1799,8 +1811,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_87 = `
-.version 8.5
+	reducesumPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1947,7 +1959,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -1955,8 +1967,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_89 = `
-.version 8.5
+	reducesumPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -2103,7 +2115,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;
@@ -2111,8 +2123,8 @@ $L__BB0_15:
 }
 
 `
-	reducesum_ptx_90 = `
-.version 8.5
+	reducesumPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 
@@ -2259,7 +2271,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f39, [_ZZ9reducesumE5sdata];
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.add.f32 	%f40, [%rd15], %f39;
+	red.global.add.f32 	[%rd15], %f39;
 
 $L__BB0_15:
 	ret;

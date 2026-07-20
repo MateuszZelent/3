@@ -6,60 +6,61 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for regionselect kernel
-var regionselect_code cu.Function
+var regionselectCode cu.Function
 
 // Stores the arguments for regionselect kernel invocation
-type regionselect_args_t struct {
-	arg_dst     unsafe.Pointer
-	arg_src     unsafe.Pointer
-	arg_regions unsafe.Pointer
-	arg_region  byte
-	arg_N       int
-	argptr      [5]unsafe.Pointer
+type regionselectArgsT struct {
+	argDst     unsafe.Pointer
+	argSrc     unsafe.Pointer
+	argRegions unsafe.Pointer
+	argRegion  byte
+	argN       int
+	argptr     [5]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for regionselect kernel invocation
-var regionselect_args regionselect_args_t
+var regionselectArgs regionselectArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	regionselect_args.argptr[0] = unsafe.Pointer(&regionselect_args.arg_dst)
-	regionselect_args.argptr[1] = unsafe.Pointer(&regionselect_args.arg_src)
-	regionselect_args.argptr[2] = unsafe.Pointer(&regionselect_args.arg_regions)
-	regionselect_args.argptr[3] = unsafe.Pointer(&regionselect_args.arg_region)
-	regionselect_args.argptr[4] = unsafe.Pointer(&regionselect_args.arg_N)
+	regionselectArgs.argptr[0] = unsafe.Pointer(&regionselectArgs.argDst)
+	regionselectArgs.argptr[1] = unsafe.Pointer(&regionselectArgs.argSrc)
+	regionselectArgs.argptr[2] = unsafe.Pointer(&regionselectArgs.argRegions)
+	regionselectArgs.argptr[3] = unsafe.Pointer(&regionselectArgs.argRegion)
+	regionselectArgs.argptr[4] = unsafe.Pointer(&regionselectArgs.argN)
 }
 
 // Wrapper for regionselect CUDA kernel, asynchronous.
-func k_regionselect_async(dst unsafe.Pointer, src unsafe.Pointer, regions unsafe.Pointer, region byte, N int, cfg *config) {
+func kRegionselectAsync(dst unsafe.Pointer, src unsafe.Pointer, regions unsafe.Pointer, region byte, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("regionselect")
 	}
 
-	regionselect_args.Lock()
-	defer regionselect_args.Unlock()
+	regionselectArgs.Lock()
+	defer regionselectArgs.Unlock()
 
-	if regionselect_code == 0 {
-		regionselect_code = fatbinLoad(regionselect_map, "regionselect")
+	if regionselectCode == 0 {
+		regionselectCode = fatbinLoad(regionselectMap, "regionselect")
 	}
 
-	regionselect_args.arg_dst = dst
-	regionselect_args.arg_src = src
-	regionselect_args.arg_regions = regions
-	regionselect_args.arg_region = region
-	regionselect_args.arg_N = N
+	regionselectArgs.argDst = dst
+	regionselectArgs.argSrc = src
+	regionselectArgs.argRegions = regions
+	regionselectArgs.argRegion = region
+	regionselectArgs.argN = N
 
-	args := regionselect_args.argptr[:]
-	cu.LaunchKernel(regionselect_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := regionselectArgs.argptr[:]
+	cu.LaunchKernel(regionselectCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -67,27 +68,38 @@ func k_regionselect_async(dst unsafe.Pointer, src unsafe.Pointer, regions unsafe
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_regionselect_async(dst unsafe.Pointer, src unsafe.Pointer, regions unsafe.Pointer, region byte, N int, cfg *config) {
+	kRegionselectAsync(dst, src, regions, region, N, cfg)
+}
+
 // maps compute capability on PTX code for regionselect kernel.
-var regionselect_map = map[int]string{0: "",
-	50: regionselect_ptx_50,
-	52: regionselect_ptx_52,
-	53: regionselect_ptx_53,
-	60: regionselect_ptx_60,
-	61: regionselect_ptx_61,
-	62: regionselect_ptx_62,
-	70: regionselect_ptx_70,
-	72: regionselect_ptx_72,
-	75: regionselect_ptx_75,
-	80: regionselect_ptx_80,
-	86: regionselect_ptx_86,
-	87: regionselect_ptx_87,
-	89: regionselect_ptx_89,
-	90: regionselect_ptx_90}
+var regionselectMap = map[int]string{
+	0:  "",
+	50: regionselectPtx50,
+	52: regionselectPtx52,
+	53: regionselectPtx53,
+	60: regionselectPtx60,
+	61: regionselectPtx61,
+	62: regionselectPtx62,
+	70: regionselectPtx70,
+	72: regionselectPtx72,
+	75: regionselectPtx75,
+	80: regionselectPtx80,
+	86: regionselectPtx86,
+	87: regionselectPtx87,
+	89: regionselectPtx89,
+	90: regionselectPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var regionselect_map = regionselectMap
 
 // regionselect PTX code for various compute capabilities.
 const (
-	regionselect_ptx_50 = `
-.version 8.5
+	regionselectPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -148,8 +160,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_52 = `
-.version 8.5
+	regionselectPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -210,8 +222,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_53 = `
-.version 8.5
+	regionselectPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -272,8 +284,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_60 = `
-.version 8.5
+	regionselectPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -334,8 +346,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_61 = `
-.version 8.5
+	regionselectPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -396,8 +408,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_62 = `
-.version 8.5
+	regionselectPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -458,8 +470,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_70 = `
-.version 8.5
+	regionselectPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -520,8 +532,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_72 = `
-.version 8.5
+	regionselectPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -582,8 +594,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_75 = `
-.version 8.5
+	regionselectPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -644,8 +656,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_80 = `
-.version 8.5
+	regionselectPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -706,8 +718,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_86 = `
-.version 8.5
+	regionselectPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -768,8 +780,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_87 = `
-.version 8.5
+	regionselectPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -830,8 +842,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_89 = `
-.version 8.5
+	regionselectPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -892,8 +904,8 @@ $L__BB0_4:
 }
 
 `
-	regionselect_ptx_90 = `
-.version 8.5
+	regionselectPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

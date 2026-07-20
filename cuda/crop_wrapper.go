@@ -6,78 +6,79 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for crop kernel
-var crop_code cu.Function
+var cropCode cu.Function
 
 // Stores the arguments for crop kernel invocation
-type crop_args_t struct {
-	arg_dst  unsafe.Pointer
-	arg_Dx   int
-	arg_Dy   int
-	arg_Dz   int
-	arg_src  unsafe.Pointer
-	arg_Sx   int
-	arg_Sy   int
-	arg_Sz   int
-	arg_Offx int
-	arg_Offy int
-	arg_Offz int
-	argptr   [11]unsafe.Pointer
+type cropArgsT struct {
+	argDst  unsafe.Pointer
+	argDx   int
+	argDy   int
+	argDz   int
+	argSrc  unsafe.Pointer
+	argSx   int
+	argSy   int
+	argSz   int
+	argOffx int
+	argOffy int
+	argOffz int
+	argptr  [11]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for crop kernel invocation
-var crop_args crop_args_t
+var cropArgs cropArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	crop_args.argptr[0] = unsafe.Pointer(&crop_args.arg_dst)
-	crop_args.argptr[1] = unsafe.Pointer(&crop_args.arg_Dx)
-	crop_args.argptr[2] = unsafe.Pointer(&crop_args.arg_Dy)
-	crop_args.argptr[3] = unsafe.Pointer(&crop_args.arg_Dz)
-	crop_args.argptr[4] = unsafe.Pointer(&crop_args.arg_src)
-	crop_args.argptr[5] = unsafe.Pointer(&crop_args.arg_Sx)
-	crop_args.argptr[6] = unsafe.Pointer(&crop_args.arg_Sy)
-	crop_args.argptr[7] = unsafe.Pointer(&crop_args.arg_Sz)
-	crop_args.argptr[8] = unsafe.Pointer(&crop_args.arg_Offx)
-	crop_args.argptr[9] = unsafe.Pointer(&crop_args.arg_Offy)
-	crop_args.argptr[10] = unsafe.Pointer(&crop_args.arg_Offz)
+	cropArgs.argptr[0] = unsafe.Pointer(&cropArgs.argDst)
+	cropArgs.argptr[1] = unsafe.Pointer(&cropArgs.argDx)
+	cropArgs.argptr[2] = unsafe.Pointer(&cropArgs.argDy)
+	cropArgs.argptr[3] = unsafe.Pointer(&cropArgs.argDz)
+	cropArgs.argptr[4] = unsafe.Pointer(&cropArgs.argSrc)
+	cropArgs.argptr[5] = unsafe.Pointer(&cropArgs.argSx)
+	cropArgs.argptr[6] = unsafe.Pointer(&cropArgs.argSy)
+	cropArgs.argptr[7] = unsafe.Pointer(&cropArgs.argSz)
+	cropArgs.argptr[8] = unsafe.Pointer(&cropArgs.argOffx)
+	cropArgs.argptr[9] = unsafe.Pointer(&cropArgs.argOffy)
+	cropArgs.argptr[10] = unsafe.Pointer(&cropArgs.argOffz)
 }
 
 // Wrapper for crop CUDA kernel, asynchronous.
-func k_crop_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, Offx int, Offy int, Offz int, cfg *config) {
+func kCropAsync(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, Offx int, Offy int, Offz int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("crop")
 	}
 
-	crop_args.Lock()
-	defer crop_args.Unlock()
+	cropArgs.Lock()
+	defer cropArgs.Unlock()
 
-	if crop_code == 0 {
-		crop_code = fatbinLoad(crop_map, "crop")
+	if cropCode == 0 {
+		cropCode = fatbinLoad(cropMap, "crop")
 	}
 
-	crop_args.arg_dst = dst
-	crop_args.arg_Dx = Dx
-	crop_args.arg_Dy = Dy
-	crop_args.arg_Dz = Dz
-	crop_args.arg_src = src
-	crop_args.arg_Sx = Sx
-	crop_args.arg_Sy = Sy
-	crop_args.arg_Sz = Sz
-	crop_args.arg_Offx = Offx
-	crop_args.arg_Offy = Offy
-	crop_args.arg_Offz = Offz
+	cropArgs.argDst = dst
+	cropArgs.argDx = Dx
+	cropArgs.argDy = Dy
+	cropArgs.argDz = Dz
+	cropArgs.argSrc = src
+	cropArgs.argSx = Sx
+	cropArgs.argSy = Sy
+	cropArgs.argSz = Sz
+	cropArgs.argOffx = Offx
+	cropArgs.argOffy = Offy
+	cropArgs.argOffz = Offz
 
-	args := crop_args.argptr[:]
-	cu.LaunchKernel(crop_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := cropArgs.argptr[:]
+	cu.LaunchKernel(cropCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -85,27 +86,38 @@ func k_crop_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_crop_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, Offx int, Offy int, Offz int, cfg *config) {
+	kCropAsync(dst, Dx, Dy, Dz, src, Sx, Sy, Sz, Offx, Offy, Offz, cfg)
+}
+
 // maps compute capability on PTX code for crop kernel.
-var crop_map = map[int]string{0: "",
-	50: crop_ptx_50,
-	52: crop_ptx_52,
-	53: crop_ptx_53,
-	60: crop_ptx_60,
-	61: crop_ptx_61,
-	62: crop_ptx_62,
-	70: crop_ptx_70,
-	72: crop_ptx_72,
-	75: crop_ptx_75,
-	80: crop_ptx_80,
-	86: crop_ptx_86,
-	87: crop_ptx_87,
-	89: crop_ptx_89,
-	90: crop_ptx_90}
+var cropMap = map[int]string{
+	0:  "",
+	50: cropPtx50,
+	52: cropPtx52,
+	53: cropPtx53,
+	60: cropPtx60,
+	61: cropPtx61,
+	62: cropPtx62,
+	70: cropPtx70,
+	72: cropPtx72,
+	75: cropPtx75,
+	80: cropPtx80,
+	86: cropPtx86,
+	87: cropPtx87,
+	89: cropPtx89,
+	90: cropPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var crop_map = cropMap
 
 // crop PTX code for various compute capabilities.
 const (
-	crop_ptx_50 = `
-.version 8.5
+	cropPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -182,8 +194,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_52 = `
-.version 8.5
+	cropPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -260,8 +272,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_53 = `
-.version 8.5
+	cropPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -338,8 +350,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_60 = `
-.version 8.5
+	cropPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -416,8 +428,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_61 = `
-.version 8.5
+	cropPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -494,8 +506,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_62 = `
-.version 8.5
+	cropPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -572,8 +584,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_70 = `
-.version 8.5
+	cropPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -650,8 +662,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_72 = `
-.version 8.5
+	cropPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -728,8 +740,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_75 = `
-.version 8.5
+	cropPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -806,8 +818,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_80 = `
-.version 8.5
+	cropPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -884,8 +896,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_86 = `
-.version 8.5
+	cropPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -962,8 +974,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_87 = `
-.version 8.5
+	cropPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1040,8 +1052,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_89 = `
-.version 8.5
+	cropPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1118,8 +1130,8 @@ $L__BB0_2:
 }
 
 `
-	crop_ptx_90 = `
-.version 8.5
+	cropPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

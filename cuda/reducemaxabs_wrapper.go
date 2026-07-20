@@ -6,57 +6,58 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for reducemaxabs kernel
-var reducemaxabs_code cu.Function
+var reducemaxabsCode cu.Function
 
 // Stores the arguments for reducemaxabs kernel invocation
-type reducemaxabs_args_t struct {
-	arg_src     unsafe.Pointer
-	arg_dst     unsafe.Pointer
-	arg_initVal float32
-	arg_n       int
-	argptr      [4]unsafe.Pointer
+type reducemaxabsArgsT struct {
+	argSrc     unsafe.Pointer
+	argDst     unsafe.Pointer
+	argInitVal float32
+	argN       int
+	argptr     [4]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for reducemaxabs kernel invocation
-var reducemaxabs_args reducemaxabs_args_t
+var reducemaxabsArgs reducemaxabsArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	reducemaxabs_args.argptr[0] = unsafe.Pointer(&reducemaxabs_args.arg_src)
-	reducemaxabs_args.argptr[1] = unsafe.Pointer(&reducemaxabs_args.arg_dst)
-	reducemaxabs_args.argptr[2] = unsafe.Pointer(&reducemaxabs_args.arg_initVal)
-	reducemaxabs_args.argptr[3] = unsafe.Pointer(&reducemaxabs_args.arg_n)
+	reducemaxabsArgs.argptr[0] = unsafe.Pointer(&reducemaxabsArgs.argSrc)
+	reducemaxabsArgs.argptr[1] = unsafe.Pointer(&reducemaxabsArgs.argDst)
+	reducemaxabsArgs.argptr[2] = unsafe.Pointer(&reducemaxabsArgs.argInitVal)
+	reducemaxabsArgs.argptr[3] = unsafe.Pointer(&reducemaxabsArgs.argN)
 }
 
 // Wrapper for reducemaxabs CUDA kernel, asynchronous.
-func k_reducemaxabs_async(src unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
+func kReducemaxabsAsync(src unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("reducemaxabs")
 	}
 
-	reducemaxabs_args.Lock()
-	defer reducemaxabs_args.Unlock()
+	reducemaxabsArgs.Lock()
+	defer reducemaxabsArgs.Unlock()
 
-	if reducemaxabs_code == 0 {
-		reducemaxabs_code = fatbinLoad(reducemaxabs_map, "reducemaxabs")
+	if reducemaxabsCode == 0 {
+		reducemaxabsCode = fatbinLoad(reducemaxabsMap, "reducemaxabs")
 	}
 
-	reducemaxabs_args.arg_src = src
-	reducemaxabs_args.arg_dst = dst
-	reducemaxabs_args.arg_initVal = initVal
-	reducemaxabs_args.arg_n = n
+	reducemaxabsArgs.argSrc = src
+	reducemaxabsArgs.argDst = dst
+	reducemaxabsArgs.argInitVal = initVal
+	reducemaxabsArgs.argN = n
 
-	args := reducemaxabs_args.argptr[:]
-	cu.LaunchKernel(reducemaxabs_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := reducemaxabsArgs.argptr[:]
+	cu.LaunchKernel(reducemaxabsCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -64,27 +65,38 @@ func k_reducemaxabs_async(src unsafe.Pointer, dst unsafe.Pointer, initVal float3
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_reducemaxabs_async(src unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
+	kReducemaxabsAsync(src, dst, initVal, n, cfg)
+}
+
 // maps compute capability on PTX code for reducemaxabs kernel.
-var reducemaxabs_map = map[int]string{0: "",
-	50: reducemaxabs_ptx_50,
-	52: reducemaxabs_ptx_52,
-	53: reducemaxabs_ptx_53,
-	60: reducemaxabs_ptx_60,
-	61: reducemaxabs_ptx_61,
-	62: reducemaxabs_ptx_62,
-	70: reducemaxabs_ptx_70,
-	72: reducemaxabs_ptx_72,
-	75: reducemaxabs_ptx_75,
-	80: reducemaxabs_ptx_80,
-	86: reducemaxabs_ptx_86,
-	87: reducemaxabs_ptx_87,
-	89: reducemaxabs_ptx_89,
-	90: reducemaxabs_ptx_90}
+var reducemaxabsMap = map[int]string{
+	0:  "",
+	50: reducemaxabsPtx50,
+	52: reducemaxabsPtx52,
+	53: reducemaxabsPtx53,
+	60: reducemaxabsPtx60,
+	61: reducemaxabsPtx61,
+	62: reducemaxabsPtx62,
+	70: reducemaxabsPtx70,
+	72: reducemaxabsPtx72,
+	75: reducemaxabsPtx75,
+	80: reducemaxabsPtx80,
+	86: reducemaxabsPtx86,
+	87: reducemaxabsPtx87,
+	89: reducemaxabsPtx89,
+	90: reducemaxabsPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var reducemaxabs_map = reducemaxabsMap
 
 // reducemaxabs PTX code for various compute capabilities.
 const (
-	reducemaxabs_ptx_50 = `
-.version 8.5
+	reducemaxabsPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -238,7 +250,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -246,8 +258,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_52 = `
-.version 8.5
+	reducemaxabsPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -401,7 +413,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -409,8 +421,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_53 = `
-.version 8.5
+	reducemaxabsPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -564,7 +576,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -572,8 +584,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_60 = `
-.version 8.5
+	reducemaxabsPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -727,7 +739,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -735,8 +747,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_61 = `
-.version 8.5
+	reducemaxabsPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -890,7 +902,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -898,8 +910,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_62 = `
-.version 8.5
+	reducemaxabsPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -1053,7 +1065,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1061,8 +1073,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_70 = `
-.version 8.5
+	reducemaxabsPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1216,7 +1228,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1224,8 +1236,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_72 = `
-.version 8.5
+	reducemaxabsPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -1379,7 +1391,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1387,8 +1399,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_75 = `
-.version 8.5
+	reducemaxabsPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1542,7 +1554,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1550,8 +1562,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_80 = `
-.version 8.5
+	reducemaxabsPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1705,7 +1717,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1713,8 +1725,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_86 = `
-.version 8.5
+	reducemaxabsPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1868,7 +1880,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1876,8 +1888,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_87 = `
-.version 8.5
+	reducemaxabsPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -2031,7 +2043,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -2039,8 +2051,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_89 = `
-.version 8.5
+	reducemaxabsPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -2194,7 +2206,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;
@@ -2202,8 +2214,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxabs_ptx_90 = `
-.version 8.5
+	reducemaxabsPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 
@@ -2357,7 +2369,7 @@ $L__BB0_13:
 	abs.f32 	%f45, %f44;
 	mov.b32 	%r32, %f45;
 	cvta.to.global.u64 	%rd15, %rd7;
-	atom.global.max.s32 	%r33, [%rd15], %r32;
+	red.global.max.s32 	[%rd15], %r32;
 
 $L__BB0_15:
 	ret;

@@ -6,57 +6,58 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for kernmulC kernel
-var kernmulC_code cu.Function
+var kernmulCCode cu.Function
 
 // Stores the arguments for kernmulC kernel invocation
-type kernmulC_args_t struct {
-	arg_fftM unsafe.Pointer
-	arg_fftK unsafe.Pointer
-	arg_Nx   int
-	arg_Ny   int
-	argptr   [4]unsafe.Pointer
+type kernmulCArgsT struct {
+	argFftM unsafe.Pointer
+	argFftK unsafe.Pointer
+	argNx   int
+	argNy   int
+	argptr  [4]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for kernmulC kernel invocation
-var kernmulC_args kernmulC_args_t
+var kernmulCArgs kernmulCArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	kernmulC_args.argptr[0] = unsafe.Pointer(&kernmulC_args.arg_fftM)
-	kernmulC_args.argptr[1] = unsafe.Pointer(&kernmulC_args.arg_fftK)
-	kernmulC_args.argptr[2] = unsafe.Pointer(&kernmulC_args.arg_Nx)
-	kernmulC_args.argptr[3] = unsafe.Pointer(&kernmulC_args.arg_Ny)
+	kernmulCArgs.argptr[0] = unsafe.Pointer(&kernmulCArgs.argFftM)
+	kernmulCArgs.argptr[1] = unsafe.Pointer(&kernmulCArgs.argFftK)
+	kernmulCArgs.argptr[2] = unsafe.Pointer(&kernmulCArgs.argNx)
+	kernmulCArgs.argptr[3] = unsafe.Pointer(&kernmulCArgs.argNy)
 }
 
 // Wrapper for kernmulC CUDA kernel, asynchronous.
-func k_kernmulC_async(fftM unsafe.Pointer, fftK unsafe.Pointer, Nx int, Ny int, cfg *config) {
+func kKernmulCAsync(fftM unsafe.Pointer, fftK unsafe.Pointer, Nx int, Ny int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("kernmulC")
 	}
 
-	kernmulC_args.Lock()
-	defer kernmulC_args.Unlock()
+	kernmulCArgs.Lock()
+	defer kernmulCArgs.Unlock()
 
-	if kernmulC_code == 0 {
-		kernmulC_code = fatbinLoad(kernmulC_map, "kernmulC")
+	if kernmulCCode == 0 {
+		kernmulCCode = fatbinLoad(kernmulCMap, "kernmulC")
 	}
 
-	kernmulC_args.arg_fftM = fftM
-	kernmulC_args.arg_fftK = fftK
-	kernmulC_args.arg_Nx = Nx
-	kernmulC_args.arg_Ny = Ny
+	kernmulCArgs.argFftM = fftM
+	kernmulCArgs.argFftK = fftK
+	kernmulCArgs.argNx = Nx
+	kernmulCArgs.argNy = Ny
 
-	args := kernmulC_args.argptr[:]
-	cu.LaunchKernel(kernmulC_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := kernmulCArgs.argptr[:]
+	cu.LaunchKernel(kernmulCCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -64,27 +65,38 @@ func k_kernmulC_async(fftM unsafe.Pointer, fftK unsafe.Pointer, Nx int, Ny int, 
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_kernmulC_async(fftM unsafe.Pointer, fftK unsafe.Pointer, Nx int, Ny int, cfg *config) {
+	kKernmulCAsync(fftM, fftK, Nx, Ny, cfg)
+}
+
 // maps compute capability on PTX code for kernmulC kernel.
-var kernmulC_map = map[int]string{0: "",
-	50: kernmulC_ptx_50,
-	52: kernmulC_ptx_52,
-	53: kernmulC_ptx_53,
-	60: kernmulC_ptx_60,
-	61: kernmulC_ptx_61,
-	62: kernmulC_ptx_62,
-	70: kernmulC_ptx_70,
-	72: kernmulC_ptx_72,
-	75: kernmulC_ptx_75,
-	80: kernmulC_ptx_80,
-	86: kernmulC_ptx_86,
-	87: kernmulC_ptx_87,
-	89: kernmulC_ptx_89,
-	90: kernmulC_ptx_90}
+var kernmulCMap = map[int]string{
+	0:  "",
+	50: kernmulCPtx50,
+	52: kernmulCPtx52,
+	53: kernmulCPtx53,
+	60: kernmulCPtx60,
+	61: kernmulCPtx61,
+	62: kernmulCPtx62,
+	70: kernmulCPtx70,
+	72: kernmulCPtx72,
+	75: kernmulCPtx75,
+	80: kernmulCPtx80,
+	86: kernmulCPtx86,
+	87: kernmulCPtx87,
+	89: kernmulCPtx89,
+	90: kernmulCPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var kernmulC_map = kernmulCMap
 
 // kernmulC PTX code for various compute capabilities.
 const (
-	kernmulC_ptx_50 = `
-.version 8.5
+	kernmulCPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -145,8 +157,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_52 = `
-.version 8.5
+	kernmulCPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -207,8 +219,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_53 = `
-.version 8.5
+	kernmulCPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -269,8 +281,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_60 = `
-.version 8.5
+	kernmulCPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -331,8 +343,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_61 = `
-.version 8.5
+	kernmulCPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -393,8 +405,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_62 = `
-.version 8.5
+	kernmulCPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -455,8 +467,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_70 = `
-.version 8.5
+	kernmulCPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -517,8 +529,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_72 = `
-.version 8.5
+	kernmulCPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -579,8 +591,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_75 = `
-.version 8.5
+	kernmulCPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -641,8 +653,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_80 = `
-.version 8.5
+	kernmulCPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -703,8 +715,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_86 = `
-.version 8.5
+	kernmulCPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -765,8 +777,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_87 = `
-.version 8.5
+	kernmulCPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -827,8 +839,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_89 = `
-.version 8.5
+	kernmulCPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -889,8 +901,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulC_ptx_90 = `
-.version 8.5
+	kernmulCPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

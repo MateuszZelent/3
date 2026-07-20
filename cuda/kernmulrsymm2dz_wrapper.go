@@ -6,57 +6,58 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for kernmulRSymm2Dz kernel
-var kernmulRSymm2Dz_code cu.Function
+var kernmulRSymm2DzCode cu.Function
 
 // Stores the arguments for kernmulRSymm2Dz kernel invocation
-type kernmulRSymm2Dz_args_t struct {
-	arg_fftMz  unsafe.Pointer
-	arg_fftKzz unsafe.Pointer
-	arg_Nx     int
-	arg_Ny     int
-	argptr     [4]unsafe.Pointer
+type kernmulRSymm2DzArgsT struct {
+	argFftMz  unsafe.Pointer
+	argFftKzz unsafe.Pointer
+	argNx     int
+	argNy     int
+	argptr    [4]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for kernmulRSymm2Dz kernel invocation
-var kernmulRSymm2Dz_args kernmulRSymm2Dz_args_t
+var kernmulRSymm2DzArgs kernmulRSymm2DzArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	kernmulRSymm2Dz_args.argptr[0] = unsafe.Pointer(&kernmulRSymm2Dz_args.arg_fftMz)
-	kernmulRSymm2Dz_args.argptr[1] = unsafe.Pointer(&kernmulRSymm2Dz_args.arg_fftKzz)
-	kernmulRSymm2Dz_args.argptr[2] = unsafe.Pointer(&kernmulRSymm2Dz_args.arg_Nx)
-	kernmulRSymm2Dz_args.argptr[3] = unsafe.Pointer(&kernmulRSymm2Dz_args.arg_Ny)
+	kernmulRSymm2DzArgs.argptr[0] = unsafe.Pointer(&kernmulRSymm2DzArgs.argFftMz)
+	kernmulRSymm2DzArgs.argptr[1] = unsafe.Pointer(&kernmulRSymm2DzArgs.argFftKzz)
+	kernmulRSymm2DzArgs.argptr[2] = unsafe.Pointer(&kernmulRSymm2DzArgs.argNx)
+	kernmulRSymm2DzArgs.argptr[3] = unsafe.Pointer(&kernmulRSymm2DzArgs.argNy)
 }
 
 // Wrapper for kernmulRSymm2Dz CUDA kernel, asynchronous.
-func k_kernmulRSymm2Dz_async(fftMz unsafe.Pointer, fftKzz unsafe.Pointer, Nx int, Ny int, cfg *config) {
+func kKernmulRSymm2DzAsync(fftMz unsafe.Pointer, fftKzz unsafe.Pointer, Nx int, Ny int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("kernmulRSymm2Dz")
 	}
 
-	kernmulRSymm2Dz_args.Lock()
-	defer kernmulRSymm2Dz_args.Unlock()
+	kernmulRSymm2DzArgs.Lock()
+	defer kernmulRSymm2DzArgs.Unlock()
 
-	if kernmulRSymm2Dz_code == 0 {
-		kernmulRSymm2Dz_code = fatbinLoad(kernmulRSymm2Dz_map, "kernmulRSymm2Dz")
+	if kernmulRSymm2DzCode == 0 {
+		kernmulRSymm2DzCode = fatbinLoad(kernmulRSymm2DzMap, "kernmulRSymm2Dz")
 	}
 
-	kernmulRSymm2Dz_args.arg_fftMz = fftMz
-	kernmulRSymm2Dz_args.arg_fftKzz = fftKzz
-	kernmulRSymm2Dz_args.arg_Nx = Nx
-	kernmulRSymm2Dz_args.arg_Ny = Ny
+	kernmulRSymm2DzArgs.argFftMz = fftMz
+	kernmulRSymm2DzArgs.argFftKzz = fftKzz
+	kernmulRSymm2DzArgs.argNx = Nx
+	kernmulRSymm2DzArgs.argNy = Ny
 
-	args := kernmulRSymm2Dz_args.argptr[:]
-	cu.LaunchKernel(kernmulRSymm2Dz_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := kernmulRSymm2DzArgs.argptr[:]
+	cu.LaunchKernel(kernmulRSymm2DzCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -64,27 +65,38 @@ func k_kernmulRSymm2Dz_async(fftMz unsafe.Pointer, fftKzz unsafe.Pointer, Nx int
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_kernmulRSymm2Dz_async(fftMz unsafe.Pointer, fftKzz unsafe.Pointer, Nx int, Ny int, cfg *config) {
+	kKernmulRSymm2DzAsync(fftMz, fftKzz, Nx, Ny, cfg)
+}
+
 // maps compute capability on PTX code for kernmulRSymm2Dz kernel.
-var kernmulRSymm2Dz_map = map[int]string{0: "",
-	50: kernmulRSymm2Dz_ptx_50,
-	52: kernmulRSymm2Dz_ptx_52,
-	53: kernmulRSymm2Dz_ptx_53,
-	60: kernmulRSymm2Dz_ptx_60,
-	61: kernmulRSymm2Dz_ptx_61,
-	62: kernmulRSymm2Dz_ptx_62,
-	70: kernmulRSymm2Dz_ptx_70,
-	72: kernmulRSymm2Dz_ptx_72,
-	75: kernmulRSymm2Dz_ptx_75,
-	80: kernmulRSymm2Dz_ptx_80,
-	86: kernmulRSymm2Dz_ptx_86,
-	87: kernmulRSymm2Dz_ptx_87,
-	89: kernmulRSymm2Dz_ptx_89,
-	90: kernmulRSymm2Dz_ptx_90}
+var kernmulRSymm2DzMap = map[int]string{
+	0:  "",
+	50: kernmulRSymm2DzPtx50,
+	52: kernmulRSymm2DzPtx52,
+	53: kernmulRSymm2DzPtx53,
+	60: kernmulRSymm2DzPtx60,
+	61: kernmulRSymm2DzPtx61,
+	62: kernmulRSymm2DzPtx62,
+	70: kernmulRSymm2DzPtx70,
+	72: kernmulRSymm2DzPtx72,
+	75: kernmulRSymm2DzPtx75,
+	80: kernmulRSymm2DzPtx80,
+	86: kernmulRSymm2DzPtx86,
+	87: kernmulRSymm2DzPtx87,
+	89: kernmulRSymm2DzPtx89,
+	90: kernmulRSymm2DzPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var kernmulRSymm2Dz_map = kernmulRSymm2DzMap
 
 // kernmulRSymm2Dz PTX code for various compute capabilities.
 const (
-	kernmulRSymm2Dz_ptx_50 = `
-.version 8.5
+	kernmulRSymm2DzPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -149,8 +161,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_52 = `
-.version 8.5
+	kernmulRSymm2DzPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -215,8 +227,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_53 = `
-.version 8.5
+	kernmulRSymm2DzPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -281,8 +293,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_60 = `
-.version 8.5
+	kernmulRSymm2DzPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -347,8 +359,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_61 = `
-.version 8.5
+	kernmulRSymm2DzPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -413,8 +425,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_62 = `
-.version 8.5
+	kernmulRSymm2DzPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -479,8 +491,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_70 = `
-.version 8.5
+	kernmulRSymm2DzPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -545,8 +557,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_72 = `
-.version 8.5
+	kernmulRSymm2DzPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -611,8 +623,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_75 = `
-.version 8.5
+	kernmulRSymm2DzPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -677,8 +689,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_80 = `
-.version 8.5
+	kernmulRSymm2DzPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -743,8 +755,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_86 = `
-.version 8.5
+	kernmulRSymm2DzPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -809,8 +821,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_87 = `
-.version 8.5
+	kernmulRSymm2DzPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -875,8 +887,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_89 = `
-.version 8.5
+	kernmulRSymm2DzPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -941,8 +953,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dz_ptx_90 = `
-.version 8.5
+	kernmulRSymm2DzPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

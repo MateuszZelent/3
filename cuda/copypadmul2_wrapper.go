@@ -6,78 +6,79 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for copypadmul2 kernel
-var copypadmul2_code cu.Function
+var copypadmul2Code cu.Function
 
 // Stores the arguments for copypadmul2 kernel invocation
-type copypadmul2_args_t struct {
-	arg_dst    unsafe.Pointer
-	arg_Dx     int
-	arg_Dy     int
-	arg_Dz     int
-	arg_src    unsafe.Pointer
-	arg_Sx     int
-	arg_Sy     int
-	arg_Sz     int
-	arg_Ms_    unsafe.Pointer
-	arg_Ms_mul float32
-	arg_vol    unsafe.Pointer
-	argptr     [11]unsafe.Pointer
+type copypadmul2ArgsT struct {
+	argDst   unsafe.Pointer
+	argDx    int
+	argDy    int
+	argDz    int
+	argSrc   unsafe.Pointer
+	argSx    int
+	argSy    int
+	argSz    int
+	argMs    unsafe.Pointer
+	argMsMul float32
+	argVol   unsafe.Pointer
+	argptr   [11]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for copypadmul2 kernel invocation
-var copypadmul2_args copypadmul2_args_t
+var copypadmul2Args copypadmul2ArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	copypadmul2_args.argptr[0] = unsafe.Pointer(&copypadmul2_args.arg_dst)
-	copypadmul2_args.argptr[1] = unsafe.Pointer(&copypadmul2_args.arg_Dx)
-	copypadmul2_args.argptr[2] = unsafe.Pointer(&copypadmul2_args.arg_Dy)
-	copypadmul2_args.argptr[3] = unsafe.Pointer(&copypadmul2_args.arg_Dz)
-	copypadmul2_args.argptr[4] = unsafe.Pointer(&copypadmul2_args.arg_src)
-	copypadmul2_args.argptr[5] = unsafe.Pointer(&copypadmul2_args.arg_Sx)
-	copypadmul2_args.argptr[6] = unsafe.Pointer(&copypadmul2_args.arg_Sy)
-	copypadmul2_args.argptr[7] = unsafe.Pointer(&copypadmul2_args.arg_Sz)
-	copypadmul2_args.argptr[8] = unsafe.Pointer(&copypadmul2_args.arg_Ms_)
-	copypadmul2_args.argptr[9] = unsafe.Pointer(&copypadmul2_args.arg_Ms_mul)
-	copypadmul2_args.argptr[10] = unsafe.Pointer(&copypadmul2_args.arg_vol)
+	copypadmul2Args.argptr[0] = unsafe.Pointer(&copypadmul2Args.argDst)
+	copypadmul2Args.argptr[1] = unsafe.Pointer(&copypadmul2Args.argDx)
+	copypadmul2Args.argptr[2] = unsafe.Pointer(&copypadmul2Args.argDy)
+	copypadmul2Args.argptr[3] = unsafe.Pointer(&copypadmul2Args.argDz)
+	copypadmul2Args.argptr[4] = unsafe.Pointer(&copypadmul2Args.argSrc)
+	copypadmul2Args.argptr[5] = unsafe.Pointer(&copypadmul2Args.argSx)
+	copypadmul2Args.argptr[6] = unsafe.Pointer(&copypadmul2Args.argSy)
+	copypadmul2Args.argptr[7] = unsafe.Pointer(&copypadmul2Args.argSz)
+	copypadmul2Args.argptr[8] = unsafe.Pointer(&copypadmul2Args.argMs)
+	copypadmul2Args.argptr[9] = unsafe.Pointer(&copypadmul2Args.argMsMul)
+	copypadmul2Args.argptr[10] = unsafe.Pointer(&copypadmul2Args.argVol)
 }
 
 // Wrapper for copypadmul2 CUDA kernel, asynchronous.
-func k_copypadmul2_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, Ms_ unsafe.Pointer, Ms_mul float32, vol unsafe.Pointer, cfg *config) {
+func kCopypadmul2Async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, Ms_ unsafe.Pointer, Ms_mul float32, vol unsafe.Pointer, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("copypadmul2")
 	}
 
-	copypadmul2_args.Lock()
-	defer copypadmul2_args.Unlock()
+	copypadmul2Args.Lock()
+	defer copypadmul2Args.Unlock()
 
-	if copypadmul2_code == 0 {
-		copypadmul2_code = fatbinLoad(copypadmul2_map, "copypadmul2")
+	if copypadmul2Code == 0 {
+		copypadmul2Code = fatbinLoad(copypadmul2Map, "copypadmul2")
 	}
 
-	copypadmul2_args.arg_dst = dst
-	copypadmul2_args.arg_Dx = Dx
-	copypadmul2_args.arg_Dy = Dy
-	copypadmul2_args.arg_Dz = Dz
-	copypadmul2_args.arg_src = src
-	copypadmul2_args.arg_Sx = Sx
-	copypadmul2_args.arg_Sy = Sy
-	copypadmul2_args.arg_Sz = Sz
-	copypadmul2_args.arg_Ms_ = Ms_
-	copypadmul2_args.arg_Ms_mul = Ms_mul
-	copypadmul2_args.arg_vol = vol
+	copypadmul2Args.argDst = dst
+	copypadmul2Args.argDx = Dx
+	copypadmul2Args.argDy = Dy
+	copypadmul2Args.argDz = Dz
+	copypadmul2Args.argSrc = src
+	copypadmul2Args.argSx = Sx
+	copypadmul2Args.argSy = Sy
+	copypadmul2Args.argSz = Sz
+	copypadmul2Args.argMs = Ms_
+	copypadmul2Args.argMsMul = Ms_mul
+	copypadmul2Args.argVol = vol
 
-	args := copypadmul2_args.argptr[:]
-	cu.LaunchKernel(copypadmul2_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := copypadmul2Args.argptr[:]
+	cu.LaunchKernel(copypadmul2Code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -85,27 +86,38 @@ func k_copypadmul2_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_copypadmul2_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, Ms_ unsafe.Pointer, Ms_mul float32, vol unsafe.Pointer, cfg *config) {
+	kCopypadmul2Async(dst, Dx, Dy, Dz, src, Sx, Sy, Sz, Ms_, Ms_mul, vol, cfg)
+}
+
 // maps compute capability on PTX code for copypadmul2 kernel.
-var copypadmul2_map = map[int]string{0: "",
-	50: copypadmul2_ptx_50,
-	52: copypadmul2_ptx_52,
-	53: copypadmul2_ptx_53,
-	60: copypadmul2_ptx_60,
-	61: copypadmul2_ptx_61,
-	62: copypadmul2_ptx_62,
-	70: copypadmul2_ptx_70,
-	72: copypadmul2_ptx_72,
-	75: copypadmul2_ptx_75,
-	80: copypadmul2_ptx_80,
-	86: copypadmul2_ptx_86,
-	87: copypadmul2_ptx_87,
-	89: copypadmul2_ptx_89,
-	90: copypadmul2_ptx_90}
+var copypadmul2Map = map[int]string{
+	0:  "",
+	50: copypadmul2Ptx50,
+	52: copypadmul2Ptx52,
+	53: copypadmul2Ptx53,
+	60: copypadmul2Ptx60,
+	61: copypadmul2Ptx61,
+	62: copypadmul2Ptx62,
+	70: copypadmul2Ptx70,
+	72: copypadmul2Ptx72,
+	75: copypadmul2Ptx75,
+	80: copypadmul2Ptx80,
+	86: copypadmul2Ptx86,
+	87: copypadmul2Ptx87,
+	89: copypadmul2Ptx89,
+	90: copypadmul2Ptx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var copypadmul2_map = copypadmul2Map
 
 // copypadmul2 PTX code for various compute capabilities.
 const (
-	copypadmul2_ptx_50 = `
-.version 8.5
+	copypadmul2Ptx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -208,8 +220,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_52 = `
-.version 8.5
+	copypadmul2Ptx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -312,8 +324,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_53 = `
-.version 8.5
+	copypadmul2Ptx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -416,8 +428,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_60 = `
-.version 8.5
+	copypadmul2Ptx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -520,8 +532,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_61 = `
-.version 8.5
+	copypadmul2Ptx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -624,8 +636,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_62 = `
-.version 8.5
+	copypadmul2Ptx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -728,8 +740,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_70 = `
-.version 8.5
+	copypadmul2Ptx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -832,8 +844,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_72 = `
-.version 8.5
+	copypadmul2Ptx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -936,8 +948,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_75 = `
-.version 8.5
+	copypadmul2Ptx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1040,8 +1052,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_80 = `
-.version 8.5
+	copypadmul2Ptx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1144,8 +1156,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_86 = `
-.version 8.5
+	copypadmul2Ptx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1248,8 +1260,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_87 = `
-.version 8.5
+	copypadmul2Ptx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1352,8 +1364,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_89 = `
-.version 8.5
+	copypadmul2Ptx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1456,8 +1468,8 @@ $L__BB0_7:
 }
 
 `
-	copypadmul2_ptx_90 = `
-.version 8.5
+	copypadmul2Ptx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

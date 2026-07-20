@@ -80,16 +80,123 @@ func kCopypadAsync(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointe
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_copypad_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, vol unsafe.Pointer, cfg *config) {
+	kCopypadAsync(dst, Dx, Dy, Dz, src, Sx, Sy, Sz, vol, cfg)
+}
+
 // maps compute capability on PTX code for copypad kernel.
 var copypadMap = map[int]string{
 	0:  "",
+	50: copypadPtx50,
 	52: copypadPtx52,
+	53: copypadPtx53,
+	60: copypadPtx60,
+	61: copypadPtx61,
+	62: copypadPtx62,
+	70: copypadPtx70,
+	72: copypadPtx72,
+	75: copypadPtx75,
+	80: copypadPtx80,
+	86: copypadPtx86,
+	87: copypadPtx87,
+	89: copypadPtx89,
+	90: copypadPtx90,
 }
+
+// Backward-compatible map name used by the original fatbin registration.
+var copypad_map = copypadMap
 
 // copypad PTX code for various compute capabilities.
 const (
+	copypadPtx50 = `
+.version 8.4
+.target sm_50
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
 	copypadPtx52 = `
-.version 7.0
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -124,52 +231,1073 @@ const (
 	mov.u32 	%r10, %ntid.x;
 	mov.u32 	%r11, %ctaid.x;
 	mov.u32 	%r12, %tid.x;
-	mad.lo.s32 	%r1, %r10, %r11, %r12;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
 	mov.u32 	%r13, %ntid.y;
 	mov.u32 	%r14, %ctaid.y;
 	mov.u32 	%r15, %tid.y;
-	mad.lo.s32 	%r2, %r13, %r14, %r15;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
 	mov.u32 	%r16, %ntid.z;
 	mov.u32 	%r17, %ctaid.z;
 	mov.u32 	%r18, %tid.z;
-	mad.lo.s32 	%r3, %r16, %r17, %r18;
-	setp.lt.s32	%p1, %r1, %r7;
-	setp.lt.s32	%p2, %r2, %r8;
-	and.pred  	%p3, %p1, %p2;
-	setp.lt.s32	%p4, %r3, %r9;
-	and.pred  	%p5, %p3, %p4;
-	@!%p5 bra 	BB0_4;
-	bra.uni 	BB0_1;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
 
-BB0_1:
 	mad.lo.s32 	%r19, %r3, %r8, %r2;
 	mad.lo.s32 	%r4, %r19, %r7, %r1;
-	setp.eq.s64	%p6, %rd3, 0;
-	mov.f32 	%f6, 0f3F800000;
-	@%p6 bra 	BB0_3;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
 
 	cvta.to.global.u64 	%rd4, %rd3;
 	mul.wide.s32 	%rd5, %r4, 4;
 	add.s64 	%rd6, %rd4, %rd5;
 	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
 
-BB0_3:
-	cvta.to.global.u64 	%rd7, %rd1;
-	cvta.to.global.u64 	%rd8, %rd2;
-	mul.wide.s32 	%rd9, %r4, 4;
-	add.s64 	%rd10, %rd8, %rd9;
-	ld.global.nc.f32 	%f4, [%rd10];
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
 	mul.f32 	%f5, %f6, %f4;
 	mad.lo.s32 	%r20, %r3, %r6, %r2;
 	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
 	mul.wide.s32 	%rd11, %r21, 4;
-	add.s64 	%rd12, %rd7, %rd11;
+	add.s64 	%rd12, %rd10, %rd11;
 	st.global.f32 	[%rd12], %f5;
 
-BB0_4:
+$L__BB0_5:
 	ret;
+
 }
 
+`
+	copypadPtx53 = `
+.version 8.4
+.target sm_53
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
+	copypadPtx60 = `
+.version 8.4
+.target sm_60
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
+	copypadPtx61 = `
+.version 8.4
+.target sm_61
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
+	copypadPtx62 = `
+.version 8.4
+.target sm_62
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
+	copypadPtx70 = `
+.version 8.4
+.target sm_70
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
+	copypadPtx72 = `
+.version 8.4
+.target sm_72
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
+	copypadPtx75 = `
+.version 8.4
+.target sm_75
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
+	copypadPtx80 = `
+.version 8.4
+.target sm_80
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
+	copypadPtx86 = `
+.version 8.4
+.target sm_86
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
+	copypadPtx87 = `
+.version 8.4
+.target sm_87
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
+	copypadPtx89 = `
+.version 8.4
+.target sm_89
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
+
+`
+	copypadPtx90 = `
+.version 8.4
+.target sm_90
+.address_size 64
+
+	// .globl	copypad
+
+.visible .entry copypad(
+	.param .u64 copypad_param_0,
+	.param .u32 copypad_param_1,
+	.param .u32 copypad_param_2,
+	.param .u32 copypad_param_3,
+	.param .u64 copypad_param_4,
+	.param .u32 copypad_param_5,
+	.param .u32 copypad_param_6,
+	.param .u32 copypad_param_7,
+	.param .u64 copypad_param_8
+)
+{
+	.reg .pred 	%p<7>;
+	.reg .f32 	%f<7>;
+	.reg .b32 	%r<22>;
+	.reg .b64 	%rd<13>;
+
+
+	ld.param.u64 	%rd1, [copypad_param_0];
+	ld.param.u32 	%r5, [copypad_param_1];
+	ld.param.u32 	%r6, [copypad_param_2];
+	ld.param.u64 	%rd2, [copypad_param_4];
+	ld.param.u32 	%r7, [copypad_param_5];
+	ld.param.u32 	%r8, [copypad_param_6];
+	ld.param.u32 	%r9, [copypad_param_7];
+	ld.param.u64 	%rd3, [copypad_param_8];
+	mov.u32 	%r10, %ntid.x;
+	mov.u32 	%r11, %ctaid.x;
+	mov.u32 	%r12, %tid.x;
+	mad.lo.s32 	%r1, %r11, %r10, %r12;
+	mov.u32 	%r13, %ntid.y;
+	mov.u32 	%r14, %ctaid.y;
+	mov.u32 	%r15, %tid.y;
+	mad.lo.s32 	%r2, %r14, %r13, %r15;
+	mov.u32 	%r16, %ntid.z;
+	mov.u32 	%r17, %ctaid.z;
+	mov.u32 	%r18, %tid.z;
+	mad.lo.s32 	%r3, %r17, %r16, %r18;
+	setp.ge.s32 	%p1, %r1, %r7;
+	setp.ge.s32 	%p2, %r2, %r8;
+	or.pred  	%p3, %p1, %p2;
+	setp.ge.s32 	%p4, %r3, %r9;
+	or.pred  	%p5, %p3, %p4;
+	@%p5 bra 	$L__BB0_5;
+
+	mad.lo.s32 	%r19, %r3, %r8, %r2;
+	mad.lo.s32 	%r4, %r19, %r7, %r1;
+	setp.eq.s64 	%p6, %rd3, 0;
+	@%p6 bra 	$L__BB0_3;
+
+	cvta.to.global.u64 	%rd4, %rd3;
+	mul.wide.s32 	%rd5, %r4, 4;
+	add.s64 	%rd6, %rd4, %rd5;
+	ld.global.nc.f32 	%f6, [%rd6];
+	bra.uni 	$L__BB0_4;
+
+$L__BB0_3:
+	mov.f32 	%f6, 0f3F800000;
+
+$L__BB0_4:
+	cvta.to.global.u64 	%rd7, %rd2;
+	mul.wide.s32 	%rd8, %r4, 4;
+	add.s64 	%rd9, %rd7, %rd8;
+	ld.global.nc.f32 	%f4, [%rd9];
+	mul.f32 	%f5, %f6, %f4;
+	mad.lo.s32 	%r20, %r3, %r6, %r2;
+	mad.lo.s32 	%r21, %r20, %r5, %r1;
+	cvta.to.global.u64 	%rd10, %rd1;
+	mul.wide.s32 	%rd11, %r21, 4;
+	add.s64 	%rd12, %rd10, %rd11;
+	st.global.f32 	[%rd12], %f5;
+
+$L__BB0_5:
+	ret;
+
+}
 
 `
 )

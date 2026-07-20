@@ -6,87 +6,88 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for setemergentmagneticfieldsolidangle kernel
-var setemergentmagneticfieldsolidangle_code cu.Function
+var setemergentmagneticfieldsolidangleCode cu.Function
 
 // Stores the arguments for setemergentmagneticfieldsolidangle kernel invocation
-type setemergentmagneticfieldsolidangle_args_t struct {
-	arg_Fx        unsafe.Pointer
-	arg_Fy        unsafe.Pointer
-	arg_Fz        unsafe.Pointer
-	arg_mx        unsafe.Pointer
-	arg_my        unsafe.Pointer
-	arg_mz        unsafe.Pointer
-	arg_prefactor float32
-	arg_icycz     float32
-	arg_iczcx     float32
-	arg_icxcy     float32
-	arg_Nx        int
-	arg_Ny        int
-	arg_Nz        int
-	arg_PBC       byte
-	argptr        [14]unsafe.Pointer
+type setemergentmagneticfieldsolidangleArgsT struct {
+	argFx        unsafe.Pointer
+	argFy        unsafe.Pointer
+	argFz        unsafe.Pointer
+	argMx        unsafe.Pointer
+	argMy        unsafe.Pointer
+	argMz        unsafe.Pointer
+	argPrefactor float32
+	argIcycz     float32
+	argIczcx     float32
+	argIcxcy     float32
+	argNx        int
+	argNy        int
+	argNz        int
+	argPBC       byte
+	argptr       [14]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for setemergentmagneticfieldsolidangle kernel invocation
-var setemergentmagneticfieldsolidangle_args setemergentmagneticfieldsolidangle_args_t
+var setemergentmagneticfieldsolidangleArgs setemergentmagneticfieldsolidangleArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	setemergentmagneticfieldsolidangle_args.argptr[0] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_Fx)
-	setemergentmagneticfieldsolidangle_args.argptr[1] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_Fy)
-	setemergentmagneticfieldsolidangle_args.argptr[2] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_Fz)
-	setemergentmagneticfieldsolidangle_args.argptr[3] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_mx)
-	setemergentmagneticfieldsolidangle_args.argptr[4] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_my)
-	setemergentmagneticfieldsolidangle_args.argptr[5] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_mz)
-	setemergentmagneticfieldsolidangle_args.argptr[6] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_prefactor)
-	setemergentmagneticfieldsolidangle_args.argptr[7] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_icycz)
-	setemergentmagneticfieldsolidangle_args.argptr[8] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_iczcx)
-	setemergentmagneticfieldsolidangle_args.argptr[9] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_icxcy)
-	setemergentmagneticfieldsolidangle_args.argptr[10] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_Nx)
-	setemergentmagneticfieldsolidangle_args.argptr[11] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_Ny)
-	setemergentmagneticfieldsolidangle_args.argptr[12] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_Nz)
-	setemergentmagneticfieldsolidangle_args.argptr[13] = unsafe.Pointer(&setemergentmagneticfieldsolidangle_args.arg_PBC)
+	setemergentmagneticfieldsolidangleArgs.argptr[0] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argFx)
+	setemergentmagneticfieldsolidangleArgs.argptr[1] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argFy)
+	setemergentmagneticfieldsolidangleArgs.argptr[2] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argFz)
+	setemergentmagneticfieldsolidangleArgs.argptr[3] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argMx)
+	setemergentmagneticfieldsolidangleArgs.argptr[4] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argMy)
+	setemergentmagneticfieldsolidangleArgs.argptr[5] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argMz)
+	setemergentmagneticfieldsolidangleArgs.argptr[6] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argPrefactor)
+	setemergentmagneticfieldsolidangleArgs.argptr[7] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argIcycz)
+	setemergentmagneticfieldsolidangleArgs.argptr[8] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argIczcx)
+	setemergentmagneticfieldsolidangleArgs.argptr[9] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argIcxcy)
+	setemergentmagneticfieldsolidangleArgs.argptr[10] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argNx)
+	setemergentmagneticfieldsolidangleArgs.argptr[11] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argNy)
+	setemergentmagneticfieldsolidangleArgs.argptr[12] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argNz)
+	setemergentmagneticfieldsolidangleArgs.argptr[13] = unsafe.Pointer(&setemergentmagneticfieldsolidangleArgs.argPBC)
 }
 
 // Wrapper for setemergentmagneticfieldsolidangle CUDA kernel, asynchronous.
-func k_setemergentmagneticfieldsolidangle_async(Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, prefactor float32, icycz float32, iczcx float32, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+func kSetemergentmagneticfieldsolidangleAsync(Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, prefactor float32, icycz float32, iczcx float32, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("setemergentmagneticfieldsolidangle")
 	}
 
-	setemergentmagneticfieldsolidangle_args.Lock()
-	defer setemergentmagneticfieldsolidangle_args.Unlock()
+	setemergentmagneticfieldsolidangleArgs.Lock()
+	defer setemergentmagneticfieldsolidangleArgs.Unlock()
 
-	if setemergentmagneticfieldsolidangle_code == 0 {
-		setemergentmagneticfieldsolidangle_code = fatbinLoad(setemergentmagneticfieldsolidangle_map, "setemergentmagneticfieldsolidangle")
+	if setemergentmagneticfieldsolidangleCode == 0 {
+		setemergentmagneticfieldsolidangleCode = fatbinLoad(setemergentmagneticfieldsolidangleMap, "setemergentmagneticfieldsolidangle")
 	}
 
-	setemergentmagneticfieldsolidangle_args.arg_Fx = Fx
-	setemergentmagneticfieldsolidangle_args.arg_Fy = Fy
-	setemergentmagneticfieldsolidangle_args.arg_Fz = Fz
-	setemergentmagneticfieldsolidangle_args.arg_mx = mx
-	setemergentmagneticfieldsolidangle_args.arg_my = my
-	setemergentmagneticfieldsolidangle_args.arg_mz = mz
-	setemergentmagneticfieldsolidangle_args.arg_prefactor = prefactor
-	setemergentmagneticfieldsolidangle_args.arg_icycz = icycz
-	setemergentmagneticfieldsolidangle_args.arg_iczcx = iczcx
-	setemergentmagneticfieldsolidangle_args.arg_icxcy = icxcy
-	setemergentmagneticfieldsolidangle_args.arg_Nx = Nx
-	setemergentmagneticfieldsolidangle_args.arg_Ny = Ny
-	setemergentmagneticfieldsolidangle_args.arg_Nz = Nz
-	setemergentmagneticfieldsolidangle_args.arg_PBC = PBC
+	setemergentmagneticfieldsolidangleArgs.argFx = Fx
+	setemergentmagneticfieldsolidangleArgs.argFy = Fy
+	setemergentmagneticfieldsolidangleArgs.argFz = Fz
+	setemergentmagneticfieldsolidangleArgs.argMx = mx
+	setemergentmagneticfieldsolidangleArgs.argMy = my
+	setemergentmagneticfieldsolidangleArgs.argMz = mz
+	setemergentmagneticfieldsolidangleArgs.argPrefactor = prefactor
+	setemergentmagneticfieldsolidangleArgs.argIcycz = icycz
+	setemergentmagneticfieldsolidangleArgs.argIczcx = iczcx
+	setemergentmagneticfieldsolidangleArgs.argIcxcy = icxcy
+	setemergentmagneticfieldsolidangleArgs.argNx = Nx
+	setemergentmagneticfieldsolidangleArgs.argNy = Ny
+	setemergentmagneticfieldsolidangleArgs.argNz = Nz
+	setemergentmagneticfieldsolidangleArgs.argPBC = PBC
 
-	args := setemergentmagneticfieldsolidangle_args.argptr[:]
-	cu.LaunchKernel(setemergentmagneticfieldsolidangle_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := setemergentmagneticfieldsolidangleArgs.argptr[:]
+	cu.LaunchKernel(setemergentmagneticfieldsolidangleCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -94,27 +95,38 @@ func k_setemergentmagneticfieldsolidangle_async(Fx unsafe.Pointer, Fy unsafe.Poi
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_setemergentmagneticfieldsolidangle_async(Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, prefactor float32, icycz float32, iczcx float32, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+	kSetemergentmagneticfieldsolidangleAsync(Fx, Fy, Fz, mx, my, mz, prefactor, icycz, iczcx, icxcy, Nx, Ny, Nz, PBC, cfg)
+}
+
 // maps compute capability on PTX code for setemergentmagneticfieldsolidangle kernel.
-var setemergentmagneticfieldsolidangle_map = map[int]string{0: "",
-	50: setemergentmagneticfieldsolidangle_ptx_50,
-	52: setemergentmagneticfieldsolidangle_ptx_52,
-	53: setemergentmagneticfieldsolidangle_ptx_53,
-	60: setemergentmagneticfieldsolidangle_ptx_60,
-	61: setemergentmagneticfieldsolidangle_ptx_61,
-	62: setemergentmagneticfieldsolidangle_ptx_62,
-	70: setemergentmagneticfieldsolidangle_ptx_70,
-	72: setemergentmagneticfieldsolidangle_ptx_72,
-	75: setemergentmagneticfieldsolidangle_ptx_75,
-	80: setemergentmagneticfieldsolidangle_ptx_80,
-	86: setemergentmagneticfieldsolidangle_ptx_86,
-	87: setemergentmagneticfieldsolidangle_ptx_87,
-	89: setemergentmagneticfieldsolidangle_ptx_89,
-	90: setemergentmagneticfieldsolidangle_ptx_90}
+var setemergentmagneticfieldsolidangleMap = map[int]string{
+	0:  "",
+	50: setemergentmagneticfieldsolidanglePtx50,
+	52: setemergentmagneticfieldsolidanglePtx52,
+	53: setemergentmagneticfieldsolidanglePtx53,
+	60: setemergentmagneticfieldsolidanglePtx60,
+	61: setemergentmagneticfieldsolidanglePtx61,
+	62: setemergentmagneticfieldsolidanglePtx62,
+	70: setemergentmagneticfieldsolidanglePtx70,
+	72: setemergentmagneticfieldsolidanglePtx72,
+	75: setemergentmagneticfieldsolidanglePtx75,
+	80: setemergentmagneticfieldsolidanglePtx80,
+	86: setemergentmagneticfieldsolidanglePtx86,
+	87: setemergentmagneticfieldsolidanglePtx87,
+	89: setemergentmagneticfieldsolidanglePtx89,
+	90: setemergentmagneticfieldsolidanglePtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var setemergentmagneticfieldsolidangle_map = setemergentmagneticfieldsolidangleMap
 
 // setemergentmagneticfieldsolidangle PTX code for various compute capabilities.
 const (
-	setemergentmagneticfieldsolidangle_ptx_50 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -2318,8 +2330,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_52 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -4523,8 +4535,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_53 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -6728,8 +6740,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_60 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -8933,8 +8945,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_61 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -11138,8 +11150,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_62 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -13343,8 +13355,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_70 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -15548,8 +15560,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_72 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -17753,8 +17765,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_75 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -19958,8 +19970,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_80 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -22163,8 +22175,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_86 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -24368,8 +24380,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_87 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -26573,8 +26585,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_89 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -28778,8 +28790,8 @@ $L__BB0_202:
 }
 
 `
-	setemergentmagneticfieldsolidangle_ptx_90 = `
-.version 8.5
+	setemergentmagneticfieldsolidanglePtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

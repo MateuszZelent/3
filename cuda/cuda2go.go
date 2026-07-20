@@ -16,6 +16,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"text/scanner"
 	"text/template"
 
@@ -98,17 +99,32 @@ var tm = map[string]string{"float*": "unsafe.Pointer", "float": "float32", "int"
 
 // template data
 type Kernel struct {
-	Name string
-	ArgT []string
-	ArgN []string
-	PTX  map[int]string
+	Name      string
+	GoName    string
+	CamelName string
+	ArgT      []string
+	ArgN      []string
+	GoArgN    []string
+	PTX       map[int]string
 }
 
 var ls []string
 
 // generate wrapper code from template
 func wrapgen(filename, funcname string, argt, argn []string) {
-	kernel := &Kernel{funcname, argt, argn, make(map[int]string)}
+	goArgN := make([]string, len(argn))
+	for i, name := range argn {
+		goArgN[i] = goStyleName(name)
+	}
+	kernel := &Kernel{
+		Name:      funcname,
+		GoName:    goStyleName(funcname),
+		CamelName: lowerCamelName(funcname),
+		ArgT:      argt,
+		ArgN:      argn,
+		GoArgN:    goArgN,
+		PTX:       make(map[int]string),
+	}
 
 	// find corresponding .PTX files
 	if ls == nil {
@@ -144,6 +160,30 @@ func wrapgen(filename, funcname string, argt, argn []string) {
 	util.PanicErr(templ.Execute(wrapout, kernel))
 }
 
+func goStyleName(name string) string {
+	if name == "" {
+		return name
+	}
+
+	parts := strings.Split(name, "_")
+	var result strings.Builder
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		result.WriteString(strings.ToUpper(part[:1]) + part[1:])
+	}
+	return result.String()
+}
+
+func lowerCamelName(name string) string {
+	styled := goStyleName(name)
+	if styled == "" {
+		return styled
+	}
+	return strings.ToLower(styled[:1]) + styled[1:]
+}
+
 // wrapper code template text
 const templText = `package cuda
 
@@ -152,65 +192,76 @@ const templText = `package cuda
  EDITING IS FUTILE.
 */
 
-import(
+import (
+	"sync"
 	"unsafe"
+
 	"github.com/mumax/3/cuda/cu"
 	"github.com/mumax/3/timer"
-	"sync"
 )
 
 // CUDA handle for {{.Name}} kernel
-var {{.Name}}_code cu.Function
+var {{.CamelName}}Code cu.Function
 
 // Stores the arguments for {{.Name}} kernel invocation
-type {{.Name}}_args_t struct{
-	{{range $i, $_ := .ArgN}} arg_{{.}} {{index $.ArgT $i}}
-	{{end}} argptr [{{len .ArgN}}]unsafe.Pointer
+type {{.CamelName}}ArgsT struct {
+	{{range $i, $_ := .ArgN}}arg{{index $.GoArgN $i}} {{index $.ArgT $i}}
+	{{end}}argptr [{{len .ArgN}}]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for {{.Name}} kernel invocation
-var {{.Name}}_args {{.Name}}_args_t
+var {{.CamelName}}Args {{.CamelName}}ArgsT
 
-func init(){
+func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	{{range $i, $t := .ArgN}} {{$.Name}}_args.argptr[{{$i}}] = unsafe.Pointer(&{{$.Name}}_args.arg_{{.}})
-	{{end}} }
+	{{range $i, $t := .ArgN}}{{$.CamelName}}Args.argptr[{{$i}}] = unsafe.Pointer(&{{$.CamelName}}Args.arg{{index $.GoArgN $i}})
+	{{end}}}
 
 // Wrapper for {{.Name}} CUDA kernel, asynchronous.
-func k_{{.Name}}_async ( {{range $i, $t := .ArgT}}{{index $.ArgN $i}} {{$t}}, {{end}} cfg *config) {
-	if Synchronous{ // debug
+func k{{.GoName}}Async({{range $i, $t := .ArgT}}{{index $.ArgN $i}} {{$t}}, {{end}}cfg *config) {
+	if Synchronous { // debug
 		Sync()
 		timer.Start("{{.Name}}")
 	}
 
-	{{.Name}}_args.Lock()
-	defer {{.Name}}_args.Unlock()
+	{{.CamelName}}Args.Lock()
+	defer {{.CamelName}}Args.Unlock()
 
-	if {{.Name}}_code == 0{
-		{{.Name}}_code = fatbinLoad({{.Name}}_map, "{{.Name}}")
+	if {{.CamelName}}Code == 0 {
+		{{.CamelName}}Code = fatbinLoad({{.CamelName}}Map, "{{.Name}}")
 	}
 
-	{{range $i, $t := .ArgN}} {{$.Name}}_args.arg_{{.}} = {{.}}
+	{{range $i, $t := .ArgN}}{{$.CamelName}}Args.arg{{index $.GoArgN $i}} = {{.}}
 	{{end}}
+	args := {{.CamelName}}Args.argptr[:]
+	cu.LaunchKernel({{.CamelName}}Code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
-	args := {{.Name}}_args.argptr[:]
-	cu.LaunchKernel({{.Name}}_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
-
-	if Synchronous{ // debug
+	if Synchronous { // debug
 		Sync()
 		timer.Stop("{{.Name}}")
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_{{.Name}}_async({{range $i, $t := .ArgT}}{{index $.ArgN $i}} {{$t}}, {{end}}cfg *config) {
+	k{{.GoName}}Async({{range $i, $t := .ArgN}}{{.}}, {{end}}cfg)
+}
+
 // maps compute capability on PTX code for {{.Name}} kernel.
-var {{.Name}}_map = map[int]string{ 0: "" {{range $k, $v := .PTX}},
-{{$k}}: {{$.Name}}_ptx_{{$k}} {{end}} }
+var {{.CamelName}}Map = map[int]string{
+	0: "",{{range $k, $v := .PTX}}
+	{{$k}}: {{$.CamelName}}Ptx{{$k}},{{end}}
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var {{.Name}}_map = {{.CamelName}}Map
 
 // {{.Name}} PTX code for various compute capabilities.
-const(
-{{range $k, $v := .PTX}}  {{$.Name}}_ptx_{{$k}} = {{$v}}
- {{end}})
+const (
+	{{range $k, $v := .PTX}}{{$.CamelName}}Ptx{{$k}} = {{$v}}
+	{{end}})
 `
 
 // wrapper code template

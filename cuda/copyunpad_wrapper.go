@@ -6,69 +6,70 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for copyunpad kernel
-var copyunpad_code cu.Function
+var copyunpadCode cu.Function
 
 // Stores the arguments for copyunpad kernel invocation
-type copyunpad_args_t struct {
-	arg_dst unsafe.Pointer
-	arg_Dx  int
-	arg_Dy  int
-	arg_Dz  int
-	arg_src unsafe.Pointer
-	arg_Sx  int
-	arg_Sy  int
-	arg_Sz  int
-	argptr  [8]unsafe.Pointer
+type copyunpadArgsT struct {
+	argDst unsafe.Pointer
+	argDx  int
+	argDy  int
+	argDz  int
+	argSrc unsafe.Pointer
+	argSx  int
+	argSy  int
+	argSz  int
+	argptr [8]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for copyunpad kernel invocation
-var copyunpad_args copyunpad_args_t
+var copyunpadArgs copyunpadArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	copyunpad_args.argptr[0] = unsafe.Pointer(&copyunpad_args.arg_dst)
-	copyunpad_args.argptr[1] = unsafe.Pointer(&copyunpad_args.arg_Dx)
-	copyunpad_args.argptr[2] = unsafe.Pointer(&copyunpad_args.arg_Dy)
-	copyunpad_args.argptr[3] = unsafe.Pointer(&copyunpad_args.arg_Dz)
-	copyunpad_args.argptr[4] = unsafe.Pointer(&copyunpad_args.arg_src)
-	copyunpad_args.argptr[5] = unsafe.Pointer(&copyunpad_args.arg_Sx)
-	copyunpad_args.argptr[6] = unsafe.Pointer(&copyunpad_args.arg_Sy)
-	copyunpad_args.argptr[7] = unsafe.Pointer(&copyunpad_args.arg_Sz)
+	copyunpadArgs.argptr[0] = unsafe.Pointer(&copyunpadArgs.argDst)
+	copyunpadArgs.argptr[1] = unsafe.Pointer(&copyunpadArgs.argDx)
+	copyunpadArgs.argptr[2] = unsafe.Pointer(&copyunpadArgs.argDy)
+	copyunpadArgs.argptr[3] = unsafe.Pointer(&copyunpadArgs.argDz)
+	copyunpadArgs.argptr[4] = unsafe.Pointer(&copyunpadArgs.argSrc)
+	copyunpadArgs.argptr[5] = unsafe.Pointer(&copyunpadArgs.argSx)
+	copyunpadArgs.argptr[6] = unsafe.Pointer(&copyunpadArgs.argSy)
+	copyunpadArgs.argptr[7] = unsafe.Pointer(&copyunpadArgs.argSz)
 }
 
 // Wrapper for copyunpad CUDA kernel, asynchronous.
-func k_copyunpad_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, cfg *config) {
+func kCopyunpadAsync(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("copyunpad")
 	}
 
-	copyunpad_args.Lock()
-	defer copyunpad_args.Unlock()
+	copyunpadArgs.Lock()
+	defer copyunpadArgs.Unlock()
 
-	if copyunpad_code == 0 {
-		copyunpad_code = fatbinLoad(copyunpad_map, "copyunpad")
+	if copyunpadCode == 0 {
+		copyunpadCode = fatbinLoad(copyunpadMap, "copyunpad")
 	}
 
-	copyunpad_args.arg_dst = dst
-	copyunpad_args.arg_Dx = Dx
-	copyunpad_args.arg_Dy = Dy
-	copyunpad_args.arg_Dz = Dz
-	copyunpad_args.arg_src = src
-	copyunpad_args.arg_Sx = Sx
-	copyunpad_args.arg_Sy = Sy
-	copyunpad_args.arg_Sz = Sz
+	copyunpadArgs.argDst = dst
+	copyunpadArgs.argDx = Dx
+	copyunpadArgs.argDy = Dy
+	copyunpadArgs.argDz = Dz
+	copyunpadArgs.argSrc = src
+	copyunpadArgs.argSx = Sx
+	copyunpadArgs.argSy = Sy
+	copyunpadArgs.argSz = Sz
 
-	args := copyunpad_args.argptr[:]
-	cu.LaunchKernel(copyunpad_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := copyunpadArgs.argptr[:]
+	cu.LaunchKernel(copyunpadCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -76,27 +77,38 @@ func k_copyunpad_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Po
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_copyunpad_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, cfg *config) {
+	kCopyunpadAsync(dst, Dx, Dy, Dz, src, Sx, Sy, Sz, cfg)
+}
+
 // maps compute capability on PTX code for copyunpad kernel.
-var copyunpad_map = map[int]string{0: "",
-	50: copyunpad_ptx_50,
-	52: copyunpad_ptx_52,
-	53: copyunpad_ptx_53,
-	60: copyunpad_ptx_60,
-	61: copyunpad_ptx_61,
-	62: copyunpad_ptx_62,
-	70: copyunpad_ptx_70,
-	72: copyunpad_ptx_72,
-	75: copyunpad_ptx_75,
-	80: copyunpad_ptx_80,
-	86: copyunpad_ptx_86,
-	87: copyunpad_ptx_87,
-	89: copyunpad_ptx_89,
-	90: copyunpad_ptx_90}
+var copyunpadMap = map[int]string{
+	0:  "",
+	50: copyunpadPtx50,
+	52: copyunpadPtx52,
+	53: copyunpadPtx53,
+	60: copyunpadPtx60,
+	61: copyunpadPtx61,
+	62: copyunpadPtx62,
+	70: copyunpadPtx70,
+	72: copyunpadPtx72,
+	75: copyunpadPtx75,
+	80: copyunpadPtx80,
+	86: copyunpadPtx86,
+	87: copyunpadPtx87,
+	89: copyunpadPtx89,
+	90: copyunpadPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var copyunpad_map = copyunpadMap
 
 // copyunpad PTX code for various compute capabilities.
 const (
-	copyunpad_ptx_50 = `
-.version 8.5
+	copyunpadPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -164,8 +176,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_52 = `
-.version 8.5
+	copyunpadPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -233,8 +245,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_53 = `
-.version 8.5
+	copyunpadPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -302,8 +314,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_60 = `
-.version 8.5
+	copyunpadPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -371,8 +383,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_61 = `
-.version 8.5
+	copyunpadPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -440,8 +452,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_62 = `
-.version 8.5
+	copyunpadPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -509,8 +521,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_70 = `
-.version 8.5
+	copyunpadPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -578,8 +590,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_72 = `
-.version 8.5
+	copyunpadPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -647,8 +659,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_75 = `
-.version 8.5
+	copyunpadPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -716,8 +728,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_80 = `
-.version 8.5
+	copyunpadPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -785,8 +797,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_86 = `
-.version 8.5
+	copyunpadPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -854,8 +866,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_87 = `
-.version 8.5
+	copyunpadPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -923,8 +935,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_89 = `
-.version 8.5
+	copyunpadPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -992,8 +1004,8 @@ $L__BB0_2:
 }
 
 `
-	copyunpad_ptx_90 = `
-.version 8.5
+	copyunpadPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

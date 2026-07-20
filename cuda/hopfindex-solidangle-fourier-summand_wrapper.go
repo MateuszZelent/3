@@ -6,66 +6,67 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for solidanglefouriersummand kernel
-var solidanglefouriersummand_code cu.Function
+var solidanglefouriersummandCode cu.Function
 
 // Stores the arguments for solidanglefouriersummand kernel invocation
-type solidanglefouriersummand_args_t struct {
-	arg_summand_array unsafe.Pointer
-	arg_FkX_array     unsafe.Pointer
-	arg_FkY_array     unsafe.Pointer
-	arg_FkZ_array     unsafe.Pointer
-	arg_Nx            int
-	arg_Ny            int
-	arg_Nz            int
-	argptr            [7]unsafe.Pointer
+type solidanglefouriersummandArgsT struct {
+	argSummandArray unsafe.Pointer
+	argFkXArray     unsafe.Pointer
+	argFkYArray     unsafe.Pointer
+	argFkZArray     unsafe.Pointer
+	argNx           int
+	argNy           int
+	argNz           int
+	argptr          [7]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for solidanglefouriersummand kernel invocation
-var solidanglefouriersummand_args solidanglefouriersummand_args_t
+var solidanglefouriersummandArgs solidanglefouriersummandArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	solidanglefouriersummand_args.argptr[0] = unsafe.Pointer(&solidanglefouriersummand_args.arg_summand_array)
-	solidanglefouriersummand_args.argptr[1] = unsafe.Pointer(&solidanglefouriersummand_args.arg_FkX_array)
-	solidanglefouriersummand_args.argptr[2] = unsafe.Pointer(&solidanglefouriersummand_args.arg_FkY_array)
-	solidanglefouriersummand_args.argptr[3] = unsafe.Pointer(&solidanglefouriersummand_args.arg_FkZ_array)
-	solidanglefouriersummand_args.argptr[4] = unsafe.Pointer(&solidanglefouriersummand_args.arg_Nx)
-	solidanglefouriersummand_args.argptr[5] = unsafe.Pointer(&solidanglefouriersummand_args.arg_Ny)
-	solidanglefouriersummand_args.argptr[6] = unsafe.Pointer(&solidanglefouriersummand_args.arg_Nz)
+	solidanglefouriersummandArgs.argptr[0] = unsafe.Pointer(&solidanglefouriersummandArgs.argSummandArray)
+	solidanglefouriersummandArgs.argptr[1] = unsafe.Pointer(&solidanglefouriersummandArgs.argFkXArray)
+	solidanglefouriersummandArgs.argptr[2] = unsafe.Pointer(&solidanglefouriersummandArgs.argFkYArray)
+	solidanglefouriersummandArgs.argptr[3] = unsafe.Pointer(&solidanglefouriersummandArgs.argFkZArray)
+	solidanglefouriersummandArgs.argptr[4] = unsafe.Pointer(&solidanglefouriersummandArgs.argNx)
+	solidanglefouriersummandArgs.argptr[5] = unsafe.Pointer(&solidanglefouriersummandArgs.argNy)
+	solidanglefouriersummandArgs.argptr[6] = unsafe.Pointer(&solidanglefouriersummandArgs.argNz)
 }
 
 // Wrapper for solidanglefouriersummand CUDA kernel, asynchronous.
-func k_solidanglefouriersummand_async(summand_array unsafe.Pointer, FkX_array unsafe.Pointer, FkY_array unsafe.Pointer, FkZ_array unsafe.Pointer, Nx int, Ny int, Nz int, cfg *config) {
+func kSolidanglefouriersummandAsync(summand_array unsafe.Pointer, FkX_array unsafe.Pointer, FkY_array unsafe.Pointer, FkZ_array unsafe.Pointer, Nx int, Ny int, Nz int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("solidanglefouriersummand")
 	}
 
-	solidanglefouriersummand_args.Lock()
-	defer solidanglefouriersummand_args.Unlock()
+	solidanglefouriersummandArgs.Lock()
+	defer solidanglefouriersummandArgs.Unlock()
 
-	if solidanglefouriersummand_code == 0 {
-		solidanglefouriersummand_code = fatbinLoad(solidanglefouriersummand_map, "solidanglefouriersummand")
+	if solidanglefouriersummandCode == 0 {
+		solidanglefouriersummandCode = fatbinLoad(solidanglefouriersummandMap, "solidanglefouriersummand")
 	}
 
-	solidanglefouriersummand_args.arg_summand_array = summand_array
-	solidanglefouriersummand_args.arg_FkX_array = FkX_array
-	solidanglefouriersummand_args.arg_FkY_array = FkY_array
-	solidanglefouriersummand_args.arg_FkZ_array = FkZ_array
-	solidanglefouriersummand_args.arg_Nx = Nx
-	solidanglefouriersummand_args.arg_Ny = Ny
-	solidanglefouriersummand_args.arg_Nz = Nz
+	solidanglefouriersummandArgs.argSummandArray = summand_array
+	solidanglefouriersummandArgs.argFkXArray = FkX_array
+	solidanglefouriersummandArgs.argFkYArray = FkY_array
+	solidanglefouriersummandArgs.argFkZArray = FkZ_array
+	solidanglefouriersummandArgs.argNx = Nx
+	solidanglefouriersummandArgs.argNy = Ny
+	solidanglefouriersummandArgs.argNz = Nz
 
-	args := solidanglefouriersummand_args.argptr[:]
-	cu.LaunchKernel(solidanglefouriersummand_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := solidanglefouriersummandArgs.argptr[:]
+	cu.LaunchKernel(solidanglefouriersummandCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -73,27 +74,38 @@ func k_solidanglefouriersummand_async(summand_array unsafe.Pointer, FkX_array un
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_solidanglefouriersummand_async(summand_array unsafe.Pointer, FkX_array unsafe.Pointer, FkY_array unsafe.Pointer, FkZ_array unsafe.Pointer, Nx int, Ny int, Nz int, cfg *config) {
+	kSolidanglefouriersummandAsync(summand_array, FkX_array, FkY_array, FkZ_array, Nx, Ny, Nz, cfg)
+}
+
 // maps compute capability on PTX code for solidanglefouriersummand kernel.
-var solidanglefouriersummand_map = map[int]string{0: "",
-	50: solidanglefouriersummand_ptx_50,
-	52: solidanglefouriersummand_ptx_52,
-	53: solidanglefouriersummand_ptx_53,
-	60: solidanglefouriersummand_ptx_60,
-	61: solidanglefouriersummand_ptx_61,
-	62: solidanglefouriersummand_ptx_62,
-	70: solidanglefouriersummand_ptx_70,
-	72: solidanglefouriersummand_ptx_72,
-	75: solidanglefouriersummand_ptx_75,
-	80: solidanglefouriersummand_ptx_80,
-	86: solidanglefouriersummand_ptx_86,
-	87: solidanglefouriersummand_ptx_87,
-	89: solidanglefouriersummand_ptx_89,
-	90: solidanglefouriersummand_ptx_90}
+var solidanglefouriersummandMap = map[int]string{
+	0:  "",
+	50: solidanglefouriersummandPtx50,
+	52: solidanglefouriersummandPtx52,
+	53: solidanglefouriersummandPtx53,
+	60: solidanglefouriersummandPtx60,
+	61: solidanglefouriersummandPtx61,
+	62: solidanglefouriersummandPtx62,
+	70: solidanglefouriersummandPtx70,
+	72: solidanglefouriersummandPtx72,
+	75: solidanglefouriersummandPtx75,
+	80: solidanglefouriersummandPtx80,
+	86: solidanglefouriersummandPtx86,
+	87: solidanglefouriersummandPtx87,
+	89: solidanglefouriersummandPtx89,
+	90: solidanglefouriersummandPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var solidanglefouriersummand_map = solidanglefouriersummandMap
 
 // solidanglefouriersummand PTX code for various compute capabilities.
 const (
-	solidanglefouriersummand_ptx_50 = `
-.version 8.5
+	solidanglefouriersummandPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -264,8 +276,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_52 = `
-.version 8.5
+	solidanglefouriersummandPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -436,8 +448,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_53 = `
-.version 8.5
+	solidanglefouriersummandPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -608,8 +620,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_60 = `
-.version 8.5
+	solidanglefouriersummandPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -780,8 +792,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_61 = `
-.version 8.5
+	solidanglefouriersummandPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -952,8 +964,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_62 = `
-.version 8.5
+	solidanglefouriersummandPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -1124,8 +1136,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_70 = `
-.version 8.5
+	solidanglefouriersummandPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1296,8 +1308,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_72 = `
-.version 8.5
+	solidanglefouriersummandPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -1468,8 +1480,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_75 = `
-.version 8.5
+	solidanglefouriersummandPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1640,8 +1652,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_80 = `
-.version 8.5
+	solidanglefouriersummandPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1812,8 +1824,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_86 = `
-.version 8.5
+	solidanglefouriersummandPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1984,8 +1996,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_87 = `
-.version 8.5
+	solidanglefouriersummandPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -2156,8 +2168,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_89 = `
-.version 8.5
+	solidanglefouriersummandPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -2328,8 +2340,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefouriersummand_ptx_90 = `
-.version 8.5
+	solidanglefouriersummandPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

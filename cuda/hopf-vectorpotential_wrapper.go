@@ -6,78 +6,79 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for setvectorpotential kernel
-var setvectorpotential_code cu.Function
+var setvectorpotentialCode cu.Function
 
 // Stores the arguments for setvectorpotential kernel invocation
-type setvectorpotential_args_t struct {
-	arg_Ax  unsafe.Pointer
-	arg_Ay  unsafe.Pointer
-	arg_Az  unsafe.Pointer
-	arg_Fx  unsafe.Pointer
-	arg_Fy  unsafe.Pointer
-	arg_Fz  unsafe.Pointer
-	arg_cy  float32
-	arg_Nx  int
-	arg_Ny  int
-	arg_Nz  int
-	arg_PBC byte
-	argptr  [11]unsafe.Pointer
+type setvectorpotentialArgsT struct {
+	argAx  unsafe.Pointer
+	argAy  unsafe.Pointer
+	argAz  unsafe.Pointer
+	argFx  unsafe.Pointer
+	argFy  unsafe.Pointer
+	argFz  unsafe.Pointer
+	argCy  float32
+	argNx  int
+	argNy  int
+	argNz  int
+	argPBC byte
+	argptr [11]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for setvectorpotential kernel invocation
-var setvectorpotential_args setvectorpotential_args_t
+var setvectorpotentialArgs setvectorpotentialArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	setvectorpotential_args.argptr[0] = unsafe.Pointer(&setvectorpotential_args.arg_Ax)
-	setvectorpotential_args.argptr[1] = unsafe.Pointer(&setvectorpotential_args.arg_Ay)
-	setvectorpotential_args.argptr[2] = unsafe.Pointer(&setvectorpotential_args.arg_Az)
-	setvectorpotential_args.argptr[3] = unsafe.Pointer(&setvectorpotential_args.arg_Fx)
-	setvectorpotential_args.argptr[4] = unsafe.Pointer(&setvectorpotential_args.arg_Fy)
-	setvectorpotential_args.argptr[5] = unsafe.Pointer(&setvectorpotential_args.arg_Fz)
-	setvectorpotential_args.argptr[6] = unsafe.Pointer(&setvectorpotential_args.arg_cy)
-	setvectorpotential_args.argptr[7] = unsafe.Pointer(&setvectorpotential_args.arg_Nx)
-	setvectorpotential_args.argptr[8] = unsafe.Pointer(&setvectorpotential_args.arg_Ny)
-	setvectorpotential_args.argptr[9] = unsafe.Pointer(&setvectorpotential_args.arg_Nz)
-	setvectorpotential_args.argptr[10] = unsafe.Pointer(&setvectorpotential_args.arg_PBC)
+	setvectorpotentialArgs.argptr[0] = unsafe.Pointer(&setvectorpotentialArgs.argAx)
+	setvectorpotentialArgs.argptr[1] = unsafe.Pointer(&setvectorpotentialArgs.argAy)
+	setvectorpotentialArgs.argptr[2] = unsafe.Pointer(&setvectorpotentialArgs.argAz)
+	setvectorpotentialArgs.argptr[3] = unsafe.Pointer(&setvectorpotentialArgs.argFx)
+	setvectorpotentialArgs.argptr[4] = unsafe.Pointer(&setvectorpotentialArgs.argFy)
+	setvectorpotentialArgs.argptr[5] = unsafe.Pointer(&setvectorpotentialArgs.argFz)
+	setvectorpotentialArgs.argptr[6] = unsafe.Pointer(&setvectorpotentialArgs.argCy)
+	setvectorpotentialArgs.argptr[7] = unsafe.Pointer(&setvectorpotentialArgs.argNx)
+	setvectorpotentialArgs.argptr[8] = unsafe.Pointer(&setvectorpotentialArgs.argNy)
+	setvectorpotentialArgs.argptr[9] = unsafe.Pointer(&setvectorpotentialArgs.argNz)
+	setvectorpotentialArgs.argptr[10] = unsafe.Pointer(&setvectorpotentialArgs.argPBC)
 }
 
 // Wrapper for setvectorpotential CUDA kernel, asynchronous.
-func k_setvectorpotential_async(Ax unsafe.Pointer, Ay unsafe.Pointer, Az unsafe.Pointer, Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, cy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+func kSetvectorpotentialAsync(Ax unsafe.Pointer, Ay unsafe.Pointer, Az unsafe.Pointer, Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, cy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("setvectorpotential")
 	}
 
-	setvectorpotential_args.Lock()
-	defer setvectorpotential_args.Unlock()
+	setvectorpotentialArgs.Lock()
+	defer setvectorpotentialArgs.Unlock()
 
-	if setvectorpotential_code == 0 {
-		setvectorpotential_code = fatbinLoad(setvectorpotential_map, "setvectorpotential")
+	if setvectorpotentialCode == 0 {
+		setvectorpotentialCode = fatbinLoad(setvectorpotentialMap, "setvectorpotential")
 	}
 
-	setvectorpotential_args.arg_Ax = Ax
-	setvectorpotential_args.arg_Ay = Ay
-	setvectorpotential_args.arg_Az = Az
-	setvectorpotential_args.arg_Fx = Fx
-	setvectorpotential_args.arg_Fy = Fy
-	setvectorpotential_args.arg_Fz = Fz
-	setvectorpotential_args.arg_cy = cy
-	setvectorpotential_args.arg_Nx = Nx
-	setvectorpotential_args.arg_Ny = Ny
-	setvectorpotential_args.arg_Nz = Nz
-	setvectorpotential_args.arg_PBC = PBC
+	setvectorpotentialArgs.argAx = Ax
+	setvectorpotentialArgs.argAy = Ay
+	setvectorpotentialArgs.argAz = Az
+	setvectorpotentialArgs.argFx = Fx
+	setvectorpotentialArgs.argFy = Fy
+	setvectorpotentialArgs.argFz = Fz
+	setvectorpotentialArgs.argCy = cy
+	setvectorpotentialArgs.argNx = Nx
+	setvectorpotentialArgs.argNy = Ny
+	setvectorpotentialArgs.argNz = Nz
+	setvectorpotentialArgs.argPBC = PBC
 
-	args := setvectorpotential_args.argptr[:]
-	cu.LaunchKernel(setvectorpotential_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := setvectorpotentialArgs.argptr[:]
+	cu.LaunchKernel(setvectorpotentialCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -85,27 +86,38 @@ func k_setvectorpotential_async(Ax unsafe.Pointer, Ay unsafe.Pointer, Az unsafe.
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_setvectorpotential_async(Ax unsafe.Pointer, Ay unsafe.Pointer, Az unsafe.Pointer, Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, cy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+	kSetvectorpotentialAsync(Ax, Ay, Az, Fx, Fy, Fz, cy, Nx, Ny, Nz, PBC, cfg)
+}
+
 // maps compute capability on PTX code for setvectorpotential kernel.
-var setvectorpotential_map = map[int]string{0: "",
-	50: setvectorpotential_ptx_50,
-	52: setvectorpotential_ptx_52,
-	53: setvectorpotential_ptx_53,
-	60: setvectorpotential_ptx_60,
-	61: setvectorpotential_ptx_61,
-	62: setvectorpotential_ptx_62,
-	70: setvectorpotential_ptx_70,
-	72: setvectorpotential_ptx_72,
-	75: setvectorpotential_ptx_75,
-	80: setvectorpotential_ptx_80,
-	86: setvectorpotential_ptx_86,
-	87: setvectorpotential_ptx_87,
-	89: setvectorpotential_ptx_89,
-	90: setvectorpotential_ptx_90}
+var setvectorpotentialMap = map[int]string{
+	0:  "",
+	50: setvectorpotentialPtx50,
+	52: setvectorpotentialPtx52,
+	53: setvectorpotentialPtx53,
+	60: setvectorpotentialPtx60,
+	61: setvectorpotentialPtx61,
+	62: setvectorpotentialPtx62,
+	70: setvectorpotentialPtx70,
+	72: setvectorpotentialPtx72,
+	75: setvectorpotentialPtx75,
+	80: setvectorpotentialPtx80,
+	86: setvectorpotentialPtx86,
+	87: setvectorpotentialPtx87,
+	89: setvectorpotentialPtx89,
+	90: setvectorpotentialPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var setvectorpotential_map = setvectorpotentialMap
 
 // setvectorpotential PTX code for various compute capabilities.
 const (
-	setvectorpotential_ptx_50 = `
-.version 8.5
+	setvectorpotentialPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -272,8 +284,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_52 = `
-.version 8.5
+	setvectorpotentialPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -440,8 +452,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_53 = `
-.version 8.5
+	setvectorpotentialPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -608,8 +620,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_60 = `
-.version 8.5
+	setvectorpotentialPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -776,8 +788,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_61 = `
-.version 8.5
+	setvectorpotentialPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -944,8 +956,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_62 = `
-.version 8.5
+	setvectorpotentialPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -1112,8 +1124,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_70 = `
-.version 8.5
+	setvectorpotentialPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1280,8 +1292,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_72 = `
-.version 8.5
+	setvectorpotentialPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -1448,8 +1460,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_75 = `
-.version 8.5
+	setvectorpotentialPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1616,8 +1628,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_80 = `
-.version 8.5
+	setvectorpotentialPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1784,8 +1796,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_86 = `
-.version 8.5
+	setvectorpotentialPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1952,8 +1964,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_87 = `
-.version 8.5
+	setvectorpotentialPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -2120,8 +2132,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_89 = `
-.version 8.5
+	setvectorpotentialPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -2288,8 +2300,8 @@ $L__BB0_9:
 }
 
 `
-	setvectorpotential_ptx_90 = `
-.version 8.5
+	setvectorpotentialPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

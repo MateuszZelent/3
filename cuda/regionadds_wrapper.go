@@ -6,57 +6,58 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for regionadds kernel
-var regionadds_code cu.Function
+var regionaddsCode cu.Function
 
 // Stores the arguments for regionadds kernel invocation
-type regionadds_args_t struct {
-	arg_dst     unsafe.Pointer
-	arg_LUT     unsafe.Pointer
-	arg_regions unsafe.Pointer
-	arg_N       int
-	argptr      [4]unsafe.Pointer
+type regionaddsArgsT struct {
+	argDst     unsafe.Pointer
+	argLUT     unsafe.Pointer
+	argRegions unsafe.Pointer
+	argN       int
+	argptr     [4]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for regionadds kernel invocation
-var regionadds_args regionadds_args_t
+var regionaddsArgs regionaddsArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	regionadds_args.argptr[0] = unsafe.Pointer(&regionadds_args.arg_dst)
-	regionadds_args.argptr[1] = unsafe.Pointer(&regionadds_args.arg_LUT)
-	regionadds_args.argptr[2] = unsafe.Pointer(&regionadds_args.arg_regions)
-	regionadds_args.argptr[3] = unsafe.Pointer(&regionadds_args.arg_N)
+	regionaddsArgs.argptr[0] = unsafe.Pointer(&regionaddsArgs.argDst)
+	regionaddsArgs.argptr[1] = unsafe.Pointer(&regionaddsArgs.argLUT)
+	regionaddsArgs.argptr[2] = unsafe.Pointer(&regionaddsArgs.argRegions)
+	regionaddsArgs.argptr[3] = unsafe.Pointer(&regionaddsArgs.argN)
 }
 
 // Wrapper for regionadds CUDA kernel, asynchronous.
-func k_regionadds_async(dst unsafe.Pointer, LUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
+func kRegionaddsAsync(dst unsafe.Pointer, LUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("regionadds")
 	}
 
-	regionadds_args.Lock()
-	defer regionadds_args.Unlock()
+	regionaddsArgs.Lock()
+	defer regionaddsArgs.Unlock()
 
-	if regionadds_code == 0 {
-		regionadds_code = fatbinLoad(regionadds_map, "regionadds")
+	if regionaddsCode == 0 {
+		regionaddsCode = fatbinLoad(regionaddsMap, "regionadds")
 	}
 
-	regionadds_args.arg_dst = dst
-	regionadds_args.arg_LUT = LUT
-	regionadds_args.arg_regions = regions
-	regionadds_args.arg_N = N
+	regionaddsArgs.argDst = dst
+	regionaddsArgs.argLUT = LUT
+	regionaddsArgs.argRegions = regions
+	regionaddsArgs.argN = N
 
-	args := regionadds_args.argptr[:]
-	cu.LaunchKernel(regionadds_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := regionaddsArgs.argptr[:]
+	cu.LaunchKernel(regionaddsCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -64,27 +65,38 @@ func k_regionadds_async(dst unsafe.Pointer, LUT unsafe.Pointer, regions unsafe.P
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_regionadds_async(dst unsafe.Pointer, LUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
+	kRegionaddsAsync(dst, LUT, regions, N, cfg)
+}
+
 // maps compute capability on PTX code for regionadds kernel.
-var regionadds_map = map[int]string{0: "",
-	50: regionadds_ptx_50,
-	52: regionadds_ptx_52,
-	53: regionadds_ptx_53,
-	60: regionadds_ptx_60,
-	61: regionadds_ptx_61,
-	62: regionadds_ptx_62,
-	70: regionadds_ptx_70,
-	72: regionadds_ptx_72,
-	75: regionadds_ptx_75,
-	80: regionadds_ptx_80,
-	86: regionadds_ptx_86,
-	87: regionadds_ptx_87,
-	89: regionadds_ptx_89,
-	90: regionadds_ptx_90}
+var regionaddsMap = map[int]string{
+	0:  "",
+	50: regionaddsPtx50,
+	52: regionaddsPtx52,
+	53: regionaddsPtx53,
+	60: regionaddsPtx60,
+	61: regionaddsPtx61,
+	62: regionaddsPtx62,
+	70: regionaddsPtx70,
+	72: regionaddsPtx72,
+	75: regionaddsPtx75,
+	80: regionaddsPtx80,
+	86: regionaddsPtx86,
+	87: regionaddsPtx87,
+	89: regionaddsPtx89,
+	90: regionaddsPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var regionadds_map = regionaddsMap
 
 // regionadds PTX code for various compute capabilities.
 const (
-	regionadds_ptx_50 = `
-.version 8.5
+	regionaddsPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -141,8 +153,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_52 = `
-.version 8.5
+	regionaddsPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -199,8 +211,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_53 = `
-.version 8.5
+	regionaddsPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -257,8 +269,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_60 = `
-.version 8.5
+	regionaddsPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -315,8 +327,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_61 = `
-.version 8.5
+	regionaddsPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -373,8 +385,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_62 = `
-.version 8.5
+	regionaddsPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -431,8 +443,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_70 = `
-.version 8.5
+	regionaddsPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -489,8 +501,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_72 = `
-.version 8.5
+	regionaddsPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -547,8 +559,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_75 = `
-.version 8.5
+	regionaddsPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -605,8 +617,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_80 = `
-.version 8.5
+	regionaddsPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -663,8 +675,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_86 = `
-.version 8.5
+	regionaddsPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -721,8 +733,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_87 = `
-.version 8.5
+	regionaddsPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -779,8 +791,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_89 = `
-.version 8.5
+	regionaddsPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -837,8 +849,8 @@ $L__BB0_2:
 }
 
 `
-	regionadds_ptx_90 = `
-.version 8.5
+	regionaddsPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

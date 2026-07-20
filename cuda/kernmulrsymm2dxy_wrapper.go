@@ -6,66 +6,67 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for kernmulRSymm2Dxy kernel
-var kernmulRSymm2Dxy_code cu.Function
+var kernmulRSymm2DxyCode cu.Function
 
 // Stores the arguments for kernmulRSymm2Dxy kernel invocation
-type kernmulRSymm2Dxy_args_t struct {
-	arg_fftMx  unsafe.Pointer
-	arg_fftMy  unsafe.Pointer
-	arg_fftKxx unsafe.Pointer
-	arg_fftKyy unsafe.Pointer
-	arg_fftKxy unsafe.Pointer
-	arg_Nx     int
-	arg_Ny     int
-	argptr     [7]unsafe.Pointer
+type kernmulRSymm2DxyArgsT struct {
+	argFftMx  unsafe.Pointer
+	argFftMy  unsafe.Pointer
+	argFftKxx unsafe.Pointer
+	argFftKyy unsafe.Pointer
+	argFftKxy unsafe.Pointer
+	argNx     int
+	argNy     int
+	argptr    [7]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for kernmulRSymm2Dxy kernel invocation
-var kernmulRSymm2Dxy_args kernmulRSymm2Dxy_args_t
+var kernmulRSymm2DxyArgs kernmulRSymm2DxyArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	kernmulRSymm2Dxy_args.argptr[0] = unsafe.Pointer(&kernmulRSymm2Dxy_args.arg_fftMx)
-	kernmulRSymm2Dxy_args.argptr[1] = unsafe.Pointer(&kernmulRSymm2Dxy_args.arg_fftMy)
-	kernmulRSymm2Dxy_args.argptr[2] = unsafe.Pointer(&kernmulRSymm2Dxy_args.arg_fftKxx)
-	kernmulRSymm2Dxy_args.argptr[3] = unsafe.Pointer(&kernmulRSymm2Dxy_args.arg_fftKyy)
-	kernmulRSymm2Dxy_args.argptr[4] = unsafe.Pointer(&kernmulRSymm2Dxy_args.arg_fftKxy)
-	kernmulRSymm2Dxy_args.argptr[5] = unsafe.Pointer(&kernmulRSymm2Dxy_args.arg_Nx)
-	kernmulRSymm2Dxy_args.argptr[6] = unsafe.Pointer(&kernmulRSymm2Dxy_args.arg_Ny)
+	kernmulRSymm2DxyArgs.argptr[0] = unsafe.Pointer(&kernmulRSymm2DxyArgs.argFftMx)
+	kernmulRSymm2DxyArgs.argptr[1] = unsafe.Pointer(&kernmulRSymm2DxyArgs.argFftMy)
+	kernmulRSymm2DxyArgs.argptr[2] = unsafe.Pointer(&kernmulRSymm2DxyArgs.argFftKxx)
+	kernmulRSymm2DxyArgs.argptr[3] = unsafe.Pointer(&kernmulRSymm2DxyArgs.argFftKyy)
+	kernmulRSymm2DxyArgs.argptr[4] = unsafe.Pointer(&kernmulRSymm2DxyArgs.argFftKxy)
+	kernmulRSymm2DxyArgs.argptr[5] = unsafe.Pointer(&kernmulRSymm2DxyArgs.argNx)
+	kernmulRSymm2DxyArgs.argptr[6] = unsafe.Pointer(&kernmulRSymm2DxyArgs.argNy)
 }
 
 // Wrapper for kernmulRSymm2Dxy CUDA kernel, asynchronous.
-func k_kernmulRSymm2Dxy_async(fftMx unsafe.Pointer, fftMy unsafe.Pointer, fftKxx unsafe.Pointer, fftKyy unsafe.Pointer, fftKxy unsafe.Pointer, Nx int, Ny int, cfg *config) {
+func kKernmulRSymm2DxyAsync(fftMx unsafe.Pointer, fftMy unsafe.Pointer, fftKxx unsafe.Pointer, fftKyy unsafe.Pointer, fftKxy unsafe.Pointer, Nx int, Ny int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("kernmulRSymm2Dxy")
 	}
 
-	kernmulRSymm2Dxy_args.Lock()
-	defer kernmulRSymm2Dxy_args.Unlock()
+	kernmulRSymm2DxyArgs.Lock()
+	defer kernmulRSymm2DxyArgs.Unlock()
 
-	if kernmulRSymm2Dxy_code == 0 {
-		kernmulRSymm2Dxy_code = fatbinLoad(kernmulRSymm2Dxy_map, "kernmulRSymm2Dxy")
+	if kernmulRSymm2DxyCode == 0 {
+		kernmulRSymm2DxyCode = fatbinLoad(kernmulRSymm2DxyMap, "kernmulRSymm2Dxy")
 	}
 
-	kernmulRSymm2Dxy_args.arg_fftMx = fftMx
-	kernmulRSymm2Dxy_args.arg_fftMy = fftMy
-	kernmulRSymm2Dxy_args.arg_fftKxx = fftKxx
-	kernmulRSymm2Dxy_args.arg_fftKyy = fftKyy
-	kernmulRSymm2Dxy_args.arg_fftKxy = fftKxy
-	kernmulRSymm2Dxy_args.arg_Nx = Nx
-	kernmulRSymm2Dxy_args.arg_Ny = Ny
+	kernmulRSymm2DxyArgs.argFftMx = fftMx
+	kernmulRSymm2DxyArgs.argFftMy = fftMy
+	kernmulRSymm2DxyArgs.argFftKxx = fftKxx
+	kernmulRSymm2DxyArgs.argFftKyy = fftKyy
+	kernmulRSymm2DxyArgs.argFftKxy = fftKxy
+	kernmulRSymm2DxyArgs.argNx = Nx
+	kernmulRSymm2DxyArgs.argNy = Ny
 
-	args := kernmulRSymm2Dxy_args.argptr[:]
-	cu.LaunchKernel(kernmulRSymm2Dxy_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := kernmulRSymm2DxyArgs.argptr[:]
+	cu.LaunchKernel(kernmulRSymm2DxyCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -73,27 +74,38 @@ func k_kernmulRSymm2Dxy_async(fftMx unsafe.Pointer, fftMy unsafe.Pointer, fftKxx
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_kernmulRSymm2Dxy_async(fftMx unsafe.Pointer, fftMy unsafe.Pointer, fftKxx unsafe.Pointer, fftKyy unsafe.Pointer, fftKxy unsafe.Pointer, Nx int, Ny int, cfg *config) {
+	kKernmulRSymm2DxyAsync(fftMx, fftMy, fftKxx, fftKyy, fftKxy, Nx, Ny, cfg)
+}
+
 // maps compute capability on PTX code for kernmulRSymm2Dxy kernel.
-var kernmulRSymm2Dxy_map = map[int]string{0: "",
-	50: kernmulRSymm2Dxy_ptx_50,
-	52: kernmulRSymm2Dxy_ptx_52,
-	53: kernmulRSymm2Dxy_ptx_53,
-	60: kernmulRSymm2Dxy_ptx_60,
-	61: kernmulRSymm2Dxy_ptx_61,
-	62: kernmulRSymm2Dxy_ptx_62,
-	70: kernmulRSymm2Dxy_ptx_70,
-	72: kernmulRSymm2Dxy_ptx_72,
-	75: kernmulRSymm2Dxy_ptx_75,
-	80: kernmulRSymm2Dxy_ptx_80,
-	86: kernmulRSymm2Dxy_ptx_86,
-	87: kernmulRSymm2Dxy_ptx_87,
-	89: kernmulRSymm2Dxy_ptx_89,
-	90: kernmulRSymm2Dxy_ptx_90}
+var kernmulRSymm2DxyMap = map[int]string{
+	0:  "",
+	50: kernmulRSymm2DxyPtx50,
+	52: kernmulRSymm2DxyPtx52,
+	53: kernmulRSymm2DxyPtx53,
+	60: kernmulRSymm2DxyPtx60,
+	61: kernmulRSymm2DxyPtx61,
+	62: kernmulRSymm2DxyPtx62,
+	70: kernmulRSymm2DxyPtx70,
+	72: kernmulRSymm2DxyPtx72,
+	75: kernmulRSymm2DxyPtx75,
+	80: kernmulRSymm2DxyPtx80,
+	86: kernmulRSymm2DxyPtx86,
+	87: kernmulRSymm2DxyPtx87,
+	89: kernmulRSymm2DxyPtx89,
+	90: kernmulRSymm2DxyPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var kernmulRSymm2Dxy_map = kernmulRSymm2DxyMap
 
 // kernmulRSymm2Dxy PTX code for various compute capabilities.
 const (
-	kernmulRSymm2Dxy_ptx_50 = `
-.version 8.5
+	kernmulRSymm2DxyPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -184,8 +196,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_52 = `
-.version 8.5
+	kernmulRSymm2DxyPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -276,8 +288,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_53 = `
-.version 8.5
+	kernmulRSymm2DxyPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -368,8 +380,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_60 = `
-.version 8.5
+	kernmulRSymm2DxyPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -460,8 +472,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_61 = `
-.version 8.5
+	kernmulRSymm2DxyPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -552,8 +564,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_62 = `
-.version 8.5
+	kernmulRSymm2DxyPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -644,8 +656,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_70 = `
-.version 8.5
+	kernmulRSymm2DxyPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -736,8 +748,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_72 = `
-.version 8.5
+	kernmulRSymm2DxyPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -828,8 +840,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_75 = `
-.version 8.5
+	kernmulRSymm2DxyPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -920,8 +932,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_80 = `
-.version 8.5
+	kernmulRSymm2DxyPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1012,8 +1024,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_86 = `
-.version 8.5
+	kernmulRSymm2DxyPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1104,8 +1116,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_87 = `
-.version 8.5
+	kernmulRSymm2DxyPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1196,8 +1208,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_89 = `
-.version 8.5
+	kernmulRSymm2DxyPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1288,8 +1300,8 @@ $L__BB0_2:
 }
 
 `
-	kernmulRSymm2Dxy_ptx_90 = `
-.version 8.5
+	kernmulRSymm2DxyPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

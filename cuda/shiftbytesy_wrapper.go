@@ -6,66 +6,67 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for shiftbytesy kernel
-var shiftbytesy_code cu.Function
+var shiftbytesyCode cu.Function
 
 // Stores the arguments for shiftbytesy kernel invocation
-type shiftbytesy_args_t struct {
-	arg_dst   unsafe.Pointer
-	arg_src   unsafe.Pointer
-	arg_Nx    int
-	arg_Ny    int
-	arg_Nz    int
-	arg_shy   int
-	arg_clamp byte
-	argptr    [7]unsafe.Pointer
+type shiftbytesyArgsT struct {
+	argDst   unsafe.Pointer
+	argSrc   unsafe.Pointer
+	argNx    int
+	argNy    int
+	argNz    int
+	argShy   int
+	argClamp byte
+	argptr   [7]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for shiftbytesy kernel invocation
-var shiftbytesy_args shiftbytesy_args_t
+var shiftbytesyArgs shiftbytesyArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	shiftbytesy_args.argptr[0] = unsafe.Pointer(&shiftbytesy_args.arg_dst)
-	shiftbytesy_args.argptr[1] = unsafe.Pointer(&shiftbytesy_args.arg_src)
-	shiftbytesy_args.argptr[2] = unsafe.Pointer(&shiftbytesy_args.arg_Nx)
-	shiftbytesy_args.argptr[3] = unsafe.Pointer(&shiftbytesy_args.arg_Ny)
-	shiftbytesy_args.argptr[4] = unsafe.Pointer(&shiftbytesy_args.arg_Nz)
-	shiftbytesy_args.argptr[5] = unsafe.Pointer(&shiftbytesy_args.arg_shy)
-	shiftbytesy_args.argptr[6] = unsafe.Pointer(&shiftbytesy_args.arg_clamp)
+	shiftbytesyArgs.argptr[0] = unsafe.Pointer(&shiftbytesyArgs.argDst)
+	shiftbytesyArgs.argptr[1] = unsafe.Pointer(&shiftbytesyArgs.argSrc)
+	shiftbytesyArgs.argptr[2] = unsafe.Pointer(&shiftbytesyArgs.argNx)
+	shiftbytesyArgs.argptr[3] = unsafe.Pointer(&shiftbytesyArgs.argNy)
+	shiftbytesyArgs.argptr[4] = unsafe.Pointer(&shiftbytesyArgs.argNz)
+	shiftbytesyArgs.argptr[5] = unsafe.Pointer(&shiftbytesyArgs.argShy)
+	shiftbytesyArgs.argptr[6] = unsafe.Pointer(&shiftbytesyArgs.argClamp)
 }
 
 // Wrapper for shiftbytesy CUDA kernel, asynchronous.
-func k_shiftbytesy_async(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int, Nz int, shy int, clamp byte, cfg *config) {
+func kShiftbytesyAsync(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int, Nz int, shy int, clamp byte, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("shiftbytesy")
 	}
 
-	shiftbytesy_args.Lock()
-	defer shiftbytesy_args.Unlock()
+	shiftbytesyArgs.Lock()
+	defer shiftbytesyArgs.Unlock()
 
-	if shiftbytesy_code == 0 {
-		shiftbytesy_code = fatbinLoad(shiftbytesy_map, "shiftbytesy")
+	if shiftbytesyCode == 0 {
+		shiftbytesyCode = fatbinLoad(shiftbytesyMap, "shiftbytesy")
 	}
 
-	shiftbytesy_args.arg_dst = dst
-	shiftbytesy_args.arg_src = src
-	shiftbytesy_args.arg_Nx = Nx
-	shiftbytesy_args.arg_Ny = Ny
-	shiftbytesy_args.arg_Nz = Nz
-	shiftbytesy_args.arg_shy = shy
-	shiftbytesy_args.arg_clamp = clamp
+	shiftbytesyArgs.argDst = dst
+	shiftbytesyArgs.argSrc = src
+	shiftbytesyArgs.argNx = Nx
+	shiftbytesyArgs.argNy = Ny
+	shiftbytesyArgs.argNz = Nz
+	shiftbytesyArgs.argShy = shy
+	shiftbytesyArgs.argClamp = clamp
 
-	args := shiftbytesy_args.argptr[:]
-	cu.LaunchKernel(shiftbytesy_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := shiftbytesyArgs.argptr[:]
+	cu.LaunchKernel(shiftbytesyCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -73,27 +74,38 @@ func k_shiftbytesy_async(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int,
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_shiftbytesy_async(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int, Nz int, shy int, clamp byte, cfg *config) {
+	kShiftbytesyAsync(dst, src, Nx, Ny, Nz, shy, clamp, cfg)
+}
+
 // maps compute capability on PTX code for shiftbytesy kernel.
-var shiftbytesy_map = map[int]string{0: "",
-	50: shiftbytesy_ptx_50,
-	52: shiftbytesy_ptx_52,
-	53: shiftbytesy_ptx_53,
-	60: shiftbytesy_ptx_60,
-	61: shiftbytesy_ptx_61,
-	62: shiftbytesy_ptx_62,
-	70: shiftbytesy_ptx_70,
-	72: shiftbytesy_ptx_72,
-	75: shiftbytesy_ptx_75,
-	80: shiftbytesy_ptx_80,
-	86: shiftbytesy_ptx_86,
-	87: shiftbytesy_ptx_87,
-	89: shiftbytesy_ptx_89,
-	90: shiftbytesy_ptx_90}
+var shiftbytesyMap = map[int]string{
+	0:  "",
+	50: shiftbytesyPtx50,
+	52: shiftbytesyPtx52,
+	53: shiftbytesyPtx53,
+	60: shiftbytesyPtx60,
+	61: shiftbytesyPtx61,
+	62: shiftbytesyPtx62,
+	70: shiftbytesyPtx70,
+	72: shiftbytesyPtx72,
+	75: shiftbytesyPtx75,
+	80: shiftbytesyPtx80,
+	86: shiftbytesyPtx86,
+	87: shiftbytesyPtx87,
+	89: shiftbytesyPtx89,
+	90: shiftbytesyPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var shiftbytesy_map = shiftbytesyMap
 
 // shiftbytesy PTX code for various compute capabilities.
 const (
-	shiftbytesy_ptx_50 = `
-.version 8.5
+	shiftbytesyPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -169,8 +181,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_52 = `
-.version 8.5
+	shiftbytesyPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -246,8 +258,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_53 = `
-.version 8.5
+	shiftbytesyPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -323,8 +335,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_60 = `
-.version 8.5
+	shiftbytesyPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -400,8 +412,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_61 = `
-.version 8.5
+	shiftbytesyPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -477,8 +489,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_62 = `
-.version 8.5
+	shiftbytesyPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -554,8 +566,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_70 = `
-.version 8.5
+	shiftbytesyPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -631,8 +643,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_72 = `
-.version 8.5
+	shiftbytesyPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -708,8 +720,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_75 = `
-.version 8.5
+	shiftbytesyPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -785,8 +797,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_80 = `
-.version 8.5
+	shiftbytesyPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -862,8 +874,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_86 = `
-.version 8.5
+	shiftbytesyPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -939,8 +951,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_87 = `
-.version 8.5
+	shiftbytesyPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1016,8 +1028,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_89 = `
-.version 8.5
+	shiftbytesyPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1093,8 +1105,8 @@ $L__BB0_4:
 }
 
 `
-	shiftbytesy_ptx_90 = `
-.version 8.5
+	shiftbytesyPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

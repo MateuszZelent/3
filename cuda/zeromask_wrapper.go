@@ -6,57 +6,58 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for zeromask kernel
-var zeromask_code cu.Function
+var zeromaskCode cu.Function
 
 // Stores the arguments for zeromask kernel invocation
-type zeromask_args_t struct {
-	arg_dst     unsafe.Pointer
-	arg_maskLUT unsafe.Pointer
-	arg_regions unsafe.Pointer
-	arg_N       int
-	argptr      [4]unsafe.Pointer
+type zeromaskArgsT struct {
+	argDst     unsafe.Pointer
+	argMaskLUT unsafe.Pointer
+	argRegions unsafe.Pointer
+	argN       int
+	argptr     [4]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for zeromask kernel invocation
-var zeromask_args zeromask_args_t
+var zeromaskArgs zeromaskArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	zeromask_args.argptr[0] = unsafe.Pointer(&zeromask_args.arg_dst)
-	zeromask_args.argptr[1] = unsafe.Pointer(&zeromask_args.arg_maskLUT)
-	zeromask_args.argptr[2] = unsafe.Pointer(&zeromask_args.arg_regions)
-	zeromask_args.argptr[3] = unsafe.Pointer(&zeromask_args.arg_N)
+	zeromaskArgs.argptr[0] = unsafe.Pointer(&zeromaskArgs.argDst)
+	zeromaskArgs.argptr[1] = unsafe.Pointer(&zeromaskArgs.argMaskLUT)
+	zeromaskArgs.argptr[2] = unsafe.Pointer(&zeromaskArgs.argRegions)
+	zeromaskArgs.argptr[3] = unsafe.Pointer(&zeromaskArgs.argN)
 }
 
 // Wrapper for zeromask CUDA kernel, asynchronous.
-func k_zeromask_async(dst unsafe.Pointer, maskLUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
+func kZeromaskAsync(dst unsafe.Pointer, maskLUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("zeromask")
 	}
 
-	zeromask_args.Lock()
-	defer zeromask_args.Unlock()
+	zeromaskArgs.Lock()
+	defer zeromaskArgs.Unlock()
 
-	if zeromask_code == 0 {
-		zeromask_code = fatbinLoad(zeromask_map, "zeromask")
+	if zeromaskCode == 0 {
+		zeromaskCode = fatbinLoad(zeromaskMap, "zeromask")
 	}
 
-	zeromask_args.arg_dst = dst
-	zeromask_args.arg_maskLUT = maskLUT
-	zeromask_args.arg_regions = regions
-	zeromask_args.arg_N = N
+	zeromaskArgs.argDst = dst
+	zeromaskArgs.argMaskLUT = maskLUT
+	zeromaskArgs.argRegions = regions
+	zeromaskArgs.argN = N
 
-	args := zeromask_args.argptr[:]
-	cu.LaunchKernel(zeromask_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := zeromaskArgs.argptr[:]
+	cu.LaunchKernel(zeromaskCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -64,27 +65,38 @@ func k_zeromask_async(dst unsafe.Pointer, maskLUT unsafe.Pointer, regions unsafe
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_zeromask_async(dst unsafe.Pointer, maskLUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
+	kZeromaskAsync(dst, maskLUT, regions, N, cfg)
+}
+
 // maps compute capability on PTX code for zeromask kernel.
-var zeromask_map = map[int]string{0: "",
-	50: zeromask_ptx_50,
-	52: zeromask_ptx_52,
-	53: zeromask_ptx_53,
-	60: zeromask_ptx_60,
-	61: zeromask_ptx_61,
-	62: zeromask_ptx_62,
-	70: zeromask_ptx_70,
-	72: zeromask_ptx_72,
-	75: zeromask_ptx_75,
-	80: zeromask_ptx_80,
-	86: zeromask_ptx_86,
-	87: zeromask_ptx_87,
-	89: zeromask_ptx_89,
-	90: zeromask_ptx_90}
+var zeromaskMap = map[int]string{
+	0:  "",
+	50: zeromaskPtx50,
+	52: zeromaskPtx52,
+	53: zeromaskPtx53,
+	60: zeromaskPtx60,
+	61: zeromaskPtx61,
+	62: zeromaskPtx62,
+	70: zeromaskPtx70,
+	72: zeromaskPtx72,
+	75: zeromaskPtx75,
+	80: zeromaskPtx80,
+	86: zeromaskPtx86,
+	87: zeromaskPtx87,
+	89: zeromaskPtx89,
+	90: zeromaskPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var zeromask_map = zeromaskMap
 
 // zeromask PTX code for various compute capabilities.
 const (
-	zeromask_ptx_50 = `
-.version 8.5
+	zeromaskPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -143,8 +155,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_52 = `
-.version 8.5
+	zeromaskPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -203,8 +215,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_53 = `
-.version 8.5
+	zeromaskPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -263,8 +275,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_60 = `
-.version 8.5
+	zeromaskPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -323,8 +335,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_61 = `
-.version 8.5
+	zeromaskPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -383,8 +395,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_62 = `
-.version 8.5
+	zeromaskPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -443,8 +455,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_70 = `
-.version 8.5
+	zeromaskPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -503,8 +515,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_72 = `
-.version 8.5
+	zeromaskPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -563,8 +575,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_75 = `
-.version 8.5
+	zeromaskPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -623,8 +635,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_80 = `
-.version 8.5
+	zeromaskPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -683,8 +695,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_86 = `
-.version 8.5
+	zeromaskPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -743,8 +755,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_87 = `
-.version 8.5
+	zeromaskPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -803,8 +815,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_89 = `
-.version 8.5
+	zeromaskPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -863,8 +875,8 @@ $L__BB0_3:
 }
 
 `
-	zeromask_ptx_90 = `
-.version 8.5
+	zeromaskPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

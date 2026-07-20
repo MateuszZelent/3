@@ -6,60 +6,61 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for normalize kernel
-var normalize_code cu.Function
+var normalizeCode cu.Function
 
 // Stores the arguments for normalize kernel invocation
-type normalize_args_t struct {
-	arg_vx  unsafe.Pointer
-	arg_vy  unsafe.Pointer
-	arg_vz  unsafe.Pointer
-	arg_vol unsafe.Pointer
-	arg_N   int
-	argptr  [5]unsafe.Pointer
+type normalizeArgsT struct {
+	argVx  unsafe.Pointer
+	argVy  unsafe.Pointer
+	argVz  unsafe.Pointer
+	argVol unsafe.Pointer
+	argN   int
+	argptr [5]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for normalize kernel invocation
-var normalize_args normalize_args_t
+var normalizeArgs normalizeArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	normalize_args.argptr[0] = unsafe.Pointer(&normalize_args.arg_vx)
-	normalize_args.argptr[1] = unsafe.Pointer(&normalize_args.arg_vy)
-	normalize_args.argptr[2] = unsafe.Pointer(&normalize_args.arg_vz)
-	normalize_args.argptr[3] = unsafe.Pointer(&normalize_args.arg_vol)
-	normalize_args.argptr[4] = unsafe.Pointer(&normalize_args.arg_N)
+	normalizeArgs.argptr[0] = unsafe.Pointer(&normalizeArgs.argVx)
+	normalizeArgs.argptr[1] = unsafe.Pointer(&normalizeArgs.argVy)
+	normalizeArgs.argptr[2] = unsafe.Pointer(&normalizeArgs.argVz)
+	normalizeArgs.argptr[3] = unsafe.Pointer(&normalizeArgs.argVol)
+	normalizeArgs.argptr[4] = unsafe.Pointer(&normalizeArgs.argN)
 }
 
 // Wrapper for normalize CUDA kernel, asynchronous.
-func k_normalize_async(vx unsafe.Pointer, vy unsafe.Pointer, vz unsafe.Pointer, vol unsafe.Pointer, N int, cfg *config) {
+func kNormalizeAsync(vx unsafe.Pointer, vy unsafe.Pointer, vz unsafe.Pointer, vol unsafe.Pointer, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("normalize")
 	}
 
-	normalize_args.Lock()
-	defer normalize_args.Unlock()
+	normalizeArgs.Lock()
+	defer normalizeArgs.Unlock()
 
-	if normalize_code == 0 {
-		normalize_code = fatbinLoad(normalize_map, "normalize")
+	if normalizeCode == 0 {
+		normalizeCode = fatbinLoad(normalizeMap, "normalize")
 	}
 
-	normalize_args.arg_vx = vx
-	normalize_args.arg_vy = vy
-	normalize_args.arg_vz = vz
-	normalize_args.arg_vol = vol
-	normalize_args.arg_N = N
+	normalizeArgs.argVx = vx
+	normalizeArgs.argVy = vy
+	normalizeArgs.argVz = vz
+	normalizeArgs.argVol = vol
+	normalizeArgs.argN = N
 
-	args := normalize_args.argptr[:]
-	cu.LaunchKernel(normalize_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := normalizeArgs.argptr[:]
+	cu.LaunchKernel(normalizeCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -67,27 +68,38 @@ func k_normalize_async(vx unsafe.Pointer, vy unsafe.Pointer, vz unsafe.Pointer, 
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_normalize_async(vx unsafe.Pointer, vy unsafe.Pointer, vz unsafe.Pointer, vol unsafe.Pointer, N int, cfg *config) {
+	kNormalizeAsync(vx, vy, vz, vol, N, cfg)
+}
+
 // maps compute capability on PTX code for normalize kernel.
-var normalize_map = map[int]string{0: "",
-	50: normalize_ptx_50,
-	52: normalize_ptx_52,
-	53: normalize_ptx_53,
-	60: normalize_ptx_60,
-	61: normalize_ptx_61,
-	62: normalize_ptx_62,
-	70: normalize_ptx_70,
-	72: normalize_ptx_72,
-	75: normalize_ptx_75,
-	80: normalize_ptx_80,
-	86: normalize_ptx_86,
-	87: normalize_ptx_87,
-	89: normalize_ptx_89,
-	90: normalize_ptx_90}
+var normalizeMap = map[int]string{
+	0:  "",
+	50: normalizePtx50,
+	52: normalizePtx52,
+	53: normalizePtx53,
+	60: normalizePtx60,
+	61: normalizePtx61,
+	62: normalizePtx62,
+	70: normalizePtx70,
+	72: normalizePtx72,
+	75: normalizePtx75,
+	80: normalizePtx80,
+	86: normalizePtx86,
+	87: normalizePtx87,
+	89: normalizePtx89,
+	90: normalizePtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var normalize_map = normalizeMap
 
 // normalize PTX code for various compute capabilities.
 const (
-	normalize_ptx_50 = `
-.version 8.5
+	normalizePtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -172,8 +184,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_52 = `
-.version 8.5
+	normalizePtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -258,8 +270,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_53 = `
-.version 8.5
+	normalizePtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -344,8 +356,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_60 = `
-.version 8.5
+	normalizePtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -430,8 +442,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_61 = `
-.version 8.5
+	normalizePtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -516,8 +528,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_62 = `
-.version 8.5
+	normalizePtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -602,8 +614,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_70 = `
-.version 8.5
+	normalizePtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -688,8 +700,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_72 = `
-.version 8.5
+	normalizePtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -774,8 +786,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_75 = `
-.version 8.5
+	normalizePtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -860,8 +872,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_80 = `
-.version 8.5
+	normalizePtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -946,8 +958,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_86 = `
-.version 8.5
+	normalizePtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1032,8 +1044,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_87 = `
-.version 8.5
+	normalizePtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1118,8 +1130,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_89 = `
-.version 8.5
+	normalizePtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1204,8 +1216,8 @@ $L__BB0_7:
 }
 
 `
-	normalize_ptx_90 = `
-.version 8.5
+	normalizePtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

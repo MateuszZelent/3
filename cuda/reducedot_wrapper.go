@@ -6,60 +6,61 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for reducedot kernel
-var reducedot_code cu.Function
+var reducedotCode cu.Function
 
 // Stores the arguments for reducedot kernel invocation
-type reducedot_args_t struct {
-	arg_x1      unsafe.Pointer
-	arg_x2      unsafe.Pointer
-	arg_dst     unsafe.Pointer
-	arg_initVal float32
-	arg_n       int
-	argptr      [5]unsafe.Pointer
+type reducedotArgsT struct {
+	argX1      unsafe.Pointer
+	argX2      unsafe.Pointer
+	argDst     unsafe.Pointer
+	argInitVal float32
+	argN       int
+	argptr     [5]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for reducedot kernel invocation
-var reducedot_args reducedot_args_t
+var reducedotArgs reducedotArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	reducedot_args.argptr[0] = unsafe.Pointer(&reducedot_args.arg_x1)
-	reducedot_args.argptr[1] = unsafe.Pointer(&reducedot_args.arg_x2)
-	reducedot_args.argptr[2] = unsafe.Pointer(&reducedot_args.arg_dst)
-	reducedot_args.argptr[3] = unsafe.Pointer(&reducedot_args.arg_initVal)
-	reducedot_args.argptr[4] = unsafe.Pointer(&reducedot_args.arg_n)
+	reducedotArgs.argptr[0] = unsafe.Pointer(&reducedotArgs.argX1)
+	reducedotArgs.argptr[1] = unsafe.Pointer(&reducedotArgs.argX2)
+	reducedotArgs.argptr[2] = unsafe.Pointer(&reducedotArgs.argDst)
+	reducedotArgs.argptr[3] = unsafe.Pointer(&reducedotArgs.argInitVal)
+	reducedotArgs.argptr[4] = unsafe.Pointer(&reducedotArgs.argN)
 }
 
 // Wrapper for reducedot CUDA kernel, asynchronous.
-func k_reducedot_async(x1 unsafe.Pointer, x2 unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
+func kReducedotAsync(x1 unsafe.Pointer, x2 unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("reducedot")
 	}
 
-	reducedot_args.Lock()
-	defer reducedot_args.Unlock()
+	reducedotArgs.Lock()
+	defer reducedotArgs.Unlock()
 
-	if reducedot_code == 0 {
-		reducedot_code = fatbinLoad(reducedot_map, "reducedot")
+	if reducedotCode == 0 {
+		reducedotCode = fatbinLoad(reducedotMap, "reducedot")
 	}
 
-	reducedot_args.arg_x1 = x1
-	reducedot_args.arg_x2 = x2
-	reducedot_args.arg_dst = dst
-	reducedot_args.arg_initVal = initVal
-	reducedot_args.arg_n = n
+	reducedotArgs.argX1 = x1
+	reducedotArgs.argX2 = x2
+	reducedotArgs.argDst = dst
+	reducedotArgs.argInitVal = initVal
+	reducedotArgs.argN = n
 
-	args := reducedot_args.argptr[:]
-	cu.LaunchKernel(reducedot_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := reducedotArgs.argptr[:]
+	cu.LaunchKernel(reducedotCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -67,27 +68,38 @@ func k_reducedot_async(x1 unsafe.Pointer, x2 unsafe.Pointer, dst unsafe.Pointer,
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_reducedot_async(x1 unsafe.Pointer, x2 unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
+	kReducedotAsync(x1, x2, dst, initVal, n, cfg)
+}
+
 // maps compute capability on PTX code for reducedot kernel.
-var reducedot_map = map[int]string{0: "",
-	50: reducedot_ptx_50,
-	52: reducedot_ptx_52,
-	53: reducedot_ptx_53,
-	60: reducedot_ptx_60,
-	61: reducedot_ptx_61,
-	62: reducedot_ptx_62,
-	70: reducedot_ptx_70,
-	72: reducedot_ptx_72,
-	75: reducedot_ptx_75,
-	80: reducedot_ptx_80,
-	86: reducedot_ptx_86,
-	87: reducedot_ptx_87,
-	89: reducedot_ptx_89,
-	90: reducedot_ptx_90}
+var reducedotMap = map[int]string{
+	0:  "",
+	50: reducedotPtx50,
+	52: reducedotPtx52,
+	53: reducedotPtx53,
+	60: reducedotPtx60,
+	61: reducedotPtx61,
+	62: reducedotPtx62,
+	70: reducedotPtx70,
+	72: reducedotPtx72,
+	75: reducedotPtx75,
+	80: reducedotPtx80,
+	86: reducedotPtx86,
+	87: reducedotPtx87,
+	89: reducedotPtx89,
+	90: reducedotPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var reducedot_map = reducedotMap
 
 // reducedot PTX code for various compute capabilities.
 const (
-	reducedot_ptx_50 = `
-.version 8.5
+	reducedotPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -248,7 +260,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -256,8 +268,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_52 = `
-.version 8.5
+	reducedotPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -418,7 +430,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -426,8 +438,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_53 = `
-.version 8.5
+	reducedotPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -588,7 +600,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -596,8 +608,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_60 = `
-.version 8.5
+	reducedotPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -758,7 +770,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -766,8 +778,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_61 = `
-.version 8.5
+	reducedotPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -928,7 +940,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -936,8 +948,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_62 = `
-.version 8.5
+	reducedotPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -1098,7 +1110,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -1106,8 +1118,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_70 = `
-.version 8.5
+	reducedotPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1268,7 +1280,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -1276,8 +1288,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_72 = `
-.version 8.5
+	reducedotPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -1438,7 +1450,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -1446,8 +1458,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_75 = `
-.version 8.5
+	reducedotPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1608,7 +1620,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -1616,8 +1628,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_80 = `
-.version 8.5
+	reducedotPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1778,7 +1790,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -1786,8 +1798,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_86 = `
-.version 8.5
+	reducedotPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1948,7 +1960,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -1956,8 +1968,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_87 = `
-.version 8.5
+	reducedotPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -2118,7 +2130,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -2126,8 +2138,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_89 = `
-.version 8.5
+	reducedotPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -2288,7 +2300,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;
@@ -2296,8 +2308,8 @@ $L__BB0_15:
 }
 
 `
-	reducedot_ptx_90 = `
-.version 8.5
+	reducedotPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 
@@ -2458,7 +2470,7 @@ $L__BB0_13:
 
 	ld.shared.f32 	%f44, [_ZZ9reducedotE5sdata];
 	cvta.to.global.u64 	%rd24, %rd11;
-	atom.global.add.f32 	%f45, [%rd24], %f44;
+	red.global.add.f32 	[%rd24], %f44;
 
 $L__BB0_15:
 	ret;

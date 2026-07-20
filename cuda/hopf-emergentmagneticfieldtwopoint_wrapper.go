@@ -6,87 +6,88 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for setemergentmagneticfieldtwopoint kernel
-var setemergentmagneticfieldtwopoint_code cu.Function
+var setemergentmagneticfieldtwopointCode cu.Function
 
 // Stores the arguments for setemergentmagneticfieldtwopoint kernel invocation
-type setemergentmagneticfieldtwopoint_args_t struct {
-	arg_Fx        unsafe.Pointer
-	arg_Fy        unsafe.Pointer
-	arg_Fz        unsafe.Pointer
-	arg_mx        unsafe.Pointer
-	arg_my        unsafe.Pointer
-	arg_mz        unsafe.Pointer
-	arg_prefactor float32
-	arg_icycz     float32
-	arg_iczcx     float32
-	arg_icxcy     float32
-	arg_Nx        int
-	arg_Ny        int
-	arg_Nz        int
-	arg_PBC       byte
-	argptr        [14]unsafe.Pointer
+type setemergentmagneticfieldtwopointArgsT struct {
+	argFx        unsafe.Pointer
+	argFy        unsafe.Pointer
+	argFz        unsafe.Pointer
+	argMx        unsafe.Pointer
+	argMy        unsafe.Pointer
+	argMz        unsafe.Pointer
+	argPrefactor float32
+	argIcycz     float32
+	argIczcx     float32
+	argIcxcy     float32
+	argNx        int
+	argNy        int
+	argNz        int
+	argPBC       byte
+	argptr       [14]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for setemergentmagneticfieldtwopoint kernel invocation
-var setemergentmagneticfieldtwopoint_args setemergentmagneticfieldtwopoint_args_t
+var setemergentmagneticfieldtwopointArgs setemergentmagneticfieldtwopointArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	setemergentmagneticfieldtwopoint_args.argptr[0] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_Fx)
-	setemergentmagneticfieldtwopoint_args.argptr[1] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_Fy)
-	setemergentmagneticfieldtwopoint_args.argptr[2] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_Fz)
-	setemergentmagneticfieldtwopoint_args.argptr[3] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_mx)
-	setemergentmagneticfieldtwopoint_args.argptr[4] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_my)
-	setemergentmagneticfieldtwopoint_args.argptr[5] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_mz)
-	setemergentmagneticfieldtwopoint_args.argptr[6] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_prefactor)
-	setemergentmagneticfieldtwopoint_args.argptr[7] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_icycz)
-	setemergentmagneticfieldtwopoint_args.argptr[8] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_iczcx)
-	setemergentmagneticfieldtwopoint_args.argptr[9] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_icxcy)
-	setemergentmagneticfieldtwopoint_args.argptr[10] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_Nx)
-	setemergentmagneticfieldtwopoint_args.argptr[11] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_Ny)
-	setemergentmagneticfieldtwopoint_args.argptr[12] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_Nz)
-	setemergentmagneticfieldtwopoint_args.argptr[13] = unsafe.Pointer(&setemergentmagneticfieldtwopoint_args.arg_PBC)
+	setemergentmagneticfieldtwopointArgs.argptr[0] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argFx)
+	setemergentmagneticfieldtwopointArgs.argptr[1] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argFy)
+	setemergentmagneticfieldtwopointArgs.argptr[2] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argFz)
+	setemergentmagneticfieldtwopointArgs.argptr[3] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argMx)
+	setemergentmagneticfieldtwopointArgs.argptr[4] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argMy)
+	setemergentmagneticfieldtwopointArgs.argptr[5] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argMz)
+	setemergentmagneticfieldtwopointArgs.argptr[6] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argPrefactor)
+	setemergentmagneticfieldtwopointArgs.argptr[7] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argIcycz)
+	setemergentmagneticfieldtwopointArgs.argptr[8] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argIczcx)
+	setemergentmagneticfieldtwopointArgs.argptr[9] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argIcxcy)
+	setemergentmagneticfieldtwopointArgs.argptr[10] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argNx)
+	setemergentmagneticfieldtwopointArgs.argptr[11] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argNy)
+	setemergentmagneticfieldtwopointArgs.argptr[12] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argNz)
+	setemergentmagneticfieldtwopointArgs.argptr[13] = unsafe.Pointer(&setemergentmagneticfieldtwopointArgs.argPBC)
 }
 
 // Wrapper for setemergentmagneticfieldtwopoint CUDA kernel, asynchronous.
-func k_setemergentmagneticfieldtwopoint_async(Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, prefactor float32, icycz float32, iczcx float32, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+func kSetemergentmagneticfieldtwopointAsync(Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, prefactor float32, icycz float32, iczcx float32, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("setemergentmagneticfieldtwopoint")
 	}
 
-	setemergentmagneticfieldtwopoint_args.Lock()
-	defer setemergentmagneticfieldtwopoint_args.Unlock()
+	setemergentmagneticfieldtwopointArgs.Lock()
+	defer setemergentmagneticfieldtwopointArgs.Unlock()
 
-	if setemergentmagneticfieldtwopoint_code == 0 {
-		setemergentmagneticfieldtwopoint_code = fatbinLoad(setemergentmagneticfieldtwopoint_map, "setemergentmagneticfieldtwopoint")
+	if setemergentmagneticfieldtwopointCode == 0 {
+		setemergentmagneticfieldtwopointCode = fatbinLoad(setemergentmagneticfieldtwopointMap, "setemergentmagneticfieldtwopoint")
 	}
 
-	setemergentmagneticfieldtwopoint_args.arg_Fx = Fx
-	setemergentmagneticfieldtwopoint_args.arg_Fy = Fy
-	setemergentmagneticfieldtwopoint_args.arg_Fz = Fz
-	setemergentmagneticfieldtwopoint_args.arg_mx = mx
-	setemergentmagneticfieldtwopoint_args.arg_my = my
-	setemergentmagneticfieldtwopoint_args.arg_mz = mz
-	setemergentmagneticfieldtwopoint_args.arg_prefactor = prefactor
-	setemergentmagneticfieldtwopoint_args.arg_icycz = icycz
-	setemergentmagneticfieldtwopoint_args.arg_iczcx = iczcx
-	setemergentmagneticfieldtwopoint_args.arg_icxcy = icxcy
-	setemergentmagneticfieldtwopoint_args.arg_Nx = Nx
-	setemergentmagneticfieldtwopoint_args.arg_Ny = Ny
-	setemergentmagneticfieldtwopoint_args.arg_Nz = Nz
-	setemergentmagneticfieldtwopoint_args.arg_PBC = PBC
+	setemergentmagneticfieldtwopointArgs.argFx = Fx
+	setemergentmagneticfieldtwopointArgs.argFy = Fy
+	setemergentmagneticfieldtwopointArgs.argFz = Fz
+	setemergentmagneticfieldtwopointArgs.argMx = mx
+	setemergentmagneticfieldtwopointArgs.argMy = my
+	setemergentmagneticfieldtwopointArgs.argMz = mz
+	setemergentmagneticfieldtwopointArgs.argPrefactor = prefactor
+	setemergentmagneticfieldtwopointArgs.argIcycz = icycz
+	setemergentmagneticfieldtwopointArgs.argIczcx = iczcx
+	setemergentmagneticfieldtwopointArgs.argIcxcy = icxcy
+	setemergentmagneticfieldtwopointArgs.argNx = Nx
+	setemergentmagneticfieldtwopointArgs.argNy = Ny
+	setemergentmagneticfieldtwopointArgs.argNz = Nz
+	setemergentmagneticfieldtwopointArgs.argPBC = PBC
 
-	args := setemergentmagneticfieldtwopoint_args.argptr[:]
-	cu.LaunchKernel(setemergentmagneticfieldtwopoint_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := setemergentmagneticfieldtwopointArgs.argptr[:]
+	cu.LaunchKernel(setemergentmagneticfieldtwopointCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -94,27 +95,38 @@ func k_setemergentmagneticfieldtwopoint_async(Fx unsafe.Pointer, Fy unsafe.Point
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_setemergentmagneticfieldtwopoint_async(Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, prefactor float32, icycz float32, iczcx float32, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+	kSetemergentmagneticfieldtwopointAsync(Fx, Fy, Fz, mx, my, mz, prefactor, icycz, iczcx, icxcy, Nx, Ny, Nz, PBC, cfg)
+}
+
 // maps compute capability on PTX code for setemergentmagneticfieldtwopoint kernel.
-var setemergentmagneticfieldtwopoint_map = map[int]string{0: "",
-	50: setemergentmagneticfieldtwopoint_ptx_50,
-	52: setemergentmagneticfieldtwopoint_ptx_52,
-	53: setemergentmagneticfieldtwopoint_ptx_53,
-	60: setemergentmagneticfieldtwopoint_ptx_60,
-	61: setemergentmagneticfieldtwopoint_ptx_61,
-	62: setemergentmagneticfieldtwopoint_ptx_62,
-	70: setemergentmagneticfieldtwopoint_ptx_70,
-	72: setemergentmagneticfieldtwopoint_ptx_72,
-	75: setemergentmagneticfieldtwopoint_ptx_75,
-	80: setemergentmagneticfieldtwopoint_ptx_80,
-	86: setemergentmagneticfieldtwopoint_ptx_86,
-	87: setemergentmagneticfieldtwopoint_ptx_87,
-	89: setemergentmagneticfieldtwopoint_ptx_89,
-	90: setemergentmagneticfieldtwopoint_ptx_90}
+var setemergentmagneticfieldtwopointMap = map[int]string{
+	0:  "",
+	50: setemergentmagneticfieldtwopointPtx50,
+	52: setemergentmagneticfieldtwopointPtx52,
+	53: setemergentmagneticfieldtwopointPtx53,
+	60: setemergentmagneticfieldtwopointPtx60,
+	61: setemergentmagneticfieldtwopointPtx61,
+	62: setemergentmagneticfieldtwopointPtx62,
+	70: setemergentmagneticfieldtwopointPtx70,
+	72: setemergentmagneticfieldtwopointPtx72,
+	75: setemergentmagneticfieldtwopointPtx75,
+	80: setemergentmagneticfieldtwopointPtx80,
+	86: setemergentmagneticfieldtwopointPtx86,
+	87: setemergentmagneticfieldtwopointPtx87,
+	89: setemergentmagneticfieldtwopointPtx89,
+	90: setemergentmagneticfieldtwopointPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var setemergentmagneticfieldtwopoint_map = setemergentmagneticfieldtwopointMap
 
 // setemergentmagneticfieldtwopoint PTX code for various compute capabilities.
 const (
-	setemergentmagneticfieldtwopoint_ptx_50 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -590,8 +602,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_52 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -1067,8 +1079,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_53 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -1544,8 +1556,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_60 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -2021,8 +2033,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_61 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -2498,8 +2510,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_62 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -2975,8 +2987,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_70 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -3452,8 +3464,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_72 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -3929,8 +3941,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_75 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -4406,8 +4418,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_80 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -4883,8 +4895,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_86 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -5360,8 +5372,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_87 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -5837,8 +5849,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_89 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -6314,8 +6326,8 @@ $L__BB0_52:
 }
 
 `
-	setemergentmagneticfieldtwopoint_ptx_90 = `
-.version 8.5
+	setemergentmagneticfieldtwopointPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

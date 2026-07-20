@@ -6,72 +6,73 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for solidanglefourierfield kernel
-var solidanglefourierfield_code cu.Function
+var solidanglefourierfieldCode cu.Function
 
 // Stores the arguments for solidanglefourierfield kernel invocation
-type solidanglefourierfield_args_t struct {
-	arg_fftFx_partial unsafe.Pointer
-	arg_fftFy_partial unsafe.Pointer
-	arg_fftFz_partial unsafe.Pointer
-	arg_fftFx         unsafe.Pointer
-	arg_fftFy         unsafe.Pointer
-	arg_fftFz         unsafe.Pointer
-	arg_Nx            int
-	arg_Ny            int
-	arg_Nz            int
-	argptr            [9]unsafe.Pointer
+type solidanglefourierfieldArgsT struct {
+	argFftFxPartial unsafe.Pointer
+	argFftFyPartial unsafe.Pointer
+	argFftFzPartial unsafe.Pointer
+	argFftFx        unsafe.Pointer
+	argFftFy        unsafe.Pointer
+	argFftFz        unsafe.Pointer
+	argNx           int
+	argNy           int
+	argNz           int
+	argptr          [9]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for solidanglefourierfield kernel invocation
-var solidanglefourierfield_args solidanglefourierfield_args_t
+var solidanglefourierfieldArgs solidanglefourierfieldArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	solidanglefourierfield_args.argptr[0] = unsafe.Pointer(&solidanglefourierfield_args.arg_fftFx_partial)
-	solidanglefourierfield_args.argptr[1] = unsafe.Pointer(&solidanglefourierfield_args.arg_fftFy_partial)
-	solidanglefourierfield_args.argptr[2] = unsafe.Pointer(&solidanglefourierfield_args.arg_fftFz_partial)
-	solidanglefourierfield_args.argptr[3] = unsafe.Pointer(&solidanglefourierfield_args.arg_fftFx)
-	solidanglefourierfield_args.argptr[4] = unsafe.Pointer(&solidanglefourierfield_args.arg_fftFy)
-	solidanglefourierfield_args.argptr[5] = unsafe.Pointer(&solidanglefourierfield_args.arg_fftFz)
-	solidanglefourierfield_args.argptr[6] = unsafe.Pointer(&solidanglefourierfield_args.arg_Nx)
-	solidanglefourierfield_args.argptr[7] = unsafe.Pointer(&solidanglefourierfield_args.arg_Ny)
-	solidanglefourierfield_args.argptr[8] = unsafe.Pointer(&solidanglefourierfield_args.arg_Nz)
+	solidanglefourierfieldArgs.argptr[0] = unsafe.Pointer(&solidanglefourierfieldArgs.argFftFxPartial)
+	solidanglefourierfieldArgs.argptr[1] = unsafe.Pointer(&solidanglefourierfieldArgs.argFftFyPartial)
+	solidanglefourierfieldArgs.argptr[2] = unsafe.Pointer(&solidanglefourierfieldArgs.argFftFzPartial)
+	solidanglefourierfieldArgs.argptr[3] = unsafe.Pointer(&solidanglefourierfieldArgs.argFftFx)
+	solidanglefourierfieldArgs.argptr[4] = unsafe.Pointer(&solidanglefourierfieldArgs.argFftFy)
+	solidanglefourierfieldArgs.argptr[5] = unsafe.Pointer(&solidanglefourierfieldArgs.argFftFz)
+	solidanglefourierfieldArgs.argptr[6] = unsafe.Pointer(&solidanglefourierfieldArgs.argNx)
+	solidanglefourierfieldArgs.argptr[7] = unsafe.Pointer(&solidanglefourierfieldArgs.argNy)
+	solidanglefourierfieldArgs.argptr[8] = unsafe.Pointer(&solidanglefourierfieldArgs.argNz)
 }
 
 // Wrapper for solidanglefourierfield CUDA kernel, asynchronous.
-func k_solidanglefourierfield_async(fftFx_partial unsafe.Pointer, fftFy_partial unsafe.Pointer, fftFz_partial unsafe.Pointer, fftFx unsafe.Pointer, fftFy unsafe.Pointer, fftFz unsafe.Pointer, Nx int, Ny int, Nz int, cfg *config) {
+func kSolidanglefourierfieldAsync(fftFx_partial unsafe.Pointer, fftFy_partial unsafe.Pointer, fftFz_partial unsafe.Pointer, fftFx unsafe.Pointer, fftFy unsafe.Pointer, fftFz unsafe.Pointer, Nx int, Ny int, Nz int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("solidanglefourierfield")
 	}
 
-	solidanglefourierfield_args.Lock()
-	defer solidanglefourierfield_args.Unlock()
+	solidanglefourierfieldArgs.Lock()
+	defer solidanglefourierfieldArgs.Unlock()
 
-	if solidanglefourierfield_code == 0 {
-		solidanglefourierfield_code = fatbinLoad(solidanglefourierfield_map, "solidanglefourierfield")
+	if solidanglefourierfieldCode == 0 {
+		solidanglefourierfieldCode = fatbinLoad(solidanglefourierfieldMap, "solidanglefourierfield")
 	}
 
-	solidanglefourierfield_args.arg_fftFx_partial = fftFx_partial
-	solidanglefourierfield_args.arg_fftFy_partial = fftFy_partial
-	solidanglefourierfield_args.arg_fftFz_partial = fftFz_partial
-	solidanglefourierfield_args.arg_fftFx = fftFx
-	solidanglefourierfield_args.arg_fftFy = fftFy
-	solidanglefourierfield_args.arg_fftFz = fftFz
-	solidanglefourierfield_args.arg_Nx = Nx
-	solidanglefourierfield_args.arg_Ny = Ny
-	solidanglefourierfield_args.arg_Nz = Nz
+	solidanglefourierfieldArgs.argFftFxPartial = fftFx_partial
+	solidanglefourierfieldArgs.argFftFyPartial = fftFy_partial
+	solidanglefourierfieldArgs.argFftFzPartial = fftFz_partial
+	solidanglefourierfieldArgs.argFftFx = fftFx
+	solidanglefourierfieldArgs.argFftFy = fftFy
+	solidanglefourierfieldArgs.argFftFz = fftFz
+	solidanglefourierfieldArgs.argNx = Nx
+	solidanglefourierfieldArgs.argNy = Ny
+	solidanglefourierfieldArgs.argNz = Nz
 
-	args := solidanglefourierfield_args.argptr[:]
-	cu.LaunchKernel(solidanglefourierfield_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := solidanglefourierfieldArgs.argptr[:]
+	cu.LaunchKernel(solidanglefourierfieldCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -79,27 +80,38 @@ func k_solidanglefourierfield_async(fftFx_partial unsafe.Pointer, fftFy_partial 
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_solidanglefourierfield_async(fftFx_partial unsafe.Pointer, fftFy_partial unsafe.Pointer, fftFz_partial unsafe.Pointer, fftFx unsafe.Pointer, fftFy unsafe.Pointer, fftFz unsafe.Pointer, Nx int, Ny int, Nz int, cfg *config) {
+	kSolidanglefourierfieldAsync(fftFx_partial, fftFy_partial, fftFz_partial, fftFx, fftFy, fftFz, Nx, Ny, Nz, cfg)
+}
+
 // maps compute capability on PTX code for solidanglefourierfield kernel.
-var solidanglefourierfield_map = map[int]string{0: "",
-	50: solidanglefourierfield_ptx_50,
-	52: solidanglefourierfield_ptx_52,
-	53: solidanglefourierfield_ptx_53,
-	60: solidanglefourierfield_ptx_60,
-	61: solidanglefourierfield_ptx_61,
-	62: solidanglefourierfield_ptx_62,
-	70: solidanglefourierfield_ptx_70,
-	72: solidanglefourierfield_ptx_72,
-	75: solidanglefourierfield_ptx_75,
-	80: solidanglefourierfield_ptx_80,
-	86: solidanglefourierfield_ptx_86,
-	87: solidanglefourierfield_ptx_87,
-	89: solidanglefourierfield_ptx_89,
-	90: solidanglefourierfield_ptx_90}
+var solidanglefourierfieldMap = map[int]string{
+	0:  "",
+	50: solidanglefourierfieldPtx50,
+	52: solidanglefourierfieldPtx52,
+	53: solidanglefourierfieldPtx53,
+	60: solidanglefourierfieldPtx60,
+	61: solidanglefourierfieldPtx61,
+	62: solidanglefourierfieldPtx62,
+	70: solidanglefourierfieldPtx70,
+	72: solidanglefourierfieldPtx72,
+	75: solidanglefourierfieldPtx75,
+	80: solidanglefourierfieldPtx80,
+	86: solidanglefourierfieldPtx86,
+	87: solidanglefourierfieldPtx87,
+	89: solidanglefourierfieldPtx89,
+	90: solidanglefourierfieldPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var solidanglefourierfield_map = solidanglefourierfieldMap
 
 // solidanglefourierfield PTX code for various compute capabilities.
 const (
-	solidanglefourierfield_ptx_50 = `
-.version 8.5
+	solidanglefourierfieldPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -229,8 +241,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_52 = `
-.version 8.5
+	solidanglefourierfieldPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -360,8 +372,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_53 = `
-.version 8.5
+	solidanglefourierfieldPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -491,8 +503,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_60 = `
-.version 8.5
+	solidanglefourierfieldPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -622,8 +634,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_61 = `
-.version 8.5
+	solidanglefourierfieldPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -753,8 +765,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_62 = `
-.version 8.5
+	solidanglefourierfieldPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -884,8 +896,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_70 = `
-.version 8.5
+	solidanglefourierfieldPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1015,8 +1027,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_72 = `
-.version 8.5
+	solidanglefourierfieldPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -1146,8 +1158,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_75 = `
-.version 8.5
+	solidanglefourierfieldPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1277,8 +1289,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_80 = `
-.version 8.5
+	solidanglefourierfieldPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1408,8 +1420,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_86 = `
-.version 8.5
+	solidanglefourierfieldPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1539,8 +1551,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_87 = `
-.version 8.5
+	solidanglefourierfieldPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1670,8 +1682,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_89 = `
-.version 8.5
+	solidanglefourierfieldPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1801,8 +1813,8 @@ $L__BB0_4:
 }
 
 `
-	solidanglefourierfield_ptx_90 = `
-.version 8.5
+	solidanglefourierfieldPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

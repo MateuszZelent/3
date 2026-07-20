@@ -6,87 +6,88 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for setemergentmagneticfieldfivepoint kernel
-var setemergentmagneticfieldfivepoint_code cu.Function
+var setemergentmagneticfieldfivepointCode cu.Function
 
 // Stores the arguments for setemergentmagneticfieldfivepoint kernel invocation
-type setemergentmagneticfieldfivepoint_args_t struct {
-	arg_Fx        unsafe.Pointer
-	arg_Fy        unsafe.Pointer
-	arg_Fz        unsafe.Pointer
-	arg_mx        unsafe.Pointer
-	arg_my        unsafe.Pointer
-	arg_mz        unsafe.Pointer
-	arg_prefactor float32
-	arg_icycz     float32
-	arg_iczcx     float32
-	arg_icxcy     float32
-	arg_Nx        int
-	arg_Ny        int
-	arg_Nz        int
-	arg_PBC       byte
-	argptr        [14]unsafe.Pointer
+type setemergentmagneticfieldfivepointArgsT struct {
+	argFx        unsafe.Pointer
+	argFy        unsafe.Pointer
+	argFz        unsafe.Pointer
+	argMx        unsafe.Pointer
+	argMy        unsafe.Pointer
+	argMz        unsafe.Pointer
+	argPrefactor float32
+	argIcycz     float32
+	argIczcx     float32
+	argIcxcy     float32
+	argNx        int
+	argNy        int
+	argNz        int
+	argPBC       byte
+	argptr       [14]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for setemergentmagneticfieldfivepoint kernel invocation
-var setemergentmagneticfieldfivepoint_args setemergentmagneticfieldfivepoint_args_t
+var setemergentmagneticfieldfivepointArgs setemergentmagneticfieldfivepointArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	setemergentmagneticfieldfivepoint_args.argptr[0] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_Fx)
-	setemergentmagneticfieldfivepoint_args.argptr[1] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_Fy)
-	setemergentmagneticfieldfivepoint_args.argptr[2] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_Fz)
-	setemergentmagneticfieldfivepoint_args.argptr[3] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_mx)
-	setemergentmagneticfieldfivepoint_args.argptr[4] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_my)
-	setemergentmagneticfieldfivepoint_args.argptr[5] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_mz)
-	setemergentmagneticfieldfivepoint_args.argptr[6] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_prefactor)
-	setemergentmagneticfieldfivepoint_args.argptr[7] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_icycz)
-	setemergentmagneticfieldfivepoint_args.argptr[8] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_iczcx)
-	setemergentmagneticfieldfivepoint_args.argptr[9] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_icxcy)
-	setemergentmagneticfieldfivepoint_args.argptr[10] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_Nx)
-	setemergentmagneticfieldfivepoint_args.argptr[11] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_Ny)
-	setemergentmagneticfieldfivepoint_args.argptr[12] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_Nz)
-	setemergentmagneticfieldfivepoint_args.argptr[13] = unsafe.Pointer(&setemergentmagneticfieldfivepoint_args.arg_PBC)
+	setemergentmagneticfieldfivepointArgs.argptr[0] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argFx)
+	setemergentmagneticfieldfivepointArgs.argptr[1] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argFy)
+	setemergentmagneticfieldfivepointArgs.argptr[2] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argFz)
+	setemergentmagneticfieldfivepointArgs.argptr[3] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argMx)
+	setemergentmagneticfieldfivepointArgs.argptr[4] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argMy)
+	setemergentmagneticfieldfivepointArgs.argptr[5] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argMz)
+	setemergentmagneticfieldfivepointArgs.argptr[6] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argPrefactor)
+	setemergentmagneticfieldfivepointArgs.argptr[7] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argIcycz)
+	setemergentmagneticfieldfivepointArgs.argptr[8] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argIczcx)
+	setemergentmagneticfieldfivepointArgs.argptr[9] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argIcxcy)
+	setemergentmagneticfieldfivepointArgs.argptr[10] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argNx)
+	setemergentmagneticfieldfivepointArgs.argptr[11] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argNy)
+	setemergentmagneticfieldfivepointArgs.argptr[12] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argNz)
+	setemergentmagneticfieldfivepointArgs.argptr[13] = unsafe.Pointer(&setemergentmagneticfieldfivepointArgs.argPBC)
 }
 
 // Wrapper for setemergentmagneticfieldfivepoint CUDA kernel, asynchronous.
-func k_setemergentmagneticfieldfivepoint_async(Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, prefactor float32, icycz float32, iczcx float32, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+func kSetemergentmagneticfieldfivepointAsync(Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, prefactor float32, icycz float32, iczcx float32, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("setemergentmagneticfieldfivepoint")
 	}
 
-	setemergentmagneticfieldfivepoint_args.Lock()
-	defer setemergentmagneticfieldfivepoint_args.Unlock()
+	setemergentmagneticfieldfivepointArgs.Lock()
+	defer setemergentmagneticfieldfivepointArgs.Unlock()
 
-	if setemergentmagneticfieldfivepoint_code == 0 {
-		setemergentmagneticfieldfivepoint_code = fatbinLoad(setemergentmagneticfieldfivepoint_map, "setemergentmagneticfieldfivepoint")
+	if setemergentmagneticfieldfivepointCode == 0 {
+		setemergentmagneticfieldfivepointCode = fatbinLoad(setemergentmagneticfieldfivepointMap, "setemergentmagneticfieldfivepoint")
 	}
 
-	setemergentmagneticfieldfivepoint_args.arg_Fx = Fx
-	setemergentmagneticfieldfivepoint_args.arg_Fy = Fy
-	setemergentmagneticfieldfivepoint_args.arg_Fz = Fz
-	setemergentmagneticfieldfivepoint_args.arg_mx = mx
-	setemergentmagneticfieldfivepoint_args.arg_my = my
-	setemergentmagneticfieldfivepoint_args.arg_mz = mz
-	setemergentmagneticfieldfivepoint_args.arg_prefactor = prefactor
-	setemergentmagneticfieldfivepoint_args.arg_icycz = icycz
-	setemergentmagneticfieldfivepoint_args.arg_iczcx = iczcx
-	setemergentmagneticfieldfivepoint_args.arg_icxcy = icxcy
-	setemergentmagneticfieldfivepoint_args.arg_Nx = Nx
-	setemergentmagneticfieldfivepoint_args.arg_Ny = Ny
-	setemergentmagneticfieldfivepoint_args.arg_Nz = Nz
-	setemergentmagneticfieldfivepoint_args.arg_PBC = PBC
+	setemergentmagneticfieldfivepointArgs.argFx = Fx
+	setemergentmagneticfieldfivepointArgs.argFy = Fy
+	setemergentmagneticfieldfivepointArgs.argFz = Fz
+	setemergentmagneticfieldfivepointArgs.argMx = mx
+	setemergentmagneticfieldfivepointArgs.argMy = my
+	setemergentmagneticfieldfivepointArgs.argMz = mz
+	setemergentmagneticfieldfivepointArgs.argPrefactor = prefactor
+	setemergentmagneticfieldfivepointArgs.argIcycz = icycz
+	setemergentmagneticfieldfivepointArgs.argIczcx = iczcx
+	setemergentmagneticfieldfivepointArgs.argIcxcy = icxcy
+	setemergentmagneticfieldfivepointArgs.argNx = Nx
+	setemergentmagneticfieldfivepointArgs.argNy = Ny
+	setemergentmagneticfieldfivepointArgs.argNz = Nz
+	setemergentmagneticfieldfivepointArgs.argPBC = PBC
 
-	args := setemergentmagneticfieldfivepoint_args.argptr[:]
-	cu.LaunchKernel(setemergentmagneticfieldfivepoint_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := setemergentmagneticfieldfivepointArgs.argptr[:]
+	cu.LaunchKernel(setemergentmagneticfieldfivepointCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -94,27 +95,38 @@ func k_setemergentmagneticfieldfivepoint_async(Fx unsafe.Pointer, Fy unsafe.Poin
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_setemergentmagneticfieldfivepoint_async(Fx unsafe.Pointer, Fy unsafe.Pointer, Fz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, prefactor float32, icycz float32, iczcx float32, icxcy float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+	kSetemergentmagneticfieldfivepointAsync(Fx, Fy, Fz, mx, my, mz, prefactor, icycz, iczcx, icxcy, Nx, Ny, Nz, PBC, cfg)
+}
+
 // maps compute capability on PTX code for setemergentmagneticfieldfivepoint kernel.
-var setemergentmagneticfieldfivepoint_map = map[int]string{0: "",
-	50: setemergentmagneticfieldfivepoint_ptx_50,
-	52: setemergentmagneticfieldfivepoint_ptx_52,
-	53: setemergentmagneticfieldfivepoint_ptx_53,
-	60: setemergentmagneticfieldfivepoint_ptx_60,
-	61: setemergentmagneticfieldfivepoint_ptx_61,
-	62: setemergentmagneticfieldfivepoint_ptx_62,
-	70: setemergentmagneticfieldfivepoint_ptx_70,
-	72: setemergentmagneticfieldfivepoint_ptx_72,
-	75: setemergentmagneticfieldfivepoint_ptx_75,
-	80: setemergentmagneticfieldfivepoint_ptx_80,
-	86: setemergentmagneticfieldfivepoint_ptx_86,
-	87: setemergentmagneticfieldfivepoint_ptx_87,
-	89: setemergentmagneticfieldfivepoint_ptx_89,
-	90: setemergentmagneticfieldfivepoint_ptx_90}
+var setemergentmagneticfieldfivepointMap = map[int]string{
+	0:  "",
+	50: setemergentmagneticfieldfivepointPtx50,
+	52: setemergentmagneticfieldfivepointPtx52,
+	53: setemergentmagneticfieldfivepointPtx53,
+	60: setemergentmagneticfieldfivepointPtx60,
+	61: setemergentmagneticfieldfivepointPtx61,
+	62: setemergentmagneticfieldfivepointPtx62,
+	70: setemergentmagneticfieldfivepointPtx70,
+	72: setemergentmagneticfieldfivepointPtx72,
+	75: setemergentmagneticfieldfivepointPtx75,
+	80: setemergentmagneticfieldfivepointPtx80,
+	86: setemergentmagneticfieldfivepointPtx86,
+	87: setemergentmagneticfieldfivepointPtx87,
+	89: setemergentmagneticfieldfivepointPtx89,
+	90: setemergentmagneticfieldfivepointPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var setemergentmagneticfieldfivepoint_map = setemergentmagneticfieldfivepointMap
 
 // setemergentmagneticfieldfivepoint PTX code for various compute capabilities.
 const (
-	setemergentmagneticfieldfivepoint_ptx_50 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -1059,8 +1071,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_52 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -2005,8 +2017,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_53 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -2951,8 +2963,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_60 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -3897,8 +3909,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_61 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -4843,8 +4855,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_62 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -5789,8 +5801,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_70 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -6735,8 +6747,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_72 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -7681,8 +7693,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_75 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -8627,8 +8639,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_80 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -9573,8 +9585,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_86 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -10519,8 +10531,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_87 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -11465,8 +11477,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_89 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -12411,8 +12423,8 @@ $L__BB0_106:
 }
 
 `
-	setemergentmagneticfieldfivepoint_ptx_90 = `
-.version 8.5
+	setemergentmagneticfieldfivepointPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

@@ -6,102 +6,103 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for adddmi kernel
-var adddmi_code cu.Function
+var adddmiCode cu.Function
 
 // Stores the arguments for adddmi kernel invocation
-type adddmi_args_t struct {
-	arg_Hx      unsafe.Pointer
-	arg_Hy      unsafe.Pointer
-	arg_Hz      unsafe.Pointer
-	arg_mx      unsafe.Pointer
-	arg_my      unsafe.Pointer
-	arg_mz      unsafe.Pointer
-	arg_Ms_     unsafe.Pointer
-	arg_Ms_mul  float32
-	arg_aLUT2d  unsafe.Pointer
-	arg_dLUT2d  unsafe.Pointer
-	arg_regions unsafe.Pointer
-	arg_cx      float32
-	arg_cy      float32
-	arg_cz      float32
-	arg_Nx      int
-	arg_Ny      int
-	arg_Nz      int
-	arg_PBC     byte
-	arg_OpenBC  byte
-	argptr      [19]unsafe.Pointer
+type adddmiArgsT struct {
+	argHx      unsafe.Pointer
+	argHy      unsafe.Pointer
+	argHz      unsafe.Pointer
+	argMx      unsafe.Pointer
+	argMy      unsafe.Pointer
+	argMz      unsafe.Pointer
+	argMs      unsafe.Pointer
+	argMsMul   float32
+	argALUT2d  unsafe.Pointer
+	argDLUT2d  unsafe.Pointer
+	argRegions unsafe.Pointer
+	argCx      float32
+	argCy      float32
+	argCz      float32
+	argNx      int
+	argNy      int
+	argNz      int
+	argPBC     byte
+	argOpenBC  byte
+	argptr     [19]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for adddmi kernel invocation
-var adddmi_args adddmi_args_t
+var adddmiArgs adddmiArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	adddmi_args.argptr[0] = unsafe.Pointer(&adddmi_args.arg_Hx)
-	adddmi_args.argptr[1] = unsafe.Pointer(&adddmi_args.arg_Hy)
-	adddmi_args.argptr[2] = unsafe.Pointer(&adddmi_args.arg_Hz)
-	adddmi_args.argptr[3] = unsafe.Pointer(&adddmi_args.arg_mx)
-	adddmi_args.argptr[4] = unsafe.Pointer(&adddmi_args.arg_my)
-	adddmi_args.argptr[5] = unsafe.Pointer(&adddmi_args.arg_mz)
-	adddmi_args.argptr[6] = unsafe.Pointer(&adddmi_args.arg_Ms_)
-	adddmi_args.argptr[7] = unsafe.Pointer(&adddmi_args.arg_Ms_mul)
-	adddmi_args.argptr[8] = unsafe.Pointer(&adddmi_args.arg_aLUT2d)
-	adddmi_args.argptr[9] = unsafe.Pointer(&adddmi_args.arg_dLUT2d)
-	adddmi_args.argptr[10] = unsafe.Pointer(&adddmi_args.arg_regions)
-	adddmi_args.argptr[11] = unsafe.Pointer(&adddmi_args.arg_cx)
-	adddmi_args.argptr[12] = unsafe.Pointer(&adddmi_args.arg_cy)
-	adddmi_args.argptr[13] = unsafe.Pointer(&adddmi_args.arg_cz)
-	adddmi_args.argptr[14] = unsafe.Pointer(&adddmi_args.arg_Nx)
-	adddmi_args.argptr[15] = unsafe.Pointer(&adddmi_args.arg_Ny)
-	adddmi_args.argptr[16] = unsafe.Pointer(&adddmi_args.arg_Nz)
-	adddmi_args.argptr[17] = unsafe.Pointer(&adddmi_args.arg_PBC)
-	adddmi_args.argptr[18] = unsafe.Pointer(&adddmi_args.arg_OpenBC)
+	adddmiArgs.argptr[0] = unsafe.Pointer(&adddmiArgs.argHx)
+	adddmiArgs.argptr[1] = unsafe.Pointer(&adddmiArgs.argHy)
+	adddmiArgs.argptr[2] = unsafe.Pointer(&adddmiArgs.argHz)
+	adddmiArgs.argptr[3] = unsafe.Pointer(&adddmiArgs.argMx)
+	adddmiArgs.argptr[4] = unsafe.Pointer(&adddmiArgs.argMy)
+	adddmiArgs.argptr[5] = unsafe.Pointer(&adddmiArgs.argMz)
+	adddmiArgs.argptr[6] = unsafe.Pointer(&adddmiArgs.argMs)
+	adddmiArgs.argptr[7] = unsafe.Pointer(&adddmiArgs.argMsMul)
+	adddmiArgs.argptr[8] = unsafe.Pointer(&adddmiArgs.argALUT2d)
+	adddmiArgs.argptr[9] = unsafe.Pointer(&adddmiArgs.argDLUT2d)
+	adddmiArgs.argptr[10] = unsafe.Pointer(&adddmiArgs.argRegions)
+	adddmiArgs.argptr[11] = unsafe.Pointer(&adddmiArgs.argCx)
+	adddmiArgs.argptr[12] = unsafe.Pointer(&adddmiArgs.argCy)
+	adddmiArgs.argptr[13] = unsafe.Pointer(&adddmiArgs.argCz)
+	adddmiArgs.argptr[14] = unsafe.Pointer(&adddmiArgs.argNx)
+	adddmiArgs.argptr[15] = unsafe.Pointer(&adddmiArgs.argNy)
+	adddmiArgs.argptr[16] = unsafe.Pointer(&adddmiArgs.argNz)
+	adddmiArgs.argptr[17] = unsafe.Pointer(&adddmiArgs.argPBC)
+	adddmiArgs.argptr[18] = unsafe.Pointer(&adddmiArgs.argOpenBC)
 }
 
 // Wrapper for adddmi CUDA kernel, asynchronous.
-func k_adddmi_async(Hx unsafe.Pointer, Hy unsafe.Pointer, Hz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, Ms_ unsafe.Pointer, Ms_mul float32, aLUT2d unsafe.Pointer, dLUT2d unsafe.Pointer, regions unsafe.Pointer, cx float32, cy float32, cz float32, Nx int, Ny int, Nz int, PBC byte, OpenBC byte, cfg *config) {
+func kAdddmiAsync(Hx unsafe.Pointer, Hy unsafe.Pointer, Hz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, Ms_ unsafe.Pointer, Ms_mul float32, aLUT2d unsafe.Pointer, dLUT2d unsafe.Pointer, regions unsafe.Pointer, cx float32, cy float32, cz float32, Nx int, Ny int, Nz int, PBC byte, OpenBC byte, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("adddmi")
 	}
 
-	adddmi_args.Lock()
-	defer adddmi_args.Unlock()
+	adddmiArgs.Lock()
+	defer adddmiArgs.Unlock()
 
-	if adddmi_code == 0 {
-		adddmi_code = fatbinLoad(adddmi_map, "adddmi")
+	if adddmiCode == 0 {
+		adddmiCode = fatbinLoad(adddmiMap, "adddmi")
 	}
 
-	adddmi_args.arg_Hx = Hx
-	adddmi_args.arg_Hy = Hy
-	adddmi_args.arg_Hz = Hz
-	adddmi_args.arg_mx = mx
-	adddmi_args.arg_my = my
-	adddmi_args.arg_mz = mz
-	adddmi_args.arg_Ms_ = Ms_
-	adddmi_args.arg_Ms_mul = Ms_mul
-	adddmi_args.arg_aLUT2d = aLUT2d
-	adddmi_args.arg_dLUT2d = dLUT2d
-	adddmi_args.arg_regions = regions
-	adddmi_args.arg_cx = cx
-	adddmi_args.arg_cy = cy
-	adddmi_args.arg_cz = cz
-	adddmi_args.arg_Nx = Nx
-	adddmi_args.arg_Ny = Ny
-	adddmi_args.arg_Nz = Nz
-	adddmi_args.arg_PBC = PBC
-	adddmi_args.arg_OpenBC = OpenBC
+	adddmiArgs.argHx = Hx
+	adddmiArgs.argHy = Hy
+	adddmiArgs.argHz = Hz
+	adddmiArgs.argMx = mx
+	adddmiArgs.argMy = my
+	adddmiArgs.argMz = mz
+	adddmiArgs.argMs = Ms_
+	adddmiArgs.argMsMul = Ms_mul
+	adddmiArgs.argALUT2d = aLUT2d
+	adddmiArgs.argDLUT2d = dLUT2d
+	adddmiArgs.argRegions = regions
+	adddmiArgs.argCx = cx
+	adddmiArgs.argCy = cy
+	adddmiArgs.argCz = cz
+	adddmiArgs.argNx = Nx
+	adddmiArgs.argNy = Ny
+	adddmiArgs.argNz = Nz
+	adddmiArgs.argPBC = PBC
+	adddmiArgs.argOpenBC = OpenBC
 
-	args := adddmi_args.argptr[:]
-	cu.LaunchKernel(adddmi_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := adddmiArgs.argptr[:]
+	cu.LaunchKernel(adddmiCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -109,27 +110,38 @@ func k_adddmi_async(Hx unsafe.Pointer, Hy unsafe.Pointer, Hz unsafe.Pointer, mx 
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_adddmi_async(Hx unsafe.Pointer, Hy unsafe.Pointer, Hz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, Ms_ unsafe.Pointer, Ms_mul float32, aLUT2d unsafe.Pointer, dLUT2d unsafe.Pointer, regions unsafe.Pointer, cx float32, cy float32, cz float32, Nx int, Ny int, Nz int, PBC byte, OpenBC byte, cfg *config) {
+	kAdddmiAsync(Hx, Hy, Hz, mx, my, mz, Ms_, Ms_mul, aLUT2d, dLUT2d, regions, cx, cy, cz, Nx, Ny, Nz, PBC, OpenBC, cfg)
+}
+
 // maps compute capability on PTX code for adddmi kernel.
-var adddmi_map = map[int]string{0: "",
-	50: adddmi_ptx_50,
-	52: adddmi_ptx_52,
-	53: adddmi_ptx_53,
-	60: adddmi_ptx_60,
-	61: adddmi_ptx_61,
-	62: adddmi_ptx_62,
-	70: adddmi_ptx_70,
-	72: adddmi_ptx_72,
-	75: adddmi_ptx_75,
-	80: adddmi_ptx_80,
-	86: adddmi_ptx_86,
-	87: adddmi_ptx_87,
-	89: adddmi_ptx_89,
-	90: adddmi_ptx_90}
+var adddmiMap = map[int]string{
+	0:  "",
+	50: adddmiPtx50,
+	52: adddmiPtx52,
+	53: adddmiPtx53,
+	60: adddmiPtx60,
+	61: adddmiPtx61,
+	62: adddmiPtx62,
+	70: adddmiPtx70,
+	72: adddmiPtx72,
+	75: adddmiPtx75,
+	80: adddmiPtx80,
+	86: adddmiPtx86,
+	87: adddmiPtx87,
+	89: adddmiPtx89,
+	90: adddmiPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var adddmi_map = adddmiMap
 
 // adddmi PTX code for various compute capabilities.
 const (
-	adddmi_ptx_50 = `
-.version 8.5
+	adddmiPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -737,8 +749,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_52 = `
-.version 8.5
+	adddmiPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -1346,8 +1358,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_53 = `
-.version 8.5
+	adddmiPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -1955,8 +1967,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_60 = `
-.version 8.5
+	adddmiPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -2564,8 +2576,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_61 = `
-.version 8.5
+	adddmiPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -3173,8 +3185,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_62 = `
-.version 8.5
+	adddmiPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -3782,8 +3794,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_70 = `
-.version 8.5
+	adddmiPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -4391,8 +4403,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_72 = `
-.version 8.5
+	adddmiPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -5000,8 +5012,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_75 = `
-.version 8.5
+	adddmiPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -5609,8 +5621,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_80 = `
-.version 8.5
+	adddmiPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -6218,8 +6230,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_86 = `
-.version 8.5
+	adddmiPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -6827,8 +6839,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_87 = `
-.version 8.5
+	adddmiPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -7436,8 +7448,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_89 = `
-.version 8.5
+	adddmiPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -8045,8 +8057,8 @@ $L__BB0_59:
 }
 
 `
-	adddmi_ptx_90 = `
-.version 8.5
+	adddmiPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

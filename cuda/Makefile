@@ -66,6 +66,7 @@ wrappers: $(WRAPPERS)
 
 %_wrapper.go: %.cu cuda2go
 	@ rm -f $(basename $<)*.ptx
+	@ rm -f $(basename $<)_wrapper.go_linux_cuda*.tmp
 	@ for cc in $(CUDA_CC); do \
 		echo $(NVCC) $(NVCCFLAGS) -arch=compute_$$cc -code=sm_$$cc $< -o $(basename $<)_$$cc.ptx ;\
 		     $(NVCC) $(NVCCFLAGS) -arch=compute_$$cc -code=sm_$$cc $< -o $(basename $<)_$$cc.ptx ;\

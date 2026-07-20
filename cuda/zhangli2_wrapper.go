@@ -6,126 +6,127 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for addzhanglitorque2 kernel
-var addzhanglitorque2_code cu.Function
+var addzhanglitorque2Code cu.Function
 
 // Stores the arguments for addzhanglitorque2 kernel invocation
-type addzhanglitorque2_args_t struct {
-	arg_tx        unsafe.Pointer
-	arg_ty        unsafe.Pointer
-	arg_tz        unsafe.Pointer
-	arg_mx        unsafe.Pointer
-	arg_my        unsafe.Pointer
-	arg_mz        unsafe.Pointer
-	arg_Ms_       unsafe.Pointer
-	arg_Ms_mul    float32
-	arg_jx_       unsafe.Pointer
-	arg_jx_mul    float32
-	arg_jy_       unsafe.Pointer
-	arg_jy_mul    float32
-	arg_jz_       unsafe.Pointer
-	arg_jz_mul    float32
-	arg_alpha_    unsafe.Pointer
-	arg_alpha_mul float32
-	arg_xi_       unsafe.Pointer
-	arg_xi_mul    float32
-	arg_pol_      unsafe.Pointer
-	arg_pol_mul   float32
-	arg_cx        float32
-	arg_cy        float32
-	arg_cz        float32
-	arg_Nx        int
-	arg_Ny        int
-	arg_Nz        int
-	arg_PBC       byte
-	argptr        [27]unsafe.Pointer
+type addzhanglitorque2ArgsT struct {
+	argTx       unsafe.Pointer
+	argTy       unsafe.Pointer
+	argTz       unsafe.Pointer
+	argMx       unsafe.Pointer
+	argMy       unsafe.Pointer
+	argMz       unsafe.Pointer
+	argMs       unsafe.Pointer
+	argMsMul    float32
+	argJx       unsafe.Pointer
+	argJxMul    float32
+	argJy       unsafe.Pointer
+	argJyMul    float32
+	argJz       unsafe.Pointer
+	argJzMul    float32
+	argAlpha    unsafe.Pointer
+	argAlphaMul float32
+	argXi       unsafe.Pointer
+	argXiMul    float32
+	argPol      unsafe.Pointer
+	argPolMul   float32
+	argCx       float32
+	argCy       float32
+	argCz       float32
+	argNx       int
+	argNy       int
+	argNz       int
+	argPBC      byte
+	argptr      [27]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for addzhanglitorque2 kernel invocation
-var addzhanglitorque2_args addzhanglitorque2_args_t
+var addzhanglitorque2Args addzhanglitorque2ArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	addzhanglitorque2_args.argptr[0] = unsafe.Pointer(&addzhanglitorque2_args.arg_tx)
-	addzhanglitorque2_args.argptr[1] = unsafe.Pointer(&addzhanglitorque2_args.arg_ty)
-	addzhanglitorque2_args.argptr[2] = unsafe.Pointer(&addzhanglitorque2_args.arg_tz)
-	addzhanglitorque2_args.argptr[3] = unsafe.Pointer(&addzhanglitorque2_args.arg_mx)
-	addzhanglitorque2_args.argptr[4] = unsafe.Pointer(&addzhanglitorque2_args.arg_my)
-	addzhanglitorque2_args.argptr[5] = unsafe.Pointer(&addzhanglitorque2_args.arg_mz)
-	addzhanglitorque2_args.argptr[6] = unsafe.Pointer(&addzhanglitorque2_args.arg_Ms_)
-	addzhanglitorque2_args.argptr[7] = unsafe.Pointer(&addzhanglitorque2_args.arg_Ms_mul)
-	addzhanglitorque2_args.argptr[8] = unsafe.Pointer(&addzhanglitorque2_args.arg_jx_)
-	addzhanglitorque2_args.argptr[9] = unsafe.Pointer(&addzhanglitorque2_args.arg_jx_mul)
-	addzhanglitorque2_args.argptr[10] = unsafe.Pointer(&addzhanglitorque2_args.arg_jy_)
-	addzhanglitorque2_args.argptr[11] = unsafe.Pointer(&addzhanglitorque2_args.arg_jy_mul)
-	addzhanglitorque2_args.argptr[12] = unsafe.Pointer(&addzhanglitorque2_args.arg_jz_)
-	addzhanglitorque2_args.argptr[13] = unsafe.Pointer(&addzhanglitorque2_args.arg_jz_mul)
-	addzhanglitorque2_args.argptr[14] = unsafe.Pointer(&addzhanglitorque2_args.arg_alpha_)
-	addzhanglitorque2_args.argptr[15] = unsafe.Pointer(&addzhanglitorque2_args.arg_alpha_mul)
-	addzhanglitorque2_args.argptr[16] = unsafe.Pointer(&addzhanglitorque2_args.arg_xi_)
-	addzhanglitorque2_args.argptr[17] = unsafe.Pointer(&addzhanglitorque2_args.arg_xi_mul)
-	addzhanglitorque2_args.argptr[18] = unsafe.Pointer(&addzhanglitorque2_args.arg_pol_)
-	addzhanglitorque2_args.argptr[19] = unsafe.Pointer(&addzhanglitorque2_args.arg_pol_mul)
-	addzhanglitorque2_args.argptr[20] = unsafe.Pointer(&addzhanglitorque2_args.arg_cx)
-	addzhanglitorque2_args.argptr[21] = unsafe.Pointer(&addzhanglitorque2_args.arg_cy)
-	addzhanglitorque2_args.argptr[22] = unsafe.Pointer(&addzhanglitorque2_args.arg_cz)
-	addzhanglitorque2_args.argptr[23] = unsafe.Pointer(&addzhanglitorque2_args.arg_Nx)
-	addzhanglitorque2_args.argptr[24] = unsafe.Pointer(&addzhanglitorque2_args.arg_Ny)
-	addzhanglitorque2_args.argptr[25] = unsafe.Pointer(&addzhanglitorque2_args.arg_Nz)
-	addzhanglitorque2_args.argptr[26] = unsafe.Pointer(&addzhanglitorque2_args.arg_PBC)
+	addzhanglitorque2Args.argptr[0] = unsafe.Pointer(&addzhanglitorque2Args.argTx)
+	addzhanglitorque2Args.argptr[1] = unsafe.Pointer(&addzhanglitorque2Args.argTy)
+	addzhanglitorque2Args.argptr[2] = unsafe.Pointer(&addzhanglitorque2Args.argTz)
+	addzhanglitorque2Args.argptr[3] = unsafe.Pointer(&addzhanglitorque2Args.argMx)
+	addzhanglitorque2Args.argptr[4] = unsafe.Pointer(&addzhanglitorque2Args.argMy)
+	addzhanglitorque2Args.argptr[5] = unsafe.Pointer(&addzhanglitorque2Args.argMz)
+	addzhanglitorque2Args.argptr[6] = unsafe.Pointer(&addzhanglitorque2Args.argMs)
+	addzhanglitorque2Args.argptr[7] = unsafe.Pointer(&addzhanglitorque2Args.argMsMul)
+	addzhanglitorque2Args.argptr[8] = unsafe.Pointer(&addzhanglitorque2Args.argJx)
+	addzhanglitorque2Args.argptr[9] = unsafe.Pointer(&addzhanglitorque2Args.argJxMul)
+	addzhanglitorque2Args.argptr[10] = unsafe.Pointer(&addzhanglitorque2Args.argJy)
+	addzhanglitorque2Args.argptr[11] = unsafe.Pointer(&addzhanglitorque2Args.argJyMul)
+	addzhanglitorque2Args.argptr[12] = unsafe.Pointer(&addzhanglitorque2Args.argJz)
+	addzhanglitorque2Args.argptr[13] = unsafe.Pointer(&addzhanglitorque2Args.argJzMul)
+	addzhanglitorque2Args.argptr[14] = unsafe.Pointer(&addzhanglitorque2Args.argAlpha)
+	addzhanglitorque2Args.argptr[15] = unsafe.Pointer(&addzhanglitorque2Args.argAlphaMul)
+	addzhanglitorque2Args.argptr[16] = unsafe.Pointer(&addzhanglitorque2Args.argXi)
+	addzhanglitorque2Args.argptr[17] = unsafe.Pointer(&addzhanglitorque2Args.argXiMul)
+	addzhanglitorque2Args.argptr[18] = unsafe.Pointer(&addzhanglitorque2Args.argPol)
+	addzhanglitorque2Args.argptr[19] = unsafe.Pointer(&addzhanglitorque2Args.argPolMul)
+	addzhanglitorque2Args.argptr[20] = unsafe.Pointer(&addzhanglitorque2Args.argCx)
+	addzhanglitorque2Args.argptr[21] = unsafe.Pointer(&addzhanglitorque2Args.argCy)
+	addzhanglitorque2Args.argptr[22] = unsafe.Pointer(&addzhanglitorque2Args.argCz)
+	addzhanglitorque2Args.argptr[23] = unsafe.Pointer(&addzhanglitorque2Args.argNx)
+	addzhanglitorque2Args.argptr[24] = unsafe.Pointer(&addzhanglitorque2Args.argNy)
+	addzhanglitorque2Args.argptr[25] = unsafe.Pointer(&addzhanglitorque2Args.argNz)
+	addzhanglitorque2Args.argptr[26] = unsafe.Pointer(&addzhanglitorque2Args.argPBC)
 }
 
 // Wrapper for addzhanglitorque2 CUDA kernel, asynchronous.
-func k_addzhanglitorque2_async(tx unsafe.Pointer, ty unsafe.Pointer, tz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, Ms_ unsafe.Pointer, Ms_mul float32, jx_ unsafe.Pointer, jx_mul float32, jy_ unsafe.Pointer, jy_mul float32, jz_ unsafe.Pointer, jz_mul float32, alpha_ unsafe.Pointer, alpha_mul float32, xi_ unsafe.Pointer, xi_mul float32, pol_ unsafe.Pointer, pol_mul float32, cx float32, cy float32, cz float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+func kAddzhanglitorque2Async(tx unsafe.Pointer, ty unsafe.Pointer, tz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, Ms_ unsafe.Pointer, Ms_mul float32, jx_ unsafe.Pointer, jx_mul float32, jy_ unsafe.Pointer, jy_mul float32, jz_ unsafe.Pointer, jz_mul float32, alpha_ unsafe.Pointer, alpha_mul float32, xi_ unsafe.Pointer, xi_mul float32, pol_ unsafe.Pointer, pol_mul float32, cx float32, cy float32, cz float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("addzhanglitorque2")
 	}
 
-	addzhanglitorque2_args.Lock()
-	defer addzhanglitorque2_args.Unlock()
+	addzhanglitorque2Args.Lock()
+	defer addzhanglitorque2Args.Unlock()
 
-	if addzhanglitorque2_code == 0 {
-		addzhanglitorque2_code = fatbinLoad(addzhanglitorque2_map, "addzhanglitorque2")
+	if addzhanglitorque2Code == 0 {
+		addzhanglitorque2Code = fatbinLoad(addzhanglitorque2Map, "addzhanglitorque2")
 	}
 
-	addzhanglitorque2_args.arg_tx = tx
-	addzhanglitorque2_args.arg_ty = ty
-	addzhanglitorque2_args.arg_tz = tz
-	addzhanglitorque2_args.arg_mx = mx
-	addzhanglitorque2_args.arg_my = my
-	addzhanglitorque2_args.arg_mz = mz
-	addzhanglitorque2_args.arg_Ms_ = Ms_
-	addzhanglitorque2_args.arg_Ms_mul = Ms_mul
-	addzhanglitorque2_args.arg_jx_ = jx_
-	addzhanglitorque2_args.arg_jx_mul = jx_mul
-	addzhanglitorque2_args.arg_jy_ = jy_
-	addzhanglitorque2_args.arg_jy_mul = jy_mul
-	addzhanglitorque2_args.arg_jz_ = jz_
-	addzhanglitorque2_args.arg_jz_mul = jz_mul
-	addzhanglitorque2_args.arg_alpha_ = alpha_
-	addzhanglitorque2_args.arg_alpha_mul = alpha_mul
-	addzhanglitorque2_args.arg_xi_ = xi_
-	addzhanglitorque2_args.arg_xi_mul = xi_mul
-	addzhanglitorque2_args.arg_pol_ = pol_
-	addzhanglitorque2_args.arg_pol_mul = pol_mul
-	addzhanglitorque2_args.arg_cx = cx
-	addzhanglitorque2_args.arg_cy = cy
-	addzhanglitorque2_args.arg_cz = cz
-	addzhanglitorque2_args.arg_Nx = Nx
-	addzhanglitorque2_args.arg_Ny = Ny
-	addzhanglitorque2_args.arg_Nz = Nz
-	addzhanglitorque2_args.arg_PBC = PBC
+	addzhanglitorque2Args.argTx = tx
+	addzhanglitorque2Args.argTy = ty
+	addzhanglitorque2Args.argTz = tz
+	addzhanglitorque2Args.argMx = mx
+	addzhanglitorque2Args.argMy = my
+	addzhanglitorque2Args.argMz = mz
+	addzhanglitorque2Args.argMs = Ms_
+	addzhanglitorque2Args.argMsMul = Ms_mul
+	addzhanglitorque2Args.argJx = jx_
+	addzhanglitorque2Args.argJxMul = jx_mul
+	addzhanglitorque2Args.argJy = jy_
+	addzhanglitorque2Args.argJyMul = jy_mul
+	addzhanglitorque2Args.argJz = jz_
+	addzhanglitorque2Args.argJzMul = jz_mul
+	addzhanglitorque2Args.argAlpha = alpha_
+	addzhanglitorque2Args.argAlphaMul = alpha_mul
+	addzhanglitorque2Args.argXi = xi_
+	addzhanglitorque2Args.argXiMul = xi_mul
+	addzhanglitorque2Args.argPol = pol_
+	addzhanglitorque2Args.argPolMul = pol_mul
+	addzhanglitorque2Args.argCx = cx
+	addzhanglitorque2Args.argCy = cy
+	addzhanglitorque2Args.argCz = cz
+	addzhanglitorque2Args.argNx = Nx
+	addzhanglitorque2Args.argNy = Ny
+	addzhanglitorque2Args.argNz = Nz
+	addzhanglitorque2Args.argPBC = PBC
 
-	args := addzhanglitorque2_args.argptr[:]
-	cu.LaunchKernel(addzhanglitorque2_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := addzhanglitorque2Args.argptr[:]
+	cu.LaunchKernel(addzhanglitorque2Code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -133,27 +134,38 @@ func k_addzhanglitorque2_async(tx unsafe.Pointer, ty unsafe.Pointer, tz unsafe.P
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_addzhanglitorque2_async(tx unsafe.Pointer, ty unsafe.Pointer, tz unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, mz unsafe.Pointer, Ms_ unsafe.Pointer, Ms_mul float32, jx_ unsafe.Pointer, jx_mul float32, jy_ unsafe.Pointer, jy_mul float32, jz_ unsafe.Pointer, jz_mul float32, alpha_ unsafe.Pointer, alpha_mul float32, xi_ unsafe.Pointer, xi_mul float32, pol_ unsafe.Pointer, pol_mul float32, cx float32, cy float32, cz float32, Nx int, Ny int, Nz int, PBC byte, cfg *config) {
+	kAddzhanglitorque2Async(tx, ty, tz, mx, my, mz, Ms_, Ms_mul, jx_, jx_mul, jy_, jy_mul, jz_, jz_mul, alpha_, alpha_mul, xi_, xi_mul, pol_, pol_mul, cx, cy, cz, Nx, Ny, Nz, PBC, cfg)
+}
+
 // maps compute capability on PTX code for addzhanglitorque2 kernel.
-var addzhanglitorque2_map = map[int]string{0: "",
-	50: addzhanglitorque2_ptx_50,
-	52: addzhanglitorque2_ptx_52,
-	53: addzhanglitorque2_ptx_53,
-	60: addzhanglitorque2_ptx_60,
-	61: addzhanglitorque2_ptx_61,
-	62: addzhanglitorque2_ptx_62,
-	70: addzhanglitorque2_ptx_70,
-	72: addzhanglitorque2_ptx_72,
-	75: addzhanglitorque2_ptx_75,
-	80: addzhanglitorque2_ptx_80,
-	86: addzhanglitorque2_ptx_86,
-	87: addzhanglitorque2_ptx_87,
-	89: addzhanglitorque2_ptx_89,
-	90: addzhanglitorque2_ptx_90}
+var addzhanglitorque2Map = map[int]string{
+	0:  "",
+	50: addzhanglitorque2Ptx50,
+	52: addzhanglitorque2Ptx52,
+	53: addzhanglitorque2Ptx53,
+	60: addzhanglitorque2Ptx60,
+	61: addzhanglitorque2Ptx61,
+	62: addzhanglitorque2Ptx62,
+	70: addzhanglitorque2Ptx70,
+	72: addzhanglitorque2Ptx72,
+	75: addzhanglitorque2Ptx75,
+	80: addzhanglitorque2Ptx80,
+	86: addzhanglitorque2Ptx86,
+	87: addzhanglitorque2Ptx87,
+	89: addzhanglitorque2Ptx89,
+	90: addzhanglitorque2Ptx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var addzhanglitorque2_map = addzhanglitorque2Map
 
 // addzhanglitorque2 PTX code for various compute capabilities.
 const (
-	addzhanglitorque2_ptx_50 = `
-.version 8.5
+	addzhanglitorque2Ptx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -775,8 +787,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_52 = `
-.version 8.5
+	addzhanglitorque2Ptx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -1398,8 +1410,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_53 = `
-.version 8.5
+	addzhanglitorque2Ptx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -2021,8 +2033,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_60 = `
-.version 8.5
+	addzhanglitorque2Ptx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -2644,8 +2656,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_61 = `
-.version 8.5
+	addzhanglitorque2Ptx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -3267,8 +3279,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_62 = `
-.version 8.5
+	addzhanglitorque2Ptx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -3890,8 +3902,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_70 = `
-.version 8.5
+	addzhanglitorque2Ptx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -4513,8 +4525,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_72 = `
-.version 8.5
+	addzhanglitorque2Ptx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -5136,8 +5148,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_75 = `
-.version 8.5
+	addzhanglitorque2Ptx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -5759,8 +5771,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_80 = `
-.version 8.5
+	addzhanglitorque2Ptx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -6382,8 +6394,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_86 = `
-.version 8.5
+	addzhanglitorque2Ptx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -7005,8 +7017,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_87 = `
-.version 8.5
+	addzhanglitorque2Ptx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -7628,8 +7640,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_89 = `
-.version 8.5
+	addzhanglitorque2Ptx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -8251,8 +8263,8 @@ $L__BB0_78:
 }
 
 `
-	addzhanglitorque2_ptx_90 = `
-.version 8.5
+	addzhanglitorque2Ptx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

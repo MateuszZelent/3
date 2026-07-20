@@ -6,57 +6,58 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for regiondecode kernel
-var regiondecode_code cu.Function
+var regiondecodeCode cu.Function
 
 // Stores the arguments for regiondecode kernel invocation
-type regiondecode_args_t struct {
-	arg_dst     unsafe.Pointer
-	arg_LUT     unsafe.Pointer
-	arg_regions unsafe.Pointer
-	arg_N       int
-	argptr      [4]unsafe.Pointer
+type regiondecodeArgsT struct {
+	argDst     unsafe.Pointer
+	argLUT     unsafe.Pointer
+	argRegions unsafe.Pointer
+	argN       int
+	argptr     [4]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for regiondecode kernel invocation
-var regiondecode_args regiondecode_args_t
+var regiondecodeArgs regiondecodeArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	regiondecode_args.argptr[0] = unsafe.Pointer(&regiondecode_args.arg_dst)
-	regiondecode_args.argptr[1] = unsafe.Pointer(&regiondecode_args.arg_LUT)
-	regiondecode_args.argptr[2] = unsafe.Pointer(&regiondecode_args.arg_regions)
-	regiondecode_args.argptr[3] = unsafe.Pointer(&regiondecode_args.arg_N)
+	regiondecodeArgs.argptr[0] = unsafe.Pointer(&regiondecodeArgs.argDst)
+	regiondecodeArgs.argptr[1] = unsafe.Pointer(&regiondecodeArgs.argLUT)
+	regiondecodeArgs.argptr[2] = unsafe.Pointer(&regiondecodeArgs.argRegions)
+	regiondecodeArgs.argptr[3] = unsafe.Pointer(&regiondecodeArgs.argN)
 }
 
 // Wrapper for regiondecode CUDA kernel, asynchronous.
-func k_regiondecode_async(dst unsafe.Pointer, LUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
+func kRegiondecodeAsync(dst unsafe.Pointer, LUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("regiondecode")
 	}
 
-	regiondecode_args.Lock()
-	defer regiondecode_args.Unlock()
+	regiondecodeArgs.Lock()
+	defer regiondecodeArgs.Unlock()
 
-	if regiondecode_code == 0 {
-		regiondecode_code = fatbinLoad(regiondecode_map, "regiondecode")
+	if regiondecodeCode == 0 {
+		regiondecodeCode = fatbinLoad(regiondecodeMap, "regiondecode")
 	}
 
-	regiondecode_args.arg_dst = dst
-	regiondecode_args.arg_LUT = LUT
-	regiondecode_args.arg_regions = regions
-	regiondecode_args.arg_N = N
+	regiondecodeArgs.argDst = dst
+	regiondecodeArgs.argLUT = LUT
+	regiondecodeArgs.argRegions = regions
+	regiondecodeArgs.argN = N
 
-	args := regiondecode_args.argptr[:]
-	cu.LaunchKernel(regiondecode_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := regiondecodeArgs.argptr[:]
+	cu.LaunchKernel(regiondecodeCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -64,27 +65,38 @@ func k_regiondecode_async(dst unsafe.Pointer, LUT unsafe.Pointer, regions unsafe
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_regiondecode_async(dst unsafe.Pointer, LUT unsafe.Pointer, regions unsafe.Pointer, N int, cfg *config) {
+	kRegiondecodeAsync(dst, LUT, regions, N, cfg)
+}
+
 // maps compute capability on PTX code for regiondecode kernel.
-var regiondecode_map = map[int]string{0: "",
-	50: regiondecode_ptx_50,
-	52: regiondecode_ptx_52,
-	53: regiondecode_ptx_53,
-	60: regiondecode_ptx_60,
-	61: regiondecode_ptx_61,
-	62: regiondecode_ptx_62,
-	70: regiondecode_ptx_70,
-	72: regiondecode_ptx_72,
-	75: regiondecode_ptx_75,
-	80: regiondecode_ptx_80,
-	86: regiondecode_ptx_86,
-	87: regiondecode_ptx_87,
-	89: regiondecode_ptx_89,
-	90: regiondecode_ptx_90}
+var regiondecodeMap = map[int]string{
+	0:  "",
+	50: regiondecodePtx50,
+	52: regiondecodePtx52,
+	53: regiondecodePtx53,
+	60: regiondecodePtx60,
+	61: regiondecodePtx61,
+	62: regiondecodePtx62,
+	70: regiondecodePtx70,
+	72: regiondecodePtx72,
+	75: regiondecodePtx75,
+	80: regiondecodePtx80,
+	86: regiondecodePtx86,
+	87: regiondecodePtx87,
+	89: regiondecodePtx89,
+	90: regiondecodePtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var regiondecode_map = regiondecodeMap
 
 // regiondecode PTX code for various compute capabilities.
 const (
-	regiondecode_ptx_50 = `
-.version 8.5
+	regiondecodePtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -139,8 +151,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_52 = `
-.version 8.5
+	regiondecodePtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -195,8 +207,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_53 = `
-.version 8.5
+	regiondecodePtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -251,8 +263,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_60 = `
-.version 8.5
+	regiondecodePtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -307,8 +319,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_61 = `
-.version 8.5
+	regiondecodePtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -363,8 +375,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_62 = `
-.version 8.5
+	regiondecodePtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -419,8 +431,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_70 = `
-.version 8.5
+	regiondecodePtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -475,8 +487,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_72 = `
-.version 8.5
+	regiondecodePtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -531,8 +543,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_75 = `
-.version 8.5
+	regiondecodePtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -587,8 +599,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_80 = `
-.version 8.5
+	regiondecodePtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -643,8 +655,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_86 = `
-.version 8.5
+	regiondecodePtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -699,8 +711,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_87 = `
-.version 8.5
+	regiondecodePtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -755,8 +767,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_89 = `
-.version 8.5
+	regiondecodePtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -811,8 +823,8 @@ $L__BB0_2:
 }
 
 `
-	regiondecode_ptx_90 = `
-.version 8.5
+	regiondecodePtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

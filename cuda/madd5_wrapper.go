@@ -6,81 +6,82 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for madd5 kernel
-var madd5_code cu.Function
+var madd5Code cu.Function
 
 // Stores the arguments for madd5 kernel invocation
-type madd5_args_t struct {
-	arg_dst  unsafe.Pointer
-	arg_src1 unsafe.Pointer
-	arg_fac1 float32
-	arg_src2 unsafe.Pointer
-	arg_fac2 float32
-	arg_src3 unsafe.Pointer
-	arg_fac3 float32
-	arg_src4 unsafe.Pointer
-	arg_fac4 float32
-	arg_src5 unsafe.Pointer
-	arg_fac5 float32
-	arg_N    int
-	argptr   [12]unsafe.Pointer
+type madd5ArgsT struct {
+	argDst  unsafe.Pointer
+	argSrc1 unsafe.Pointer
+	argFac1 float32
+	argSrc2 unsafe.Pointer
+	argFac2 float32
+	argSrc3 unsafe.Pointer
+	argFac3 float32
+	argSrc4 unsafe.Pointer
+	argFac4 float32
+	argSrc5 unsafe.Pointer
+	argFac5 float32
+	argN    int
+	argptr  [12]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for madd5 kernel invocation
-var madd5_args madd5_args_t
+var madd5Args madd5ArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	madd5_args.argptr[0] = unsafe.Pointer(&madd5_args.arg_dst)
-	madd5_args.argptr[1] = unsafe.Pointer(&madd5_args.arg_src1)
-	madd5_args.argptr[2] = unsafe.Pointer(&madd5_args.arg_fac1)
-	madd5_args.argptr[3] = unsafe.Pointer(&madd5_args.arg_src2)
-	madd5_args.argptr[4] = unsafe.Pointer(&madd5_args.arg_fac2)
-	madd5_args.argptr[5] = unsafe.Pointer(&madd5_args.arg_src3)
-	madd5_args.argptr[6] = unsafe.Pointer(&madd5_args.arg_fac3)
-	madd5_args.argptr[7] = unsafe.Pointer(&madd5_args.arg_src4)
-	madd5_args.argptr[8] = unsafe.Pointer(&madd5_args.arg_fac4)
-	madd5_args.argptr[9] = unsafe.Pointer(&madd5_args.arg_src5)
-	madd5_args.argptr[10] = unsafe.Pointer(&madd5_args.arg_fac5)
-	madd5_args.argptr[11] = unsafe.Pointer(&madd5_args.arg_N)
+	madd5Args.argptr[0] = unsafe.Pointer(&madd5Args.argDst)
+	madd5Args.argptr[1] = unsafe.Pointer(&madd5Args.argSrc1)
+	madd5Args.argptr[2] = unsafe.Pointer(&madd5Args.argFac1)
+	madd5Args.argptr[3] = unsafe.Pointer(&madd5Args.argSrc2)
+	madd5Args.argptr[4] = unsafe.Pointer(&madd5Args.argFac2)
+	madd5Args.argptr[5] = unsafe.Pointer(&madd5Args.argSrc3)
+	madd5Args.argptr[6] = unsafe.Pointer(&madd5Args.argFac3)
+	madd5Args.argptr[7] = unsafe.Pointer(&madd5Args.argSrc4)
+	madd5Args.argptr[8] = unsafe.Pointer(&madd5Args.argFac4)
+	madd5Args.argptr[9] = unsafe.Pointer(&madd5Args.argSrc5)
+	madd5Args.argptr[10] = unsafe.Pointer(&madd5Args.argFac5)
+	madd5Args.argptr[11] = unsafe.Pointer(&madd5Args.argN)
 }
 
 // Wrapper for madd5 CUDA kernel, asynchronous.
-func k_madd5_async(dst unsafe.Pointer, src1 unsafe.Pointer, fac1 float32, src2 unsafe.Pointer, fac2 float32, src3 unsafe.Pointer, fac3 float32, src4 unsafe.Pointer, fac4 float32, src5 unsafe.Pointer, fac5 float32, N int, cfg *config) {
+func kMadd5Async(dst unsafe.Pointer, src1 unsafe.Pointer, fac1 float32, src2 unsafe.Pointer, fac2 float32, src3 unsafe.Pointer, fac3 float32, src4 unsafe.Pointer, fac4 float32, src5 unsafe.Pointer, fac5 float32, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("madd5")
 	}
 
-	madd5_args.Lock()
-	defer madd5_args.Unlock()
+	madd5Args.Lock()
+	defer madd5Args.Unlock()
 
-	if madd5_code == 0 {
-		madd5_code = fatbinLoad(madd5_map, "madd5")
+	if madd5Code == 0 {
+		madd5Code = fatbinLoad(madd5Map, "madd5")
 	}
 
-	madd5_args.arg_dst = dst
-	madd5_args.arg_src1 = src1
-	madd5_args.arg_fac1 = fac1
-	madd5_args.arg_src2 = src2
-	madd5_args.arg_fac2 = fac2
-	madd5_args.arg_src3 = src3
-	madd5_args.arg_fac3 = fac3
-	madd5_args.arg_src4 = src4
-	madd5_args.arg_fac4 = fac4
-	madd5_args.arg_src5 = src5
-	madd5_args.arg_fac5 = fac5
-	madd5_args.arg_N = N
+	madd5Args.argDst = dst
+	madd5Args.argSrc1 = src1
+	madd5Args.argFac1 = fac1
+	madd5Args.argSrc2 = src2
+	madd5Args.argFac2 = fac2
+	madd5Args.argSrc3 = src3
+	madd5Args.argFac3 = fac3
+	madd5Args.argSrc4 = src4
+	madd5Args.argFac4 = fac4
+	madd5Args.argSrc5 = src5
+	madd5Args.argFac5 = fac5
+	madd5Args.argN = N
 
-	args := madd5_args.argptr[:]
-	cu.LaunchKernel(madd5_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := madd5Args.argptr[:]
+	cu.LaunchKernel(madd5Code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -88,27 +89,38 @@ func k_madd5_async(dst unsafe.Pointer, src1 unsafe.Pointer, fac1 float32, src2 u
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_madd5_async(dst unsafe.Pointer, src1 unsafe.Pointer, fac1 float32, src2 unsafe.Pointer, fac2 float32, src3 unsafe.Pointer, fac3 float32, src4 unsafe.Pointer, fac4 float32, src5 unsafe.Pointer, fac5 float32, N int, cfg *config) {
+	kMadd5Async(dst, src1, fac1, src2, fac2, src3, fac3, src4, fac4, src5, fac5, N, cfg)
+}
+
 // maps compute capability on PTX code for madd5 kernel.
-var madd5_map = map[int]string{0: "",
-	50: madd5_ptx_50,
-	52: madd5_ptx_52,
-	53: madd5_ptx_53,
-	60: madd5_ptx_60,
-	61: madd5_ptx_61,
-	62: madd5_ptx_62,
-	70: madd5_ptx_70,
-	72: madd5_ptx_72,
-	75: madd5_ptx_75,
-	80: madd5_ptx_80,
-	86: madd5_ptx_86,
-	87: madd5_ptx_87,
-	89: madd5_ptx_89,
-	90: madd5_ptx_90}
+var madd5Map = map[int]string{
+	0:  "",
+	50: madd5Ptx50,
+	52: madd5Ptx52,
+	53: madd5Ptx53,
+	60: madd5Ptx60,
+	61: madd5Ptx61,
+	62: madd5Ptx62,
+	70: madd5Ptx70,
+	72: madd5Ptx72,
+	75: madd5Ptx75,
+	80: madd5Ptx80,
+	86: madd5Ptx86,
+	87: madd5Ptx87,
+	89: madd5Ptx89,
+	90: madd5Ptx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var madd5_map = madd5Map
 
 // madd5 PTX code for various compute capabilities.
 const (
-	madd5_ptx_50 = `
-.version 8.5
+	madd5Ptx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -188,8 +200,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_52 = `
-.version 8.5
+	madd5Ptx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -269,8 +281,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_53 = `
-.version 8.5
+	madd5Ptx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -350,8 +362,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_60 = `
-.version 8.5
+	madd5Ptx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -431,8 +443,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_61 = `
-.version 8.5
+	madd5Ptx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -512,8 +524,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_62 = `
-.version 8.5
+	madd5Ptx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -593,8 +605,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_70 = `
-.version 8.5
+	madd5Ptx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -674,8 +686,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_72 = `
-.version 8.5
+	madd5Ptx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -755,8 +767,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_75 = `
-.version 8.5
+	madd5Ptx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -836,8 +848,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_80 = `
-.version 8.5
+	madd5Ptx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -917,8 +929,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_86 = `
-.version 8.5
+	madd5Ptx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -998,8 +1010,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_87 = `
-.version 8.5
+	madd5Ptx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1079,8 +1091,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_89 = `
-.version 8.5
+	madd5Ptx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1160,8 +1172,8 @@ $L__BB0_2:
 }
 
 `
-	madd5_ptx_90 = `
-.version 8.5
+	madd5Ptx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

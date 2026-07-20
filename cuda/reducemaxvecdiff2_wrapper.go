@@ -6,72 +6,73 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for reducemaxvecdiff2 kernel
-var reducemaxvecdiff2_code cu.Function
+var reducemaxvecdiff2Code cu.Function
 
 // Stores the arguments for reducemaxvecdiff2 kernel invocation
-type reducemaxvecdiff2_args_t struct {
-	arg_x1      unsafe.Pointer
-	arg_y1      unsafe.Pointer
-	arg_z1      unsafe.Pointer
-	arg_x2      unsafe.Pointer
-	arg_y2      unsafe.Pointer
-	arg_z2      unsafe.Pointer
-	arg_dst     unsafe.Pointer
-	arg_initVal float32
-	arg_n       int
-	argptr      [9]unsafe.Pointer
+type reducemaxvecdiff2ArgsT struct {
+	argX1      unsafe.Pointer
+	argY1      unsafe.Pointer
+	argZ1      unsafe.Pointer
+	argX2      unsafe.Pointer
+	argY2      unsafe.Pointer
+	argZ2      unsafe.Pointer
+	argDst     unsafe.Pointer
+	argInitVal float32
+	argN       int
+	argptr     [9]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for reducemaxvecdiff2 kernel invocation
-var reducemaxvecdiff2_args reducemaxvecdiff2_args_t
+var reducemaxvecdiff2Args reducemaxvecdiff2ArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	reducemaxvecdiff2_args.argptr[0] = unsafe.Pointer(&reducemaxvecdiff2_args.arg_x1)
-	reducemaxvecdiff2_args.argptr[1] = unsafe.Pointer(&reducemaxvecdiff2_args.arg_y1)
-	reducemaxvecdiff2_args.argptr[2] = unsafe.Pointer(&reducemaxvecdiff2_args.arg_z1)
-	reducemaxvecdiff2_args.argptr[3] = unsafe.Pointer(&reducemaxvecdiff2_args.arg_x2)
-	reducemaxvecdiff2_args.argptr[4] = unsafe.Pointer(&reducemaxvecdiff2_args.arg_y2)
-	reducemaxvecdiff2_args.argptr[5] = unsafe.Pointer(&reducemaxvecdiff2_args.arg_z2)
-	reducemaxvecdiff2_args.argptr[6] = unsafe.Pointer(&reducemaxvecdiff2_args.arg_dst)
-	reducemaxvecdiff2_args.argptr[7] = unsafe.Pointer(&reducemaxvecdiff2_args.arg_initVal)
-	reducemaxvecdiff2_args.argptr[8] = unsafe.Pointer(&reducemaxvecdiff2_args.arg_n)
+	reducemaxvecdiff2Args.argptr[0] = unsafe.Pointer(&reducemaxvecdiff2Args.argX1)
+	reducemaxvecdiff2Args.argptr[1] = unsafe.Pointer(&reducemaxvecdiff2Args.argY1)
+	reducemaxvecdiff2Args.argptr[2] = unsafe.Pointer(&reducemaxvecdiff2Args.argZ1)
+	reducemaxvecdiff2Args.argptr[3] = unsafe.Pointer(&reducemaxvecdiff2Args.argX2)
+	reducemaxvecdiff2Args.argptr[4] = unsafe.Pointer(&reducemaxvecdiff2Args.argY2)
+	reducemaxvecdiff2Args.argptr[5] = unsafe.Pointer(&reducemaxvecdiff2Args.argZ2)
+	reducemaxvecdiff2Args.argptr[6] = unsafe.Pointer(&reducemaxvecdiff2Args.argDst)
+	reducemaxvecdiff2Args.argptr[7] = unsafe.Pointer(&reducemaxvecdiff2Args.argInitVal)
+	reducemaxvecdiff2Args.argptr[8] = unsafe.Pointer(&reducemaxvecdiff2Args.argN)
 }
 
 // Wrapper for reducemaxvecdiff2 CUDA kernel, asynchronous.
-func k_reducemaxvecdiff2_async(x1 unsafe.Pointer, y1 unsafe.Pointer, z1 unsafe.Pointer, x2 unsafe.Pointer, y2 unsafe.Pointer, z2 unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
+func kReducemaxvecdiff2Async(x1 unsafe.Pointer, y1 unsafe.Pointer, z1 unsafe.Pointer, x2 unsafe.Pointer, y2 unsafe.Pointer, z2 unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("reducemaxvecdiff2")
 	}
 
-	reducemaxvecdiff2_args.Lock()
-	defer reducemaxvecdiff2_args.Unlock()
+	reducemaxvecdiff2Args.Lock()
+	defer reducemaxvecdiff2Args.Unlock()
 
-	if reducemaxvecdiff2_code == 0 {
-		reducemaxvecdiff2_code = fatbinLoad(reducemaxvecdiff2_map, "reducemaxvecdiff2")
+	if reducemaxvecdiff2Code == 0 {
+		reducemaxvecdiff2Code = fatbinLoad(reducemaxvecdiff2Map, "reducemaxvecdiff2")
 	}
 
-	reducemaxvecdiff2_args.arg_x1 = x1
-	reducemaxvecdiff2_args.arg_y1 = y1
-	reducemaxvecdiff2_args.arg_z1 = z1
-	reducemaxvecdiff2_args.arg_x2 = x2
-	reducemaxvecdiff2_args.arg_y2 = y2
-	reducemaxvecdiff2_args.arg_z2 = z2
-	reducemaxvecdiff2_args.arg_dst = dst
-	reducemaxvecdiff2_args.arg_initVal = initVal
-	reducemaxvecdiff2_args.arg_n = n
+	reducemaxvecdiff2Args.argX1 = x1
+	reducemaxvecdiff2Args.argY1 = y1
+	reducemaxvecdiff2Args.argZ1 = z1
+	reducemaxvecdiff2Args.argX2 = x2
+	reducemaxvecdiff2Args.argY2 = y2
+	reducemaxvecdiff2Args.argZ2 = z2
+	reducemaxvecdiff2Args.argDst = dst
+	reducemaxvecdiff2Args.argInitVal = initVal
+	reducemaxvecdiff2Args.argN = n
 
-	args := reducemaxvecdiff2_args.argptr[:]
-	cu.LaunchKernel(reducemaxvecdiff2_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := reducemaxvecdiff2Args.argptr[:]
+	cu.LaunchKernel(reducemaxvecdiff2Code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -79,27 +80,38 @@ func k_reducemaxvecdiff2_async(x1 unsafe.Pointer, y1 unsafe.Pointer, z1 unsafe.P
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_reducemaxvecdiff2_async(x1 unsafe.Pointer, y1 unsafe.Pointer, z1 unsafe.Pointer, x2 unsafe.Pointer, y2 unsafe.Pointer, z2 unsafe.Pointer, dst unsafe.Pointer, initVal float32, n int, cfg *config) {
+	kReducemaxvecdiff2Async(x1, y1, z1, x2, y2, z2, dst, initVal, n, cfg)
+}
+
 // maps compute capability on PTX code for reducemaxvecdiff2 kernel.
-var reducemaxvecdiff2_map = map[int]string{0: "",
-	50: reducemaxvecdiff2_ptx_50,
-	52: reducemaxvecdiff2_ptx_52,
-	53: reducemaxvecdiff2_ptx_53,
-	60: reducemaxvecdiff2_ptx_60,
-	61: reducemaxvecdiff2_ptx_61,
-	62: reducemaxvecdiff2_ptx_62,
-	70: reducemaxvecdiff2_ptx_70,
-	72: reducemaxvecdiff2_ptx_72,
-	75: reducemaxvecdiff2_ptx_75,
-	80: reducemaxvecdiff2_ptx_80,
-	86: reducemaxvecdiff2_ptx_86,
-	87: reducemaxvecdiff2_ptx_87,
-	89: reducemaxvecdiff2_ptx_89,
-	90: reducemaxvecdiff2_ptx_90}
+var reducemaxvecdiff2Map = map[int]string{
+	0:  "",
+	50: reducemaxvecdiff2Ptx50,
+	52: reducemaxvecdiff2Ptx52,
+	53: reducemaxvecdiff2Ptx53,
+	60: reducemaxvecdiff2Ptx60,
+	61: reducemaxvecdiff2Ptx61,
+	62: reducemaxvecdiff2Ptx62,
+	70: reducemaxvecdiff2Ptx70,
+	72: reducemaxvecdiff2Ptx72,
+	75: reducemaxvecdiff2Ptx75,
+	80: reducemaxvecdiff2Ptx80,
+	86: reducemaxvecdiff2Ptx86,
+	87: reducemaxvecdiff2Ptx87,
+	89: reducemaxvecdiff2Ptx89,
+	90: reducemaxvecdiff2Ptx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var reducemaxvecdiff2_map = reducemaxvecdiff2Map
 
 // reducemaxvecdiff2 PTX code for various compute capabilities.
 const (
-	reducemaxvecdiff2_ptx_50 = `
-.version 8.5
+	reducemaxvecdiff2Ptx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -351,7 +363,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -359,8 +371,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_52 = `
-.version 8.5
+	reducemaxvecdiff2Ptx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -612,7 +624,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -620,8 +632,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_53 = `
-.version 8.5
+	reducemaxvecdiff2Ptx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -873,7 +885,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -881,8 +893,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_60 = `
-.version 8.5
+	reducemaxvecdiff2Ptx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -1134,7 +1146,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1142,8 +1154,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_61 = `
-.version 8.5
+	reducemaxvecdiff2Ptx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -1395,7 +1407,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1403,8 +1415,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_62 = `
-.version 8.5
+	reducemaxvecdiff2Ptx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -1656,7 +1668,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1664,8 +1676,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_70 = `
-.version 8.5
+	reducemaxvecdiff2Ptx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1917,7 +1929,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -1925,8 +1937,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_72 = `
-.version 8.5
+	reducemaxvecdiff2Ptx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -2178,7 +2190,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -2186,8 +2198,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_75 = `
-.version 8.5
+	reducemaxvecdiff2Ptx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -2439,7 +2451,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -2447,8 +2459,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_80 = `
-.version 8.5
+	reducemaxvecdiff2Ptx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -2700,7 +2712,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -2708,8 +2720,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_86 = `
-.version 8.5
+	reducemaxvecdiff2Ptx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -2961,7 +2973,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -2969,8 +2981,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_87 = `
-.version 8.5
+	reducemaxvecdiff2Ptx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -3222,7 +3234,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -3230,8 +3242,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_89 = `
-.version 8.5
+	reducemaxvecdiff2Ptx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -3483,7 +3495,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;
@@ -3491,8 +3503,8 @@ $L__BB0_15:
 }
 
 `
-	reducemaxvecdiff2_ptx_90 = `
-.version 8.5
+	reducemaxvecdiff2Ptx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 
@@ -3744,7 +3756,7 @@ $L__BB0_13:
 	abs.f32 	%f95, %f94;
 	cvta.to.global.u64 	%rd63, %rd30;
 	mov.b32 	%r32, %f95;
-	atom.global.max.s32 	%r33, [%rd63], %r32;
+	red.global.max.s32 	[%rd63], %r32;
 
 $L__BB0_15:
 	ret;

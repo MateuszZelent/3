@@ -6,72 +6,73 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for dotproduct kernel
-var dotproduct_code cu.Function
+var dotproductCode cu.Function
 
 // Stores the arguments for dotproduct kernel invocation
-type dotproduct_args_t struct {
-	arg_dst       unsafe.Pointer
-	arg_prefactor float32
-	arg_ax        unsafe.Pointer
-	arg_ay        unsafe.Pointer
-	arg_az        unsafe.Pointer
-	arg_bx        unsafe.Pointer
-	arg_by        unsafe.Pointer
-	arg_bz        unsafe.Pointer
-	arg_N         int
-	argptr        [9]unsafe.Pointer
+type dotproductArgsT struct {
+	argDst       unsafe.Pointer
+	argPrefactor float32
+	argAx        unsafe.Pointer
+	argAy        unsafe.Pointer
+	argAz        unsafe.Pointer
+	argBx        unsafe.Pointer
+	argBy        unsafe.Pointer
+	argBz        unsafe.Pointer
+	argN         int
+	argptr       [9]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for dotproduct kernel invocation
-var dotproduct_args dotproduct_args_t
+var dotproductArgs dotproductArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	dotproduct_args.argptr[0] = unsafe.Pointer(&dotproduct_args.arg_dst)
-	dotproduct_args.argptr[1] = unsafe.Pointer(&dotproduct_args.arg_prefactor)
-	dotproduct_args.argptr[2] = unsafe.Pointer(&dotproduct_args.arg_ax)
-	dotproduct_args.argptr[3] = unsafe.Pointer(&dotproduct_args.arg_ay)
-	dotproduct_args.argptr[4] = unsafe.Pointer(&dotproduct_args.arg_az)
-	dotproduct_args.argptr[5] = unsafe.Pointer(&dotproduct_args.arg_bx)
-	dotproduct_args.argptr[6] = unsafe.Pointer(&dotproduct_args.arg_by)
-	dotproduct_args.argptr[7] = unsafe.Pointer(&dotproduct_args.arg_bz)
-	dotproduct_args.argptr[8] = unsafe.Pointer(&dotproduct_args.arg_N)
+	dotproductArgs.argptr[0] = unsafe.Pointer(&dotproductArgs.argDst)
+	dotproductArgs.argptr[1] = unsafe.Pointer(&dotproductArgs.argPrefactor)
+	dotproductArgs.argptr[2] = unsafe.Pointer(&dotproductArgs.argAx)
+	dotproductArgs.argptr[3] = unsafe.Pointer(&dotproductArgs.argAy)
+	dotproductArgs.argptr[4] = unsafe.Pointer(&dotproductArgs.argAz)
+	dotproductArgs.argptr[5] = unsafe.Pointer(&dotproductArgs.argBx)
+	dotproductArgs.argptr[6] = unsafe.Pointer(&dotproductArgs.argBy)
+	dotproductArgs.argptr[7] = unsafe.Pointer(&dotproductArgs.argBz)
+	dotproductArgs.argptr[8] = unsafe.Pointer(&dotproductArgs.argN)
 }
 
 // Wrapper for dotproduct CUDA kernel, asynchronous.
-func k_dotproduct_async(dst unsafe.Pointer, prefactor float32, ax unsafe.Pointer, ay unsafe.Pointer, az unsafe.Pointer, bx unsafe.Pointer, by unsafe.Pointer, bz unsafe.Pointer, N int, cfg *config) {
+func kDotproductAsync(dst unsafe.Pointer, prefactor float32, ax unsafe.Pointer, ay unsafe.Pointer, az unsafe.Pointer, bx unsafe.Pointer, by unsafe.Pointer, bz unsafe.Pointer, N int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("dotproduct")
 	}
 
-	dotproduct_args.Lock()
-	defer dotproduct_args.Unlock()
+	dotproductArgs.Lock()
+	defer dotproductArgs.Unlock()
 
-	if dotproduct_code == 0 {
-		dotproduct_code = fatbinLoad(dotproduct_map, "dotproduct")
+	if dotproductCode == 0 {
+		dotproductCode = fatbinLoad(dotproductMap, "dotproduct")
 	}
 
-	dotproduct_args.arg_dst = dst
-	dotproduct_args.arg_prefactor = prefactor
-	dotproduct_args.arg_ax = ax
-	dotproduct_args.arg_ay = ay
-	dotproduct_args.arg_az = az
-	dotproduct_args.arg_bx = bx
-	dotproduct_args.arg_by = by
-	dotproduct_args.arg_bz = bz
-	dotproduct_args.arg_N = N
+	dotproductArgs.argDst = dst
+	dotproductArgs.argPrefactor = prefactor
+	dotproductArgs.argAx = ax
+	dotproductArgs.argAy = ay
+	dotproductArgs.argAz = az
+	dotproductArgs.argBx = bx
+	dotproductArgs.argBy = by
+	dotproductArgs.argBz = bz
+	dotproductArgs.argN = N
 
-	args := dotproduct_args.argptr[:]
-	cu.LaunchKernel(dotproduct_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := dotproductArgs.argptr[:]
+	cu.LaunchKernel(dotproductCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -79,27 +80,38 @@ func k_dotproduct_async(dst unsafe.Pointer, prefactor float32, ax unsafe.Pointer
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_dotproduct_async(dst unsafe.Pointer, prefactor float32, ax unsafe.Pointer, ay unsafe.Pointer, az unsafe.Pointer, bx unsafe.Pointer, by unsafe.Pointer, bz unsafe.Pointer, N int, cfg *config) {
+	kDotproductAsync(dst, prefactor, ax, ay, az, bx, by, bz, N, cfg)
+}
+
 // maps compute capability on PTX code for dotproduct kernel.
-var dotproduct_map = map[int]string{0: "",
-	50: dotproduct_ptx_50,
-	52: dotproduct_ptx_52,
-	53: dotproduct_ptx_53,
-	60: dotproduct_ptx_60,
-	61: dotproduct_ptx_61,
-	62: dotproduct_ptx_62,
-	70: dotproduct_ptx_70,
-	72: dotproduct_ptx_72,
-	75: dotproduct_ptx_75,
-	80: dotproduct_ptx_80,
-	86: dotproduct_ptx_86,
-	87: dotproduct_ptx_87,
-	89: dotproduct_ptx_89,
-	90: dotproduct_ptx_90}
+var dotproductMap = map[int]string{
+	0:  "",
+	50: dotproductPtx50,
+	52: dotproductPtx52,
+	53: dotproductPtx53,
+	60: dotproductPtx60,
+	61: dotproductPtx61,
+	62: dotproductPtx62,
+	70: dotproductPtx70,
+	72: dotproductPtx72,
+	75: dotproductPtx75,
+	80: dotproductPtx80,
+	86: dotproductPtx86,
+	87: dotproductPtx87,
+	89: dotproductPtx89,
+	90: dotproductPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var dotproduct_map = dotproductMap
 
 // dotproduct PTX code for various compute capabilities.
 const (
-	dotproduct_ptx_50 = `
-.version 8.5
+	dotproductPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -176,8 +188,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_52 = `
-.version 8.5
+	dotproductPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -254,8 +266,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_53 = `
-.version 8.5
+	dotproductPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -332,8 +344,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_60 = `
-.version 8.5
+	dotproductPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -410,8 +422,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_61 = `
-.version 8.5
+	dotproductPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -488,8 +500,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_62 = `
-.version 8.5
+	dotproductPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -566,8 +578,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_70 = `
-.version 8.5
+	dotproductPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -644,8 +656,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_72 = `
-.version 8.5
+	dotproductPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -722,8 +734,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_75 = `
-.version 8.5
+	dotproductPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -800,8 +812,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_80 = `
-.version 8.5
+	dotproductPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -878,8 +890,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_86 = `
-.version 8.5
+	dotproductPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -956,8 +968,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_87 = `
-.version 8.5
+	dotproductPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1034,8 +1046,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_89 = `
-.version 8.5
+	dotproductPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1112,8 +1124,8 @@ $L__BB0_2:
 }
 
 `
-	dotproduct_ptx_90 = `
-.version 8.5
+	dotproductPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

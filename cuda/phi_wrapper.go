@@ -6,63 +6,64 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for setPhi kernel
-var setPhi_code cu.Function
+var setPhiCode cu.Function
 
 // Stores the arguments for setPhi kernel invocation
-type setPhi_args_t struct {
-	arg_phi unsafe.Pointer
-	arg_mx  unsafe.Pointer
-	arg_my  unsafe.Pointer
-	arg_Nx  int
-	arg_Ny  int
-	arg_Nz  int
-	argptr  [6]unsafe.Pointer
+type setPhiArgsT struct {
+	argPhi unsafe.Pointer
+	argMx  unsafe.Pointer
+	argMy  unsafe.Pointer
+	argNx  int
+	argNy  int
+	argNz  int
+	argptr [6]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for setPhi kernel invocation
-var setPhi_args setPhi_args_t
+var setPhiArgs setPhiArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	setPhi_args.argptr[0] = unsafe.Pointer(&setPhi_args.arg_phi)
-	setPhi_args.argptr[1] = unsafe.Pointer(&setPhi_args.arg_mx)
-	setPhi_args.argptr[2] = unsafe.Pointer(&setPhi_args.arg_my)
-	setPhi_args.argptr[3] = unsafe.Pointer(&setPhi_args.arg_Nx)
-	setPhi_args.argptr[4] = unsafe.Pointer(&setPhi_args.arg_Ny)
-	setPhi_args.argptr[5] = unsafe.Pointer(&setPhi_args.arg_Nz)
+	setPhiArgs.argptr[0] = unsafe.Pointer(&setPhiArgs.argPhi)
+	setPhiArgs.argptr[1] = unsafe.Pointer(&setPhiArgs.argMx)
+	setPhiArgs.argptr[2] = unsafe.Pointer(&setPhiArgs.argMy)
+	setPhiArgs.argptr[3] = unsafe.Pointer(&setPhiArgs.argNx)
+	setPhiArgs.argptr[4] = unsafe.Pointer(&setPhiArgs.argNy)
+	setPhiArgs.argptr[5] = unsafe.Pointer(&setPhiArgs.argNz)
 }
 
 // Wrapper for setPhi CUDA kernel, asynchronous.
-func k_setPhi_async(phi unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, Nx int, Ny int, Nz int, cfg *config) {
+func kSetPhiAsync(phi unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, Nx int, Ny int, Nz int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("setPhi")
 	}
 
-	setPhi_args.Lock()
-	defer setPhi_args.Unlock()
+	setPhiArgs.Lock()
+	defer setPhiArgs.Unlock()
 
-	if setPhi_code == 0 {
-		setPhi_code = fatbinLoad(setPhi_map, "setPhi")
+	if setPhiCode == 0 {
+		setPhiCode = fatbinLoad(setPhiMap, "setPhi")
 	}
 
-	setPhi_args.arg_phi = phi
-	setPhi_args.arg_mx = mx
-	setPhi_args.arg_my = my
-	setPhi_args.arg_Nx = Nx
-	setPhi_args.arg_Ny = Ny
-	setPhi_args.arg_Nz = Nz
+	setPhiArgs.argPhi = phi
+	setPhiArgs.argMx = mx
+	setPhiArgs.argMy = my
+	setPhiArgs.argNx = Nx
+	setPhiArgs.argNy = Ny
+	setPhiArgs.argNz = Nz
 
-	args := setPhi_args.argptr[:]
-	cu.LaunchKernel(setPhi_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := setPhiArgs.argptr[:]
+	cu.LaunchKernel(setPhiCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -70,27 +71,38 @@ func k_setPhi_async(phi unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, Nx
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_setPhi_async(phi unsafe.Pointer, mx unsafe.Pointer, my unsafe.Pointer, Nx int, Ny int, Nz int, cfg *config) {
+	kSetPhiAsync(phi, mx, my, Nx, Ny, Nz, cfg)
+}
+
 // maps compute capability on PTX code for setPhi kernel.
-var setPhi_map = map[int]string{0: "",
-	50: setPhi_ptx_50,
-	52: setPhi_ptx_52,
-	53: setPhi_ptx_53,
-	60: setPhi_ptx_60,
-	61: setPhi_ptx_61,
-	62: setPhi_ptx_62,
-	70: setPhi_ptx_70,
-	72: setPhi_ptx_72,
-	75: setPhi_ptx_75,
-	80: setPhi_ptx_80,
-	86: setPhi_ptx_86,
-	87: setPhi_ptx_87,
-	89: setPhi_ptx_89,
-	90: setPhi_ptx_90}
+var setPhiMap = map[int]string{
+	0:  "",
+	50: setPhiPtx50,
+	52: setPhiPtx52,
+	53: setPhiPtx53,
+	60: setPhiPtx60,
+	61: setPhiPtx61,
+	62: setPhiPtx62,
+	70: setPhiPtx70,
+	72: setPhiPtx72,
+	75: setPhiPtx75,
+	80: setPhiPtx80,
+	86: setPhiPtx86,
+	87: setPhiPtx87,
+	89: setPhiPtx89,
+	90: setPhiPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var setPhi_map = setPhiMap
 
 // setPhi PTX code for various compute capabilities.
 const (
-	setPhi_ptx_50 = `
-.version 8.5
+	setPhiPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -230,8 +242,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_52 = `
-.version 8.5
+	setPhiPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -371,8 +383,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_53 = `
-.version 8.5
+	setPhiPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -512,8 +524,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_60 = `
-.version 8.5
+	setPhiPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -653,8 +665,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_61 = `
-.version 8.5
+	setPhiPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -794,8 +806,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_62 = `
-.version 8.5
+	setPhiPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -935,8 +947,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_70 = `
-.version 8.5
+	setPhiPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1076,8 +1088,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_72 = `
-.version 8.5
+	setPhiPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -1217,8 +1229,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_75 = `
-.version 8.5
+	setPhiPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1358,8 +1370,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_80 = `
-.version 8.5
+	setPhiPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -1499,8 +1511,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_86 = `
-.version 8.5
+	setPhiPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -1640,8 +1652,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_87 = `
-.version 8.5
+	setPhiPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1781,8 +1793,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_89 = `
-.version 8.5
+	setPhiPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1922,8 +1934,8 @@ $L__BB0_7:
 }
 
 `
-	setPhi_ptx_90 = `
-.version 8.5
+	setPhiPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

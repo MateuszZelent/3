@@ -6,78 +6,79 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for resize kernel
-var resize_code cu.Function
+var resizeCode cu.Function
 
 // Stores the arguments for resize kernel invocation
-type resize_args_t struct {
-	arg_dst    unsafe.Pointer
-	arg_Dx     int
-	arg_Dy     int
-	arg_Dz     int
-	arg_src    unsafe.Pointer
-	arg_Sx     int
-	arg_Sy     int
-	arg_Sz     int
-	arg_layer  int
-	arg_scalex int
-	arg_scaley int
-	argptr     [11]unsafe.Pointer
+type resizeArgsT struct {
+	argDst    unsafe.Pointer
+	argDx     int
+	argDy     int
+	argDz     int
+	argSrc    unsafe.Pointer
+	argSx     int
+	argSy     int
+	argSz     int
+	argLayer  int
+	argScalex int
+	argScaley int
+	argptr    [11]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for resize kernel invocation
-var resize_args resize_args_t
+var resizeArgs resizeArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	resize_args.argptr[0] = unsafe.Pointer(&resize_args.arg_dst)
-	resize_args.argptr[1] = unsafe.Pointer(&resize_args.arg_Dx)
-	resize_args.argptr[2] = unsafe.Pointer(&resize_args.arg_Dy)
-	resize_args.argptr[3] = unsafe.Pointer(&resize_args.arg_Dz)
-	resize_args.argptr[4] = unsafe.Pointer(&resize_args.arg_src)
-	resize_args.argptr[5] = unsafe.Pointer(&resize_args.arg_Sx)
-	resize_args.argptr[6] = unsafe.Pointer(&resize_args.arg_Sy)
-	resize_args.argptr[7] = unsafe.Pointer(&resize_args.arg_Sz)
-	resize_args.argptr[8] = unsafe.Pointer(&resize_args.arg_layer)
-	resize_args.argptr[9] = unsafe.Pointer(&resize_args.arg_scalex)
-	resize_args.argptr[10] = unsafe.Pointer(&resize_args.arg_scaley)
+	resizeArgs.argptr[0] = unsafe.Pointer(&resizeArgs.argDst)
+	resizeArgs.argptr[1] = unsafe.Pointer(&resizeArgs.argDx)
+	resizeArgs.argptr[2] = unsafe.Pointer(&resizeArgs.argDy)
+	resizeArgs.argptr[3] = unsafe.Pointer(&resizeArgs.argDz)
+	resizeArgs.argptr[4] = unsafe.Pointer(&resizeArgs.argSrc)
+	resizeArgs.argptr[5] = unsafe.Pointer(&resizeArgs.argSx)
+	resizeArgs.argptr[6] = unsafe.Pointer(&resizeArgs.argSy)
+	resizeArgs.argptr[7] = unsafe.Pointer(&resizeArgs.argSz)
+	resizeArgs.argptr[8] = unsafe.Pointer(&resizeArgs.argLayer)
+	resizeArgs.argptr[9] = unsafe.Pointer(&resizeArgs.argScalex)
+	resizeArgs.argptr[10] = unsafe.Pointer(&resizeArgs.argScaley)
 }
 
 // Wrapper for resize CUDA kernel, asynchronous.
-func k_resize_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, layer int, scalex int, scaley int, cfg *config) {
+func kResizeAsync(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, layer int, scalex int, scaley int, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("resize")
 	}
 
-	resize_args.Lock()
-	defer resize_args.Unlock()
+	resizeArgs.Lock()
+	defer resizeArgs.Unlock()
 
-	if resize_code == 0 {
-		resize_code = fatbinLoad(resize_map, "resize")
+	if resizeCode == 0 {
+		resizeCode = fatbinLoad(resizeMap, "resize")
 	}
 
-	resize_args.arg_dst = dst
-	resize_args.arg_Dx = Dx
-	resize_args.arg_Dy = Dy
-	resize_args.arg_Dz = Dz
-	resize_args.arg_src = src
-	resize_args.arg_Sx = Sx
-	resize_args.arg_Sy = Sy
-	resize_args.arg_Sz = Sz
-	resize_args.arg_layer = layer
-	resize_args.arg_scalex = scalex
-	resize_args.arg_scaley = scaley
+	resizeArgs.argDst = dst
+	resizeArgs.argDx = Dx
+	resizeArgs.argDy = Dy
+	resizeArgs.argDz = Dz
+	resizeArgs.argSrc = src
+	resizeArgs.argSx = Sx
+	resizeArgs.argSy = Sy
+	resizeArgs.argSz = Sz
+	resizeArgs.argLayer = layer
+	resizeArgs.argScalex = scalex
+	resizeArgs.argScaley = scaley
 
-	args := resize_args.argptr[:]
-	cu.LaunchKernel(resize_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := resizeArgs.argptr[:]
+	cu.LaunchKernel(resizeCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -85,27 +86,38 @@ func k_resize_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Point
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_resize_async(dst unsafe.Pointer, Dx int, Dy int, Dz int, src unsafe.Pointer, Sx int, Sy int, Sz int, layer int, scalex int, scaley int, cfg *config) {
+	kResizeAsync(dst, Dx, Dy, Dz, src, Sx, Sy, Sz, layer, scalex, scaley, cfg)
+}
+
 // maps compute capability on PTX code for resize kernel.
-var resize_map = map[int]string{0: "",
-	50: resize_ptx_50,
-	52: resize_ptx_52,
-	53: resize_ptx_53,
-	60: resize_ptx_60,
-	61: resize_ptx_61,
-	62: resize_ptx_62,
-	70: resize_ptx_70,
-	72: resize_ptx_72,
-	75: resize_ptx_75,
-	80: resize_ptx_80,
-	86: resize_ptx_86,
-	87: resize_ptx_87,
-	89: resize_ptx_89,
-	90: resize_ptx_90}
+var resizeMap = map[int]string{
+	0:  "",
+	50: resizePtx50,
+	52: resizePtx52,
+	53: resizePtx53,
+	60: resizePtx60,
+	61: resizePtx61,
+	62: resizePtx62,
+	70: resizePtx70,
+	72: resizePtx72,
+	75: resizePtx75,
+	80: resizePtx80,
+	86: resizePtx86,
+	87: resizePtx87,
+	89: resizePtx89,
+	90: resizePtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var resize_map = resizeMap
 
 // resize PTX code for various compute capabilities.
 const (
-	resize_ptx_50 = `
-.version 8.5
+	resizePtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -296,8 +308,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_52 = `
-.version 8.5
+	resizePtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -488,8 +500,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_53 = `
-.version 8.5
+	resizePtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -680,8 +692,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_60 = `
-.version 8.5
+	resizePtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -872,8 +884,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_61 = `
-.version 8.5
+	resizePtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -1064,8 +1076,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_62 = `
-.version 8.5
+	resizePtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -1256,8 +1268,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_70 = `
-.version 8.5
+	resizePtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -1448,8 +1460,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_72 = `
-.version 8.5
+	resizePtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -1640,8 +1652,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_75 = `
-.version 8.5
+	resizePtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -1832,8 +1844,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_80 = `
-.version 8.5
+	resizePtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -2024,8 +2036,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_86 = `
-.version 8.5
+	resizePtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -2216,8 +2228,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_87 = `
-.version 8.5
+	resizePtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -2408,8 +2420,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_89 = `
-.version 8.5
+	resizePtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -2600,8 +2612,8 @@ $L__BB0_26:
 }
 
 `
-	resize_ptx_90 = `
-.version 8.5
+	resizePtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 

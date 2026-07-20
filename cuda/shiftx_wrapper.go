@@ -6,69 +6,70 @@ package cuda
 */
 
 import (
-	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 	"sync"
 	"unsafe"
+
+	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/timer"
 )
 
 // CUDA handle for shiftx kernel
-var shiftx_code cu.Function
+var shiftxCode cu.Function
 
 // Stores the arguments for shiftx kernel invocation
-type shiftx_args_t struct {
-	arg_dst    unsafe.Pointer
-	arg_src    unsafe.Pointer
-	arg_Nx     int
-	arg_Ny     int
-	arg_Nz     int
-	arg_shx    int
-	arg_clampL float32
-	arg_clampR float32
-	argptr     [8]unsafe.Pointer
+type shiftxArgsT struct {
+	argDst    unsafe.Pointer
+	argSrc    unsafe.Pointer
+	argNx     int
+	argNy     int
+	argNz     int
+	argShx    int
+	argClampL float32
+	argClampR float32
+	argptr    [8]unsafe.Pointer
 	sync.Mutex
 }
 
 // Stores the arguments for shiftx kernel invocation
-var shiftx_args shiftx_args_t
+var shiftxArgs shiftxArgsT
 
 func init() {
 	// CUDA driver kernel call wants pointers to arguments, set them up once.
-	shiftx_args.argptr[0] = unsafe.Pointer(&shiftx_args.arg_dst)
-	shiftx_args.argptr[1] = unsafe.Pointer(&shiftx_args.arg_src)
-	shiftx_args.argptr[2] = unsafe.Pointer(&shiftx_args.arg_Nx)
-	shiftx_args.argptr[3] = unsafe.Pointer(&shiftx_args.arg_Ny)
-	shiftx_args.argptr[4] = unsafe.Pointer(&shiftx_args.arg_Nz)
-	shiftx_args.argptr[5] = unsafe.Pointer(&shiftx_args.arg_shx)
-	shiftx_args.argptr[6] = unsafe.Pointer(&shiftx_args.arg_clampL)
-	shiftx_args.argptr[7] = unsafe.Pointer(&shiftx_args.arg_clampR)
+	shiftxArgs.argptr[0] = unsafe.Pointer(&shiftxArgs.argDst)
+	shiftxArgs.argptr[1] = unsafe.Pointer(&shiftxArgs.argSrc)
+	shiftxArgs.argptr[2] = unsafe.Pointer(&shiftxArgs.argNx)
+	shiftxArgs.argptr[3] = unsafe.Pointer(&shiftxArgs.argNy)
+	shiftxArgs.argptr[4] = unsafe.Pointer(&shiftxArgs.argNz)
+	shiftxArgs.argptr[5] = unsafe.Pointer(&shiftxArgs.argShx)
+	shiftxArgs.argptr[6] = unsafe.Pointer(&shiftxArgs.argClampL)
+	shiftxArgs.argptr[7] = unsafe.Pointer(&shiftxArgs.argClampR)
 }
 
 // Wrapper for shiftx CUDA kernel, asynchronous.
-func k_shiftx_async(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int, Nz int, shx int, clampL float32, clampR float32, cfg *config) {
+func kShiftxAsync(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int, Nz int, shx int, clampL float32, clampR float32, cfg *config) {
 	if Synchronous { // debug
 		Sync()
 		timer.Start("shiftx")
 	}
 
-	shiftx_args.Lock()
-	defer shiftx_args.Unlock()
+	shiftxArgs.Lock()
+	defer shiftxArgs.Unlock()
 
-	if shiftx_code == 0 {
-		shiftx_code = fatbinLoad(shiftx_map, "shiftx")
+	if shiftxCode == 0 {
+		shiftxCode = fatbinLoad(shiftxMap, "shiftx")
 	}
 
-	shiftx_args.arg_dst = dst
-	shiftx_args.arg_src = src
-	shiftx_args.arg_Nx = Nx
-	shiftx_args.arg_Ny = Ny
-	shiftx_args.arg_Nz = Nz
-	shiftx_args.arg_shx = shx
-	shiftx_args.arg_clampL = clampL
-	shiftx_args.arg_clampR = clampR
+	shiftxArgs.argDst = dst
+	shiftxArgs.argSrc = src
+	shiftxArgs.argNx = Nx
+	shiftxArgs.argNy = Ny
+	shiftxArgs.argNz = Nz
+	shiftxArgs.argShx = shx
+	shiftxArgs.argClampL = clampL
+	shiftxArgs.argClampR = clampR
 
-	args := shiftx_args.argptr[:]
-	cu.LaunchKernel(shiftx_code, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
+	args := shiftxArgs.argptr[:]
+	cu.LaunchKernel(shiftxCode, cfg.Grid.X, cfg.Grid.Y, cfg.Grid.Z, cfg.Block.X, cfg.Block.Y, cfg.Block.Z, 0, stream0, args)
 
 	if Synchronous { // debug
 		Sync()
@@ -76,27 +77,38 @@ func k_shiftx_async(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int, Nz i
 	}
 }
 
+// Backward-compatible wrapper for CUDA call sites that still use the
+// historical snake_case name.
+func k_shiftx_async(dst unsafe.Pointer, src unsafe.Pointer, Nx int, Ny int, Nz int, shx int, clampL float32, clampR float32, cfg *config) {
+	kShiftxAsync(dst, src, Nx, Ny, Nz, shx, clampL, clampR, cfg)
+}
+
 // maps compute capability on PTX code for shiftx kernel.
-var shiftx_map = map[int]string{0: "",
-	50: shiftx_ptx_50,
-	52: shiftx_ptx_52,
-	53: shiftx_ptx_53,
-	60: shiftx_ptx_60,
-	61: shiftx_ptx_61,
-	62: shiftx_ptx_62,
-	70: shiftx_ptx_70,
-	72: shiftx_ptx_72,
-	75: shiftx_ptx_75,
-	80: shiftx_ptx_80,
-	86: shiftx_ptx_86,
-	87: shiftx_ptx_87,
-	89: shiftx_ptx_89,
-	90: shiftx_ptx_90}
+var shiftxMap = map[int]string{
+	0:  "",
+	50: shiftxPtx50,
+	52: shiftxPtx52,
+	53: shiftxPtx53,
+	60: shiftxPtx60,
+	61: shiftxPtx61,
+	62: shiftxPtx62,
+	70: shiftxPtx70,
+	72: shiftxPtx72,
+	75: shiftxPtx75,
+	80: shiftxPtx80,
+	86: shiftxPtx86,
+	87: shiftxPtx87,
+	89: shiftxPtx89,
+	90: shiftxPtx90,
+}
+
+// Backward-compatible map name used by the original fatbin registration.
+var shiftx_map = shiftxMap
 
 // shiftx PTX code for various compute capabilities.
 const (
-	shiftx_ptx_50 = `
-.version 8.5
+	shiftxPtx50 = `
+.version 8.4
 .target sm_50
 .address_size 64
 
@@ -175,8 +187,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_52 = `
-.version 8.5
+	shiftxPtx52 = `
+.version 8.4
 .target sm_52
 .address_size 64
 
@@ -255,8 +267,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_53 = `
-.version 8.5
+	shiftxPtx53 = `
+.version 8.4
 .target sm_53
 .address_size 64
 
@@ -335,8 +347,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_60 = `
-.version 8.5
+	shiftxPtx60 = `
+.version 8.4
 .target sm_60
 .address_size 64
 
@@ -415,8 +427,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_61 = `
-.version 8.5
+	shiftxPtx61 = `
+.version 8.4
 .target sm_61
 .address_size 64
 
@@ -495,8 +507,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_62 = `
-.version 8.5
+	shiftxPtx62 = `
+.version 8.4
 .target sm_62
 .address_size 64
 
@@ -575,8 +587,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_70 = `
-.version 8.5
+	shiftxPtx70 = `
+.version 8.4
 .target sm_70
 .address_size 64
 
@@ -655,8 +667,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_72 = `
-.version 8.5
+	shiftxPtx72 = `
+.version 8.4
 .target sm_72
 .address_size 64
 
@@ -735,8 +747,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_75 = `
-.version 8.5
+	shiftxPtx75 = `
+.version 8.4
 .target sm_75
 .address_size 64
 
@@ -815,8 +827,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_80 = `
-.version 8.5
+	shiftxPtx80 = `
+.version 8.4
 .target sm_80
 .address_size 64
 
@@ -895,8 +907,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_86 = `
-.version 8.5
+	shiftxPtx86 = `
+.version 8.4
 .target sm_86
 .address_size 64
 
@@ -975,8 +987,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_87 = `
-.version 8.5
+	shiftxPtx87 = `
+.version 8.4
 .target sm_87
 .address_size 64
 
@@ -1055,8 +1067,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_89 = `
-.version 8.5
+	shiftxPtx89 = `
+.version 8.4
 .target sm_89
 .address_size 64
 
@@ -1135,8 +1147,8 @@ $L__BB0_5:
 }
 
 `
-	shiftx_ptx_90 = `
-.version 8.5
+	shiftxPtx90 = `
+.version 8.4
 .target sm_90
 .address_size 64
 
