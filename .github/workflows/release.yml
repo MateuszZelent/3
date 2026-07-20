@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and publish Linux release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build the supported CUDA container
+        run: docker build -t mumax3-build -f amumax/Dockerfile .
+
+      - name: Build CUDA kernels in the supported container
+        env:
+          CUDA_CC: 50 52 53 60 61 62 70 72 75 80 86 87 89 90
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -e GOPATH=/tmp/go -e GOCACHE=/tmp/go-cache -e CUDA_CC \
+            -v "$GITHUB_WORKSPACE:/src" -w /src \
+            mumax3-build make cudakernels
+
+      - name: Build and embed frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run check
+          npm run test:unit
+          npm run build
+          rm -rf ../webui/static
+          cp -R dist ../webui/static
+
+      - name: Build release assets in the CUDA container
+        run: |
+          mkdir -p release
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -e GOPATH=/tmp/go -e GOCACHE=/tmp/go-cache \
+            -v "$GITHUB_WORKSPACE:/src" -w /src \
+            mumax3-build sh -ceu '
+              commit_hash="$(git rev-parse --short HEAD)"
+              mkdir -p /tmp/cuda-stubs
+              ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /tmp/cuda-stubs/libcuda.so.1
+              export LD_LIBRARY_PATH=/tmp/cuda-stubs:/usr/local/cuda/lib64
+              go test -vet=off ./cmd/mumax3
+              go build -trimpath -ldflags "-X main.commitHash=$commit_hash" -o release/mumax3 ./cmd/mumax3
+              cp -L /usr/local/cuda/lib64/libcufft.so.11 release/libcufft.so.11
+              cp -L /usr/local/cuda/lib64/libcurand.so.10 release/libcurand.so.10
+            '
+
+      - name: Publish or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/mumax3 release/libcufft.so.11 release/libcurand.so.10 --clobber
+          else
+            gh release create "$TAG" release/mumax3 release/libcufft.so.11 release/libcurand.so.10 --verify-tag --generate-notes
+          fi
