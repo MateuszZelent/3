@@ -24,6 +24,35 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/MateuszZelent/3/master/ins
 
 The default destination is `~/.local/bin`; pass a destination as the first argument to `install.sh` when needed. The target machine still needs a compatible NVIDIA driver. Maintainers can prepare the three GitHub Release assets consumed by the installer with `just package-release`.
 
+### Queue web UI: local, LAN, and reverse proxy
+
+Supplying multiple `.mx3` files starts the GPU queue. By default its overview
+and worker UIs bind to `127.0.0.1`; open `http://localhost:35367` locally.
+
+To use the queue from another machine on a trusted LAN, bind explicitly to all
+interfaces and allow the queue port plus one worker port per GPU through the
+firewall:
+
+```bash
+mumax3 -http=0.0.0.0:35367 job-a.mx3 job-b.mx3
+```
+
+The overview runs on `35367`; workers use `35368`, `35369`, and so on. Links
+preserve the hostname or IP address used by the browser, rather than the
+machine hostname.
+
+For a reverse proxy with one path per internal port, use a final path component
+equal to the queue port. The queue will derive sibling worker paths and retain
+the public HTTPS origin from `Forwarded` or `X-Forwarded-*` headers:
+
+```bash
+mumax3 -http=127.0.0.1:35367/proxy/35367 job-a.mx3 job-b.mx3
+```
+
+Map `/proxy/35367` to the queue and `/proxy/35368`, `/proxy/35369`, etc. to
+the worker ports. Do not expose the UI to untrusted networks: it has no
+authentication; put it behind an authenticated proxy or a VPN.
+
 ## Contributing
 
 Contributions are gratefully accepted. To contribute code, fork our GitHub repo and send a pull request.

@@ -2,6 +2,7 @@ import { previewState } from '$api/incoming/preview';
 import { get } from 'svelte/store';
 import { meshState } from '$api/incoming/mesh';
 import { disposePreview3D } from './preview3D';
+import { previewSampleCoordinateNm } from './preview2DCoordinates';
 import {
 	ECHARTS_THEME_NAME,
 	THEME,
@@ -22,8 +23,8 @@ type ColorScale = {
 type AxisMetrics = {
 	xExtentNm: number;
 	yExtentNm: number;
-	xDisplayStepNm: number;
-	yDisplayStepNm: number;
+	xSampleCount: number;
+	ySampleCount: number;
 	xCategories: number[];
 	yCategories: number[];
 };
@@ -127,7 +128,7 @@ function axisPointerLabelFormatter(axis: 'x' | 'y') {
 		if (params.value === undefined) {
 			return 'NaN';
 		}
-		return `${axis}: ${formatDistanceNm(Number(params.value))} nm`;
+		return `${axis}: ${formatAxisCoordinate(axis, Number(params.value))} nm`;
 	};
 }
 
@@ -182,11 +183,22 @@ function getAxisMetrics(): AxisMetrics {
 	return {
 		xExtentNm,
 		yExtentNm,
-		xDisplayStepNm: xChosenSize > 1 ? xExtentNm / (xChosenSize - 1) : xExtentNm,
-		yDisplayStepNm: yChosenSize > 1 ? yExtentNm / (yChosenSize - 1) : yExtentNm,
+		xSampleCount: xChosenSize,
+		ySampleCount: yChosenSize,
 		xCategories: Array.from({ length: xChosenSize }, (_, index) => index),
 		yCategories: Array.from({ length: yChosenSize }, (_, index) => index)
 	};
+}
+
+function axisCoordinateNm(axis: 'x' | 'y', sampleIndex: number) {
+	const metrics = getAxisMetrics();
+	return axis === 'x'
+		? previewSampleCoordinateNm(sampleIndex, metrics.xSampleCount, metrics.xExtentNm)
+		: previewSampleCoordinateNm(sampleIndex, metrics.ySampleCount, metrics.yExtentNm);
+}
+
+function formatAxisCoordinate(axis: 'x' | 'y', sampleIndex: number) {
+	return formatDistanceNm(axisCoordinateNm(axis, sampleIndex));
 }
 
 function tooltipFormatter(params: any) {
@@ -194,15 +206,12 @@ function tooltipFormatter(params: any) {
 	if (params.value === undefined) {
 		return 'NaN';
 	}
-	const { xDisplayStepNm, yDisplayStepNm } = getAxisMetrics();
-	const xnm = Number(params.value[0]) * xDisplayStepNm;
-	const ynm = Number(params.value[1]) * yDisplayStepNm;
 	const value = Number(params.value[2]);
 	const unitSuffix = ps.unit ? ` ${ps.unit}` : '';
 	return [
 		`<strong>${ps.quantity}</strong>`,
-		`x: ${formatDistanceNm(xnm)} nm`,
-		`y: ${formatDistanceNm(ynm)} nm`,
+		`x: ${formatAxisCoordinate('x', Number(params.value[0]))} nm`,
+		`y: ${formatAxisCoordinate('y', Number(params.value[1]))} nm`,
 		`value: ${formatMagnitude(value)}${unitSuffix}`
 	].join('<br/>');
 }
@@ -214,7 +223,7 @@ function updateData() {
 		return;
 	}
 	const ps = get(previewState);
-	const { xCategories, yCategories, xDisplayStepNm, yDisplayStepNm } = getAxisMetrics();
+	const { xCategories, yCategories } = getAxisMetrics();
 	const visualMap = buildVisualMap(ps.quantity, ps.unit, ps.min, ps.max) as any;
 	chartInstance.setOption(
 		{
@@ -224,7 +233,7 @@ function updateData() {
 				data: xCategories,
 				axisLabel: {
 					formatter: function (value: number) {
-						return formatDistanceNm(Number(value) * xDisplayStepNm);
+						return formatAxisCoordinate('x', Number(value));
 					},
 					hideOverlap: true
 				}
@@ -233,7 +242,7 @@ function updateData() {
 				data: yCategories,
 				axisLabel: {
 					formatter: function (value: number) {
-						return formatDistanceNm(Number(value) * yDisplayStepNm);
+						return formatAxisCoordinate('y', Number(value));
 					},
 					hideOverlap: true
 				}
@@ -276,7 +285,7 @@ function setFullOptions() {
 		return;
 	}
 	const ps = get(previewState);
-	const { xCategories, yCategories, xDisplayStepNm, yDisplayStepNm } = getAxisMetrics();
+	const { xCategories, yCategories } = getAxisMetrics();
 	const visualMap = buildVisualMap(ps.quantity, ps.unit, ps.min, ps.max);
 
 	// @ts-ignore
@@ -338,7 +347,7 @@ function setFullOptions() {
 				axisLabel: {
 					show: true,
 					formatter: function (value: number) {
-						return formatDistanceNm(Number(value) * xDisplayStepNm);
+						return formatAxisCoordinate('x', Number(value));
 					},
 					color: THEME.text2,
 					showMinLabel: true,
@@ -392,7 +401,7 @@ function setFullOptions() {
 				axisLabel: {
 					show: true,
 					formatter: function (value: number) {
-						return formatDistanceNm(Number(value) * yDisplayStepNm);
+						return formatAxisCoordinate('y', Number(value));
 					},
 					color: THEME.text2,
 					showMinLabel: true,

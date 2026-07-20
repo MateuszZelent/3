@@ -6,13 +6,16 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	urlpkg "net/url"
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -27,15 +30,61 @@ var (
 )
 
 func RunQueue(files []string) {
+	web := queueWebAddress{}
+	if *engine.Flag_port != "" {
+		var err error
+		web, err = newQueueWebAddress(*engine.Flag_port)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 	s := NewStateTab(files)
 	s.PrintTo(os.Stdout)
-	if *engine.Flag_port != "" {
-		go s.ListenAndServe(*engine.Flag_port)
-		fmt.Print("//Realtime queue overview available at http://127.0.0.1", *engine.Flag_port, "\n")
+	if web.enabled {
+		go s.ListenAndServe(web.listenAddress())
+		fmt.Printf("//Realtime queue overview available at http://localhost:%d%s\n", web.port, web.basePath)
 	}
-	s.Run()
+	s.Run(web)
 	fmt.Println(numOK.get(), "OK, ", numFailed.get(), "failed")
 	os.Exit(int(exitStatus))
+}
+
+// queueWebAddress describes the queue UI address and the addresses allocated to
+// its worker UIs. A path suffix ending in the queue port is a proxy route, for
+// example 127.0.0.1:35367/proxy/35367; child UIs use sibling routes such as
+// /proxy/35368.
+type queueWebAddress struct {
+	host     string
+	port     int
+	basePath string
+	enabled  bool
+}
+
+func newQueueWebAddress(raw string) (queueWebAddress, error) {
+	host, port, basePath, err := parseWebUIAddress(raw)
+	if err != nil {
+		return queueWebAddress{}, err
+	}
+	if basePath != "" && !strings.HasSuffix(strings.TrimSuffix(basePath, "/"), "/"+strconv.Itoa(port)) {
+		return queueWebAddress{}, fmt.Errorf("queue proxy path %q must end with the queue port %d (for example /proxy/%d)", basePath, port, port)
+	}
+	return queueWebAddress{host: host, port: port, basePath: basePath, enabled: true}, nil
+}
+
+func (a queueWebAddress) listenAddress() string {
+	return net.JoinHostPort(a.host, strconv.Itoa(a.port))
+}
+
+func (a queueWebAddress) jobAddress(gpu int) string {
+	if !a.enabled {
+		return ""
+	}
+	port := a.port + 1 + gpu
+	basePath := a.basePath
+	if basePath != "" {
+		basePath = strings.TrimSuffix(strings.TrimSuffix(basePath, "/"), "/"+strconv.Itoa(a.port)) + "/" + strconv.Itoa(port)
+	}
+	return net.JoinHostPort(a.host, strconv.Itoa(port)) + basePath
 }
 
 // StateTab holds the queue state (list of jobs + statuses).
@@ -87,16 +136,11 @@ func (s *stateTab) Finish(j job) {
 }
 
 // Runs all the jobs in stateTab.
-func (s *stateTab) Run() {
+func (s *stateTab) Run(web queueWebAddress) {
 	idle, nGPU := initGPUs()
 	for {
 		gpu := <-idle
-		addr := ""
-		if *engine.Flag_port != "" {
-			_, p, _ := net.SplitHostPort(*engine.Flag_port)
-			addr = fmt.Sprint(":", atoi(p)+1+gpu) // +1 because Flag_port hosts overview of queue
-		}
-		j, ok := s.StartNext(addr)
+		j, ok := s.StartNext(web.jobAddress(gpu))
 		if !ok {
 			break
 		}
@@ -202,7 +246,7 @@ func (s *stateTab) PrintTo(w io.Writer) {
 	}
 }
 
-func (s *stateTab) RenderHTML(w io.Writer) {
+func (s *stateTab) RenderHTML(w io.Writer, r *http.Request) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	fmt.Fprintln(w, ` 
@@ -216,13 +260,11 @@ func (s *stateTab) RenderHTML(w io.Writer) {
 	<pre>
 `)
 
-	hostname := "localhost"
-	hostname, _ = os.Hostname()
 	for _, j := range s.jobs {
 		if j.webAddr != "" {
-			fmt.Fprint(w, `<b>`, j.uid, ` <a href="`, "http://", hostname+j.webAddr, `">`, j.inFile, " ", j.webAddr, "</a></b>\n")
+			fmt.Fprint(w, `<b>`, j.uid, ` <a href="`, html.EscapeString(queueJobURL(r, j.webAddr)), `">`, html.EscapeString(j.inFile), " ", html.EscapeString(j.webAddr), "</a></b>\n")
 		} else {
-			fmt.Fprint(w, j.uid, " ", j.inFile, "\n")
+			fmt.Fprint(w, j.uid, " ", html.EscapeString(j.inFile), "\n")
 		}
 	}
 
@@ -230,10 +272,140 @@ func (s *stateTab) RenderHTML(w io.Writer) {
 }
 
 func (s *stateTab) ListenAndServe(addr string) {
-	http.Handle("/", s)
-	go http.ListenAndServe(addr, nil)
+	go func() {
+		if err := http.ListenAndServe(addr, s); err != nil && err != http.ErrServerClosed {
+			log.Printf("queue web UI: %v", err)
+		}
+	}()
 }
 
 func (s *stateTab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.RenderHTML(w)
+	s.RenderHTML(w, r)
+}
+
+// queueJobURL retains the public origin used by the browser. This makes links
+// work for localhost, a LAN address, and reverse proxies that set standard
+// Forwarded or X-Forwarded-* headers. A path whose final component is a port
+// is treated as a proxy route and updated to the worker's port.
+func queueJobURL(r *http.Request, webAddr string) string {
+	_, jobPort, jobPath, err := parseWebUIAddress(webAddr)
+	if err != nil {
+		return ""
+	}
+
+	publicURL := publicRequestURL(r)
+	if jobPath != "" {
+		publicURL.Path = joinPublicPath(forwardedPrefix(r), jobPath)
+		return publicURL.String()
+	}
+
+	if path, ok := replaceTrailingPort(publicRequestPath(r), jobPort); ok {
+		publicURL.Path = path
+		return publicURL.String()
+	}
+	publicURL.Host = hostWithPort(publicURL.Host, jobPort)
+	return publicURL.String()
+}
+
+func publicRequestURL(r *http.Request) urlpkg.URL {
+	publicURL := urlpkg.URL{Scheme: "http", Host: r.Host}
+	if r.TLS != nil {
+		publicURL.Scheme = "https"
+	}
+
+	forwardedHost, forwardedProto := forwardedOrigin(r.Header.Get("Forwarded"))
+	if forwardedHost != "" {
+		publicURL.Host = forwardedHost
+	} else if host := firstHeaderValue(r.Header.Get("X-Forwarded-Host")); validPublicHost(host) {
+		publicURL.Host = host
+	}
+	if forwardedProto != "" {
+		publicURL.Scheme = forwardedProto
+	} else if proto := firstHeaderValue(r.Header.Get("X-Forwarded-Proto")); proto == "http" || proto == "https" {
+		publicURL.Scheme = proto
+	}
+	if publicURL.Host == "" {
+		publicURL.Host = "localhost"
+	}
+	return publicURL
+}
+
+func forwardedOrigin(header string) (host, proto string) {
+	first := strings.SplitN(header, ",", 2)[0]
+	for _, item := range strings.Split(first, ";") {
+		key, value, ok := strings.Cut(strings.TrimSpace(item), "=")
+		if !ok {
+			continue
+		}
+		value = strings.Trim(strings.TrimSpace(value), `"`)
+		switch strings.ToLower(key) {
+		case "host":
+			if validPublicHost(value) {
+				host = value
+			}
+		case "proto":
+			if value == "http" || value == "https" {
+				proto = value
+			}
+		}
+	}
+	return host, proto
+}
+
+func firstHeaderValue(value string) string {
+	return strings.TrimSpace(strings.SplitN(value, ",", 2)[0])
+}
+
+func validPublicHost(host string) bool {
+	return host != "" && !strings.ContainsAny(host, " /\\?#@\t\r\n")
+}
+
+func forwardedPrefix(r *http.Request) string {
+	prefix := firstHeaderValue(r.Header.Get("X-Forwarded-Prefix"))
+	if prefix == "" || !strings.HasPrefix(prefix, "/") || strings.ContainsAny(prefix, "?#\r\n") {
+		return ""
+	}
+	return "/" + strings.Trim(prefix, "/")
+}
+
+func publicRequestPath(r *http.Request) string {
+	path := r.URL.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	prefix := forwardedPrefix(r)
+	if prefix == "" || strings.HasPrefix(path, prefix) {
+		return path
+	}
+	if path == "/" {
+		return prefix
+	}
+	return strings.TrimSuffix(prefix, "/") + "/" + strings.TrimPrefix(path, "/")
+}
+
+func joinPublicPath(prefix, path string) string {
+	if prefix == "" || strings.HasPrefix(path, prefix+"/") || path == prefix {
+		return path
+	}
+	return strings.TrimSuffix(prefix, "/") + "/" + strings.TrimPrefix(path, "/")
+}
+
+func replaceTrailingPort(path string, port int) (string, bool) {
+	trimmed := strings.TrimSuffix(path, "/")
+	parts := strings.Split(strings.TrimPrefix(trimmed, "/"), "/")
+	if len(parts) == 0 || parts[len(parts)-1] == "" {
+		return "", false
+	}
+	if _, err := strconv.Atoi(parts[len(parts)-1]); err != nil {
+		return "", false
+	}
+	parts[len(parts)-1] = strconv.Itoa(port)
+	return "/" + strings.Join(parts, "/"), true
+}
+
+func hostWithPort(host string, port int) string {
+	if name, _, err := net.SplitHostPort(host); err == nil {
+		host = name
+	}
+	return net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(port))
 }
