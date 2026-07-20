@@ -19,7 +19,7 @@ Documentation of several tools, like `mumax3-convert`, is available [here](https
 The releases of this repository can be installed without a local Go or CUDA toolkit:
 
 ```bash
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/MateuszZelent/3/main/install.sh)"
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/MateuszZelent/3/master/install.sh)"
 ```
 
 The default destination is `~/.local/bin`; pass a destination as the first argument to `install.sh` when needed. The target machine still needs a compatible NVIDIA driver. Maintainers can prepare the three GitHub Release assets consumed by the installer with `just package-release`.

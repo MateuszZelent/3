@@ -2,7 +2,7 @@
 # Install the current Linux x86_64 Mumax3 release from GitHub.
 #
 # Usage:
-#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/MateuszZelent/3/main/install.sh)"
+#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/MateuszZelent/3/master/install.sh)"
 #   sh install.sh /custom/bin
 
 set -eu
