@@ -30,21 +30,29 @@ var (
 )
 
 func RunQueue(files []string) {
-	web := queueWebAddress{}
+	queueWeb := queueWebAddress{}
+	if *engine.Flag_queueport != "" {
+		var err error
+		queueWeb, err = newQueueWebAddress(*engine.Flag_queueport)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	jobWeb := queueWebAddress{}
 	if *engine.Flag_port != "" {
 		var err error
-		web, err = newQueueWebAddress(*engine.Flag_port)
+		jobWeb, err = newQueueWebAddress(*engine.Flag_port)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
 	s := NewStateTab(files)
 	s.PrintTo(os.Stdout)
-	if web.enabled {
-		go s.ListenAndServe(web.listenAddress())
-		fmt.Printf("//Realtime queue overview available at http://localhost:%d%s\n", web.port, web.basePath)
+	if queueWeb.enabled {
+		go s.ListenAndServe(queueWeb.listenAddress())
+		fmt.Printf("//Realtime queue overview available at http://localhost:%d%s\n", queueWeb.port, queueWeb.basePath)
 	}
-	s.Run(web)
+	s.Run(jobWeb)
 	fmt.Println(numOK.get(), "OK, ", numFailed.get(), "failed")
 	os.Exit(int(exitStatus))
 }

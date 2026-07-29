@@ -10,10 +10,12 @@ import (
 )
 
 var (
-	DmSamples             int     = 10   // number of dm to keep for convergence check
-	StopMaxDm             float64 = 1e-6 // stop minimizer if sampled dm is smaller than this
-	MinimizeWallClockTime float64 = -1.0 // wall-clock time limit for minimization
-	MinimizeConverged     bool           // true if minimize converged, and false if the maximum wall-clock time is reached
+	DmSamples              int     = 10   // number of dm to keep for convergence check
+	StopMaxDm              float64 = 1e-6 // stop minimizer if sampled dm is smaller than this
+	MinimizeWallClockTime  float64 = -1.0 // wall-clock time limit for minimization
+	MinimizeMaxSteps       int     = 1_000_000
+	MinimizeMaxTimeSeconds float64 = 7 * 24 * 60 * 60
+	MinimizeConverged      bool    // true if minimize converged, and false if the maximum wall-clock time is reached
 )
 
 func init() {
@@ -21,6 +23,8 @@ func init() {
 	DeclVar("MinimizerStop", &StopMaxDm, "Stopping max dM for Minimize")
 	DeclVar("MinimizerSamples", &DmSamples, "Number of max dM to collect for Minimize convergence check.")
 	DeclVar("MinimizeWallClockTime", &MinimizeWallClockTime, "Wall-clock time limit (seconds) for Minimize that will interrupt the minimization if exceeded. Set to -1 (default) to disable. An interrupted minimization does not guarantee a correct solution.")
+	DeclVar("MinimizeMaxSteps", &MinimizeMaxSteps, "Maximum number of steps in one Minimize call")
+	DeclVar("MinimizeMaxTimeSeconds", &MinimizeMaxTimeSeconds, "Amumax-compatible maximum wall-clock time for Minimize")
 }
 
 // fixed length FIFO. Items can be added but not removed
@@ -140,7 +144,11 @@ func Minimize() bool {
 	// if wall-clock time is zero, skip minimization entirely (zero steps), and don't change any settings
 	MinimizeConverged = false
 	TimerStart := time.Now()
-	if MinimizeWallClockTime == 0 {
+	effectiveWallClock := MinimizeMaxTimeSeconds
+	if MinimizeWallClockTime >= 0 && (effectiveWallClock < 0 || MinimizeWallClockTime < effectiveWallClock) {
+		effectiveWallClock = MinimizeWallClockTime
+	}
+	if effectiveWallClock == 0 || MinimizeMaxSteps == 0 {
 		MinimizeConverged = false
 		return MinimizeConverged
 	}
@@ -177,9 +185,11 @@ func Minimize() bool {
 		k:      nil,
 		lastDm: FifoRing(DmSamples)}
 	stepper = &mini
+	stopStep := NSteps + MinimizeMaxSteps
 
 	cond := func() bool {
-		return (mini.lastDm.count < DmSamples || mini.lastDm.Max() > StopMaxDm) && WallclockTimer(TimerStart, MinimizeWallClockTime)
+		withinSteps := MinimizeMaxSteps < 0 || NSteps < stopStep
+		return (mini.lastDm.count < DmSamples || mini.lastDm.Max() > StopMaxDm) && withinSteps && WallclockTimer(TimerStart, effectiveWallClock)
 	}
 
 	RunWhile(cond)

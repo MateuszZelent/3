@@ -65,10 +65,17 @@ func DefaultMetadata(size [3]int, ncomp, steps int, chunks [4]int) ArrayMetadata
 }
 
 func WriteGroup(dir string) error {
-	if err := httpfs.Mkdir(dir); err != nil && !isAlreadyExists(err) {
+	if err := ensureDir(dir); err != nil {
 		return err
 	}
 	return httpfs.Put(join(dir, ".zgroup"), []byte(`{"zarr_format":2}`))
+}
+
+func ensureDir(dir string) error {
+	if err := httpfs.Mkdir(dir); err != nil && !isAlreadyExists(err) {
+		return err
+	}
+	return nil
 }
 
 func WriteMetadata(dir string, metadata ArrayMetadata) error {
@@ -102,13 +109,22 @@ func WriteAttributes(dir string, attrs Attributes) error {
 	return httpfs.Put(join(dir, ".zattrs"), b)
 }
 
+// WriteObjectAttributes writes arbitrary group-level Zarr v2 attributes.
+func WriteObjectAttributes(dir string, attrs map[string]any) error {
+	b, err := json.MarshalIndent(attrs, "", "  ")
+	if err != nil {
+		return err
+	}
+	return httpfs.Put(join(dir, ".zattrs"), b)
+}
+
 // WriteSeries writes a complete float64 one-dimensional Zarr array. Table
 // columns are finalized through this path.
 func WriteSeries(dir string, values []float64) error {
 	if len(values) == 0 {
 		return nil
 	}
-	if err := WriteGroup(dir); err != nil {
+	if err := ensureDir(dir); err != nil {
 		return err
 	}
 	metadata := SeriesMetadata{
@@ -148,7 +164,7 @@ func WriteStep(dir string, step int, src *data.Slice, chunks [4]int) error {
 	if err := validateChunkShape(src.Size(), src.NComp(), chunks); err != nil {
 		return err
 	}
-	if err := WriteGroup(dir); err != nil {
+	if err := ensureDir(dir); err != nil {
 		return err
 	}
 

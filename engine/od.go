@@ -4,6 +4,8 @@ package engine
 
 import (
 	"github.com/mumax/3/httpfs"
+	"github.com/mumax/3/util"
+	"os"
 	"strings"
 )
 
@@ -35,6 +37,15 @@ func InitIO(inputfile, od string, force bool) {
 		httpfs.SetWD(outputdir + "/../")
 	}
 	LogOut("output directory:", outputdir)
+
+	if *Flag_skipexist && !strings.HasPrefix(od, "http://") {
+		if _, err := os.Stat(strings.TrimSuffix(od, "/")); err == nil {
+			LogOut("output directory already exists; skipping due to -skip-exist:", outputdir)
+			os.Exit(0)
+		} else if !os.IsNotExist(err) {
+			util.FatalErr(err)
+		}
+	}
 
 	if force {
 		httpfs.Remove(od)

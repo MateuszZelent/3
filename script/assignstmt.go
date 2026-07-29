@@ -32,7 +32,11 @@ func (w *World) compileAssignStmt(a *ast.AssignStmt) Expr {
 // compile a = b
 func (w *World) compileAssign(a *ast.AssignStmt, lhs ast.Expr, r Expr) Expr {
 	l := w.compileLvalue(lhs)
-	return &assignStmt{lhs: l, rhs: typeConv(a.Pos(), r, inputType(l))}
+	name := ""
+	if ident, ok := lhs.(*ast.Ident); ok {
+		name = ident.Name
+	}
+	return &assignStmt{lhs: l, rhs: typeConv(a.Pos(), r, inputType(l)), name: name}
 }
 
 // compile a := b
@@ -64,13 +68,22 @@ func (w *World) compileDefine(a *ast.AssignStmt, lhs ast.Expr, r Expr) Expr {
 }
 
 type assignStmt struct {
-	lhs LValue
-	rhs Expr
+	lhs  LValue
+	rhs  Expr
+	name string
 	void
 }
 
+// AddMetadata is installed by the engine to capture top-level script
+// assignments in structured-output provenance.
+var AddMetadata = func(string, interface{}) {}
+
 func (a *assignStmt) Eval() interface{} {
-	a.lhs.SetValue(a.rhs.Eval())
+	value := a.rhs.Eval()
+	if loopNestingCount == 0 && a.name != "" {
+		AddMetadata(a.name, value)
+	}
+	a.lhs.SetValue(value)
 	return nil
 }
 

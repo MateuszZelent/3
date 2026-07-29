@@ -1,6 +1,63 @@
 package engine
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/mumax/3/zarr"
+)
+
+func TestAmumaxStorageDefaults(t *testing.T) {
+	if StorageFormat != StorageFormatZarr {
+		t.Fatalf("StorageFormat = %v, want Zarr", StorageFormat)
+	}
+	if *Flag_storage != "zarr" {
+		t.Fatalf("-storage-format default = %q, want zarr", *Flag_storage)
+	}
+	if got, want := *Flag_cachedir, filepath.Join(os.TempDir(), "amumax_kernels"); got != want {
+		t.Fatalf("-cache default = %q, want %q", got, want)
+	}
+}
+
+func TestAmumaxMinimizeLimitsAreRegistered(t *testing.T) {
+	for _, name := range []string{"minimizemaxsteps", "minimizemaxtimeseconds"} {
+		if _, ok := World.Identifiers[name]; !ok {
+			t.Fatalf("MX3 identifier %q is missing", name)
+		}
+	}
+}
+
+func TestPeriodicStructuredMetadataIncludesGPU(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "run.zarr") + "/"
+	previousOutput, previousFormat := outputdir, StorageFormat
+	previousMetadata, previousLastSave := structuredOutput.metadata, structuredOutput.lastMetadataSave
+	defer func() {
+		outputdir, StorageFormat = previousOutput, previousFormat
+		structuredOutput.metadata, structuredOutput.lastMetadataSave = previousMetadata, previousLastSave
+	}()
+	outputdir, StorageFormat = dir, StorageFormatZarr
+	structuredOutput.metadata = map[string]any{"start_time": "now"}
+	structuredOutput.lastMetadataSave = time.Now().Add(-6 * time.Second)
+	if err := zarr.WriteGroup(dir); err != nil {
+		t.Fatal(err)
+	}
+	SetStructuredGPUInfo("test GPU")
+	flushStructuredMetadata(false)
+	b, err := os.ReadFile(filepath.Join(dir, ".zattrs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var attrs map[string]any
+	if err := json.Unmarshal(b, &attrs); err != nil {
+		t.Fatal(err)
+	}
+	if attrs["gpu"] != "test GPU" {
+		t.Fatalf("metadata = %#v", attrs)
+	}
+}
 
 func TestClosestDivisor(t *testing.T) {
 	for _, tc := range []struct{ value, requested, want int }{

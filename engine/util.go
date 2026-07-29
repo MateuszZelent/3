@@ -93,6 +93,10 @@ func Fprintln(filename string, msg ...interface{}) {
 
 // Read a magnetization state from .dump file.
 func LoadFile(fname string) *data.Slice {
+	// Save/AutoSave uses the asynchronous output queue. Loading immediately
+	// after saving must observe a complete dataset and metadata.
+	drainOutput()
+	fname = resolveLoadPath(fname)
 	if h5File, dataset, ok := parseHDF5Reference(fname); ok {
 		s, err := structuredhdf5.ReadArray(h5File, dataset)
 		util.FatalErr(err)
@@ -118,6 +122,16 @@ func LoadFile(fname string) *data.Slice {
 	}
 	util.FatalErr(err)
 	return s
+}
+
+func resolveLoadPath(fname string) string {
+	if fname == "" || path.IsAbs(fname) || strings.HasPrefix(fname, "http://") {
+		return fname
+	}
+	if outputdir != "" {
+		return path.Clean(path.Join(path.Dir(strings.TrimSuffix(OD(), "/")), fname))
+	}
+	return path.Clean(fname)
 }
 
 func parseHDF5Reference(reference string) (filename, dataset string, ok bool) {

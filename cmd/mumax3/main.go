@@ -19,6 +19,8 @@ import (
 	"github.com/mumax/3/cuda"
 	"github.com/mumax/3/engine"
 	"github.com/mumax/3/script"
+	mx3template "github.com/mumax/3/template"
+	"github.com/mumax/3/updater"
 	"github.com/mumax/3/util"
 	"github.com/mumax/3/webui"
 )
@@ -27,16 +29,55 @@ var (
 	flag_failfast = flag.Bool("failfast", false, "If one simulation fails, stop entire batch immediately")
 	flag_maxGPUs  = flag.Int("max_gpus", 0, "Maximum number of GPUs used by a batch (0 uses all available GPUs)")
 	flag_test     = flag.Bool("test", false, "Cuda test (internal)")
-	flag_version  = flag.Bool("v", true, "Print version")
+	flag_version  = flag.Bool("v", false, "Print version and exit")
 	flag_vet      = flag.Bool("vet", false, "Check input files for errors, but don't run them")
+	flag_update   = flag.Bool("update", false, "Update this binary from the latest GitHub release")
 	// more flags in engine/gofiles.go
 	commitHash string
 )
 
+func init() {
+	flag.BoolVar(flag_version, "version", false, "Alias for -v")
+	flag.BoolVar(flag_update, "u", false, "Alias for -update")
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [options] [mx3 paths...]\n", os.Args[0])
+		fmt.Fprintf(flag.CommandLine.Output(), "       %s template [--flat] [--run] TEMPLATE.mx3\n\nOptions:\n", os.Args[0])
+		flag.PrintDefaults()
+	}
+}
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "template" {
+		runTemplateCommand(os.Args[2:])
+		return
+	}
 	flag.Parse()
 	log.SetPrefix("")
-	log.SetFlags(0)
+	if *engine.Flag_debug {
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+		*engine.Flag_webdebug = true
+	} else {
+		log.SetFlags(0)
+	}
+	if *engine.Flag_webuidisable {
+		*engine.Flag_port = ""
+		*engine.Flag_queueport = ""
+	} else if *engine.Flag_port == "" && !engine.FlagPassed("webui-queue-addr") {
+		*engine.Flag_queueport = ""
+	}
+	util.SetProgressHidden(*engine.Flag_hideprogress)
+	if *flag_version {
+		printVersion()
+		return
+	}
+	if *flag_update {
+		fmt.Println("Updating mumax3 from", updater.DefaultURL)
+		if err := updater.Apply(updater.DefaultURL); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Update complete")
+		return
+	}
 	engine.FftEnabled = *engine.Flag_fft
 	if *engine.Flag_core {
 		engine.EnableCoreTracking()
@@ -53,12 +94,10 @@ func main() {
 	}
 
 	cuda.Init(*engine.Flag_gpu)
+	engine.SetStructuredGPUInfo(cuda.GPUInfo)
+	printVersion()
 
 	cuda.Synchronous = *engine.Flag_sync
-	if *flag_version {
-		printVersion()
-	}
-
 	// used by bootstrap launcher to test cuda
 	// successful exit means cuda was initialized fine
 	if *flag_test {
@@ -81,6 +120,33 @@ func main() {
 		runFileAndServe(flag.Arg(0))
 	default:
 		RunQueue(flag.Args())
+	}
+}
+
+func runTemplateCommand(args []string) {
+	flags := flag.NewFlagSet("template", flag.ExitOnError)
+	flat := flags.Bool("flat", false, "Generate files without nested directories")
+	run := flags.Bool("run", false, "Run every generated MX3 file")
+	_ = flags.Parse(args)
+	if flags.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "usage: mumax3 template [--flat] [--run] TEMPLATE.mx3")
+		os.Exit(2)
+	}
+	files, err := mx3template.Generate(flags.Arg(0), mx3template.Options{Flat: *flat})
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, filename := range files {
+		fmt.Println(filename)
+	}
+	if *run {
+		for _, filename := range files {
+			command := exec.Command(os.Args[0], "--webui-disable", filename)
+			command.Stdout, command.Stderr, command.Stdin = os.Stdout, os.Stderr, os.Stdin
+			if err := command.Run(); err != nil {
+				log.Fatal(err)
+			}
+		}
 	}
 }
 
@@ -233,7 +299,9 @@ func printVersion() {
 	engine.LogOut(engine.UNAME)
 	engine.LogOut(fmt.Sprintf("commit hash: %s", commitHash))
 	engine.LogOut(getCPUInfo())
-	engine.LogOut(fmt.Sprintf("GPU info: %s, using cc=%d PTX", cuda.GPUInfo, cuda.UseCC))
+	if cuda.GPUInfo != "" {
+		engine.LogOut(fmt.Sprintf("GPU info: %s, using cc=%d PTX", cuda.GPUInfo, cuda.UseCC))
+	}
 	osInfo := fmt.Sprintf("OS  info: %s, Hostname: %s", getOSInfo(), getHostname())
 	engine.LogOut(osInfo)
 	engine.LogOut(fmt.Sprintf("Timestamp: %s", time.Now().Format("2006-01-02 15:04:05")))

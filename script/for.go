@@ -10,7 +10,11 @@ type forStmt struct {
 	void
 }
 
+var loopNestingCount int
+
 func (b *forStmt) Eval() interface{} {
+	loopNestingCount++
+	defer func() { loopNestingCount-- }()
 	for b.init.Eval(); b.cond.Eval().(bool); b.post.Eval() {
 		b.body.Eval()
 	}

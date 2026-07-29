@@ -1,7 +1,9 @@
 package zarr
 
 import (
+	"encoding/json"
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -24,6 +26,9 @@ func TestChunkedRoundTrip(t *testing.T) {
 	if err := WriteStep(dir, 0, src, [4]int{2, 3, 2, 2}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := os.Stat(filepath.Join(dir, ".zgroup")); !os.IsNotExist(err) {
+		t.Fatalf("array directory must not contain .zgroup: %v", err)
+	}
 	got, err := ReadStep(dir, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -42,6 +47,28 @@ func TestChunkedRoundTrip(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestObjectAttributes(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "run.zarr")
+	if err := WriteGroup(dir); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"Nx": 16, "dx": 2e-9, "start_time": "now"}
+	if err := WriteObjectAttributes(dir, want); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".zattrs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["Nx"] != float64(16) || got["dx"] != 2e-9 || got["start_time"] != "now" {
+		t.Fatalf("attributes = %#v", got)
 	}
 }
 

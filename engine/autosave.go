@@ -27,6 +27,7 @@ func DoOutput() {
 	if Table.needSave() {
 		Table.Save()
 	}
+	flushStructuredMetadata(false)
 }
 
 // Register quant to be auto-saved every period.

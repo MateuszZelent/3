@@ -124,6 +124,7 @@ func SetMesh(Nx, Ny, Nz int, cellSizeX, cellSizeY, cellSizeZ float64, pbcx, pbcy
 	lazy_cellsize = []float64{cellSizeX, cellSizeY, cellSizeZ}
 	lazy_pbc = []int{pbcx, pbcy, pbcz}
 	syncMeshCompatibility([3]int{Nx, Ny, Nz}, [3]float64{cellSizeX, cellSizeY, cellSizeZ}, [3]int{pbcx, pbcy, pbcz})
+	updateStructuredMeshMetadata()
 }
 
 func printf(f float64) float32 {

@@ -7,10 +7,12 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mumax/3/cuda"
 	"github.com/mumax/3/hdf5"
 	"github.com/mumax/3/httpfs"
+	"github.com/mumax/3/script"
 	"github.com/mumax/3/zarr"
 )
 
@@ -22,9 +24,9 @@ const (
 	StorageFormatHDF5
 )
 
-// StorageFormat defaults to OVF to preserve upstream mumax3 behavior. Scripts
-// can select ZARR or HDF5 before Save/AutoSave calls.
-var StorageFormat = StorageFormatOVF
+// StorageFormat defaults to Zarr, matching Amumax. OVF remains available with
+// -storage-format=ovf or StorageFormat = OVF.
+var StorageFormat = StorageFormatZarr
 
 type storageFormatValue struct{}
 
@@ -53,6 +55,7 @@ func Chunk(x, y, z, components int) Chunking {
 }
 
 func init() {
+	script.AddMetadata = addStructuredMetadata
 	DeclROnly("OVF", StorageFormatOVF, "StorageFormat = OVF keeps standard mumax3 OVF output")
 	DeclROnly("ZARR", StorageFormatZarr, "StorageFormat = ZARR selects chunked Zarr v2 output")
 	DeclROnly("HDF5", StorageFormatHDF5, "StorageFormat = HDF5 selects per-quantity HDF5 output")
@@ -61,6 +64,26 @@ func init() {
 	DeclFunc("SaveAsChunk", SaveAsChunk, "Save a quantity as a structured dataset using explicit chunk counts")
 	DeclFunc("AutoSaveAs", AutoSaveAs, "Auto-save a quantity as a named structured dataset")
 	DeclFunc("AutoSaveAsChunk", AutoSaveAsChunk, "Auto-save a named structured dataset using explicit chunk counts")
+}
+
+func addStructuredMetadata(key string, value interface{}) {
+	if key == "" || value == nil {
+		return
+	}
+	structuredOutput.mu.Lock()
+	defer structuredOutput.mu.Unlock()
+	switch reflected := reflect.ValueOf(value); reflected.Kind() {
+	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64, reflect.String:
+		structuredOutput.metadata[key] = value
+	case reflect.Array, reflect.Slice:
+		structuredOutput.metadata[key] = fmt.Sprint(value)
+	case reflect.Ptr:
+		if !reflected.IsNil() {
+			structuredOutput.metadata[key] = fmt.Sprint(reflected.Elem().Interface())
+		}
+	}
 }
 
 type structuredDataset struct {
@@ -75,11 +98,18 @@ type structuredDataset struct {
 }
 
 type structuredOutputState struct {
-	datasets map[string]*structuredDataset
-	hdf5     *hdf5.MultiWriter
+	mu               sync.Mutex
+	datasets         map[string]*structuredDataset
+	hdf5             *hdf5.MultiWriter
+	metadata         map[string]any
+	started          time.Time
+	lastMetadataSave time.Time
 }
 
-var structuredOutput = structuredOutputState{datasets: make(map[string]*structuredDataset)}
+var structuredOutput = structuredOutputState{
+	datasets: make(map[string]*structuredDataset),
+	metadata: make(map[string]any),
+}
 
 func ensureStructuredBackend(format StorageFormatType) error {
 	switch format {
@@ -103,6 +133,49 @@ func ensureStructuredBackend(format StorageFormatType) error {
 
 func initStructuredOutput() {
 	CheckRecoverable(ensureStructuredBackend(StorageFormat))
+	structuredOutput.started = StartTime
+	structuredOutput.lastMetadataSave = time.Now()
+	structuredOutput.metadata["start_time"] = StartTime.Format(time.UnixDate)
+	if StorageFormat == StorageFormatZarr {
+		CheckRecoverable(zarr.WriteObjectAttributes(OD(), structuredOutput.metadata))
+	}
+}
+
+func SetStructuredGPUInfo(info string) {
+	structuredOutput.mu.Lock()
+	defer structuredOutput.mu.Unlock()
+	structuredOutput.metadata["gpu"] = info
+}
+
+func flushStructuredMetadata(force bool) {
+	if StorageFormat != StorageFormatZarr || outputdir == "" {
+		return
+	}
+	structuredOutput.mu.Lock()
+	defer structuredOutput.mu.Unlock()
+	if !force && time.Since(structuredOutput.lastMetadataSave) < 5*time.Second {
+		return
+	}
+	CheckRecoverable(zarr.WriteObjectAttributes(OD(), structuredOutput.metadata))
+	structuredOutput.lastMetadataSave = time.Now()
+}
+
+func updateStructuredMeshMetadata() {
+	if StorageFormat != StorageFormatZarr || outputdir == "" {
+		return
+	}
+	structuredOutput.mu.Lock()
+	defer structuredOutput.mu.Unlock()
+	mesh := Mesh()
+	size, cell, pbc := mesh.Size(), mesh.CellSize(), mesh.PBC()
+	for index, name := range []string{"x", "y", "z"} {
+		structuredOutput.metadata["N"+name] = size[index]
+		structuredOutput.metadata["d"+name] = cell[index]
+		structuredOutput.metadata["T"+name] = float64(size[index]) * cell[index]
+		structuredOutput.metadata["PBC"+name] = pbc[index]
+	}
+	CheckRecoverable(zarr.WriteObjectAttributes(OD(), structuredOutput.metadata))
+	structuredOutput.lastMetadataSave = time.Now()
 }
 
 func activeStructuredFormat() StorageFormatType {
@@ -171,7 +244,7 @@ func getOrCreateStructuredDataset(quantity Quantity, name string, requested Chun
 	if format == StorageFormatZarr {
 		dir := OD() + name
 		CheckRecoverable(httpfs.Remove(dir))
-		CheckRecoverable(zarr.WriteGroup(dir))
+		CheckRecoverable(httpfs.Mkdir(dir))
 	}
 	return dataset
 }
@@ -215,6 +288,14 @@ func (state *structuredOutputState) saveIfNeeded() {
 
 func closeStructuredOutput() {
 	drainOutput()
+	if StorageFormat == StorageFormatZarr && outputdir != "" {
+		structuredOutput.mu.Lock()
+		structuredOutput.metadata["steps"] = NSteps
+		structuredOutput.metadata["end_time"] = time.Now().Format(time.UnixDate)
+		structuredOutput.metadata["total_time"] = time.Since(structuredOutput.started).String()
+		CheckRecoverable(zarr.WriteObjectAttributes(OD(), structuredOutput.metadata))
+		structuredOutput.mu.Unlock()
+	}
 	if structuredOutput.hdf5 != nil {
 		for _, dataset := range structuredOutput.datasets {
 			if dataset.format == StorageFormatHDF5 && len(dataset.times) > 0 {

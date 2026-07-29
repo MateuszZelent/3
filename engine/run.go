@@ -166,9 +166,18 @@ func adaptDt(corr float64) {
 
 // Run the simulation for a number of seconds.
 func Run(seconds float64) {
+	start := Time
 	stop := Time + seconds
 	alarm = stop // don't have dt adapt to go over alarm
-	RunWhile(func() bool { return Time < stop })
+	RunWhile(func() bool {
+		progress := 1
+		if stop > start {
+			progress = int((Time - start) / (stop - start) * 1_000_000)
+		}
+		util.Progress(progress, 1_000_000, "Running simulation")
+		return Time < stop
+	})
+	util.FinishProgress("Running simulation")
 }
 
 // Run the simulation for a number of steps.
