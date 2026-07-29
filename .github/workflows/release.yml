@@ -54,18 +54,21 @@ jobs:
           cp -R dist ../webui/static
 
       - name: Build release assets in the CUDA container
+        env:
+          BUILD_VERSION: ${{ github.ref_name }}
         run: |
           mkdir -p release
           docker run --rm --user "$(id -u):$(id -g)" \
-            -e GOPATH=/tmp/go -e GOCACHE=/tmp/go-cache \
+            -e GOPATH=/tmp/go -e GOCACHE=/tmp/go-cache -e BUILD_VERSION \
             -v "$GITHUB_WORKSPACE:/src" -w /src \
             mumax3-build sh -ceu '
               commit_hash="$(git rev-parse --short HEAD)"
+              build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
               mkdir -p /tmp/cuda-stubs
               ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /tmp/cuda-stubs/libcuda.so.1
               export LD_LIBRARY_PATH=/tmp/cuda-stubs:/usr/local/cuda/lib64
               go test -vet=off ./cmd/mumax3
-              go build -trimpath -ldflags "-X main.commitHash=$commit_hash" -o release/mumax3 ./cmd/mumax3
+              go build -trimpath -ldflags "-X main.commitHash=$commit_hash -X main.buildVersion=$BUILD_VERSION -X main.buildDate=$build_date" -o release/mumax3 ./cmd/mumax3
               cp -L /usr/local/cuda/lib64/libcufft.so.11 release/libcufft.so.11
               cp -L /usr/local/cuda/lib64/libcurand.so.10 release/libcurand.so.10
             '

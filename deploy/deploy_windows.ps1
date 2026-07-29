@@ -114,7 +114,10 @@ foreach ($CUDA_VERSION_STR in $CUDA_VERSIONS ) {
         $COMMIT_HASH = "unknown"
         Write-Host "Warning: Could not determine Git commit hash. Using 'unknown'."
     }
-    go install -ldflags "-X main.commitHash=$COMMIT_HASH" -v "github.com/mumax/3/..."
+    $BUILD_VERSION = (git describe --tags --always --dirty 2>$null)
+    if (-not $BUILD_VERSION) { $BUILD_VERSION = "development" }
+    $BUILD_DATE = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    go install -ldflags "-X main.commitHash=$COMMIT_HASH -X main.buildVersion=$BUILD_VERSION -X main.buildDate=$BUILD_DATE" -v "github.com/mumax/3/..."
 
     # Copy the mumax3 executables and the used cuda libraries to the build directory
     Remove-Item -ErrorAction Ignore -Recurse ${builddir}

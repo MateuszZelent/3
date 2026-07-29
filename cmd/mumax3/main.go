@@ -33,13 +33,16 @@ var (
 	flag_vet      = flag.Bool("vet", false, "Check input files for errors, but don't run them")
 	flag_update   = flag.Bool("update", false, "Update this binary from the latest GitHub release")
 	// more flags in engine/gofiles.go
-	commitHash string
+	commitHash   string
+	buildVersion = "development"
+	buildDate    = "unknown"
 )
 
 func init() {
 	flag.BoolVar(flag_version, "version", false, "Alias for -v")
 	flag.BoolVar(flag_update, "u", false, "Alias for -update")
 	flag.Usage = func() {
+		fmt.Fprintln(flag.CommandLine.Output(), buildSummary())
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [options] [mx3 paths...]\n", os.Args[0])
 		fmt.Fprintf(flag.CommandLine.Output(), "       %s template [--flat] [--run] TEMPLATE.mx3\n\nOptions:\n", os.Args[0])
 		flag.PrintDefaults()
@@ -297,7 +300,7 @@ func parseWebUIAddress(raw string) (host string, port int, basePath string, err 
 // print version to stdout
 func printVersion() {
 	engine.LogOut(engine.UNAME)
-	engine.LogOut(fmt.Sprintf("commit hash: %s", commitHash))
+	engine.LogOut(buildSummary())
 	engine.LogOut(getCPUInfo())
 	if cuda.GPUInfo != "" {
 		engine.LogOut(fmt.Sprintf("GPU info: %s, using cc=%d PTX", cuda.GPUInfo, cuda.UseCC))
@@ -311,6 +314,14 @@ func printVersion() {
 	engine.LogOut("  If you use mumax in any work or publication,                      //")
 	engine.LogOut("  we kindly ask you to cite the references in references.bib        //")
 	engine.LogOut("********************************************************************//")
+}
+
+func buildSummary() string {
+	commit := commitHash
+	if commit == "" {
+		commit = "unknown"
+	}
+	return fmt.Sprintf("mumax3 build: version=%s commit=%s built=%s", buildVersion, commit, buildDate)
 }
 
 func getHostname() string {

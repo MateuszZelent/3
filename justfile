@@ -34,7 +34,9 @@ package-release: build-cuda build-frontend
 	sudo podman run --rm --user "$(id -u):$(id -g)" -e GOPATH=/tmp/go -e GOCACHE=/tmp/go-cache -e CUDA_CC="{{cuda_cc}}" -v {{repo_dir}}:/src -w /src matmoa/amumax:build sh -ceu '
 		mkdir -p build
 		commit_hash="$(git rev-parse --short HEAD 2>/dev/null || printf unknown)"
-		go build -trimpath -ldflags "-X main.commitHash=$commit_hash" -o build/mumax3 ./cmd/mumax3
+		build_version="$(git describe --tags --always --dirty 2>/dev/null || printf development)"
+		build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+		go build -trimpath -ldflags "-X main.commitHash=$commit_hash -X main.buildVersion=$build_version -X main.buildDate=$build_date" -o build/mumax3 ./cmd/mumax3
 		cp -L /usr/local/cuda/lib64/libcufft.so.11 build/libcufft.so.11
 		cp -L /usr/local/cuda/lib64/libcurand.so.10 build/libcurand.so.10
 	'

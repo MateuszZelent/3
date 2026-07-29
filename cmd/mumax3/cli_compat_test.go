@@ -30,7 +30,21 @@ func TestUsageMentionsTemplateCommand(t *testing.T) {
 	flag.CommandLine.SetOutput(&output)
 	defer flag.CommandLine.SetOutput(previous)
 	flag.Usage()
-	if !strings.Contains(output.String(), "template [--flat] [--run]") {
+	usage := output.String()
+	if !strings.Contains(usage, "template [--flat] [--run]") {
 		t.Fatalf("usage = %q", output.String())
+	}
+	if !strings.Contains(usage, "mumax3 build: version=") || !strings.Contains(usage, " commit=") || !strings.Contains(usage, " built=") {
+		t.Fatalf("usage does not contain build identity: %q", usage)
+	}
+}
+
+func TestBuildSummaryIncludesInjectedIdentity(t *testing.T) {
+	oldVersion, oldCommit, oldDate := buildVersion, commitHash, buildDate
+	defer func() { buildVersion, commitHash, buildDate = oldVersion, oldCommit, oldDate }()
+	buildVersion, commitHash, buildDate = "v3.11.2", "abcdef12", "2026-07-29T13:30:00Z"
+	want := "mumax3 build: version=v3.11.2 commit=abcdef12 built=2026-07-29T13:30:00Z"
+	if got := buildSummary(); got != want {
+		t.Fatalf("buildSummary() = %q, want %q", got, want)
 	}
 }
