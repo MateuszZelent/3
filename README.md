@@ -22,7 +22,17 @@ The releases of this repository can be installed without a local Go or CUDA tool
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/MateuszZelent/3/master/install.sh)"
 ```
 
-The default destination is `~/.local/bin`; pass a destination as the first argument to `install.sh` when needed. The target machine still needs a compatible NVIDIA driver. Maintainers can prepare the three GitHub Release assets consumed by the installer with `just package-release`.
+The default destination is `~/.local/bin`; pass a destination as the first argument to `install.sh` when needed. The target machine still needs a compatible NVIDIA driver.
+
+Maintainers publish a release from a clean, synchronized `master` checkout with:
+
+```bash
+just release
+```
+
+The recipe derives the next dated tag from `engine.VERSION` (for example `v3.12.0-20260818`), asks for confirmation, and pushes the annotated tag. The tag triggers `.github/workflows/release.yml`, which builds, tests, and uploads the installer assets. Override the inferred tag only when needed with `MUMAX_RELEASE_VERSION=v3.12.1-20260818 just release`. Set `MUMAX_RELEASE_YES=1` only for an intentional non-interactive invocation.
+
+Use `just package-release` to prepare the three release assets locally without publishing a tag.
 
 ### Queue web UI: local, LAN, and reverse proxy
 

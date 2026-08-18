@@ -24,6 +24,23 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
+      - name: Validate release tag
+        shell: bash
+        run: |
+          source_version="$(awk -F'"' '/^const VERSION = "mumax [0-9]+\.[0-9]+"$/ { sub(/^mumax /, "", $2); print $2 }' engine/engine.go)"
+          release_tag="${GITHUB_REF_NAME}"
+          release_core="${release_tag%-*}"
+          release_series="${release_core#v}"
+          release_series="${release_series%.*}"
+          if [[ ! "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[0-9]{8}$ ]]; then
+            printf 'Tag %s must use vMAJOR.MINOR.PATCH-YYYYMMDD.\n' "$release_tag" >&2
+            exit 1
+          fi
+          if [[ -z "$source_version" || "$release_series" != "$source_version" ]]; then
+            printf 'Tag %s does not match engine version %s.\n' "$release_tag" "$source_version" >&2
+            exit 1
+          fi
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:

@@ -28,3 +28,5 @@ node_modules/
 /amumax2
 /build/
 /.config/
+test/*.zarr
+test/hanadi.mx3
