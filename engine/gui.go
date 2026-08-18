@@ -32,6 +32,7 @@ type guistate struct {
 	mutex              sync.Mutex          // protects eventCacheBreaker and keepalive
 	_eventCacheBreaker int                 // changed on any event to make sure display is updated
 	keepalive          time.Time
+	browserSeen        bool
 }
 
 // Returns the time when updateKeepAlive was called.
@@ -41,11 +42,18 @@ func (g *guistate) KeepAlive() time.Time {
 	return g.keepalive
 }
 
+func (g *guistate) browserDisconnected(now time.Time) bool {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	return g.browserSeen && now.Sub(g.keepalive) >= Timeout
+}
+
 // Called on each http request to signal browser is still open.
 func (g *guistate) UpdateKeepAlive() {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
 	g.keepalive = time.Now()
+	g.browserSeen = true
 }
 
 func nop() {}
@@ -62,10 +70,12 @@ func (g *guistate) RunInteractive() {
 	}()
 
 	fmt.Println("//entering interactive mode")
-	g.UpdateKeepAlive()
-	for time.Since(g.KeepAlive()) < Timeout {
+	for {
 		f := <-Inject
 		f()
+		if g.browserDisconnected(time.Now()) {
+			break
+		}
 	}
 	fmt.Println("//browser disconnected, exiting")
 }
