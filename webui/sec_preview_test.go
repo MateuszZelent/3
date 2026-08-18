@@ -4,7 +4,31 @@ import (
 	"encoding/binary"
 	"math"
 	"testing"
+	"time"
+
+	"github.com/mumax/3/engine"
 )
+
+func TestAddPossibleDownscaleSizesDoesNotWaitForMesh(t *testing.T) {
+	if engine.MeshReady() {
+		t.Skip("the engine mesh is already initialized")
+	}
+
+	state := &PreviewState{}
+	done := make(chan bool, 1)
+	go func() {
+		done <- state.addPossibleDownscaleSizes()
+	}()
+
+	select {
+	case initialized := <-done:
+		if initialized {
+			t.Fatal("preview sizes initialized without an engine mesh")
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("preview size initialization waited for a mesh")
+	}
+}
 
 func TestSetVectorPayloadPacksCompleteBinaryFrame(t *testing.T) {
 	state := &PreviewState{}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"time"
 
 	"github.com/labstack/echo/v4"
 
@@ -26,6 +25,7 @@ type PreviewState struct {
 	previewGPU            *data.Slice
 	previewBufferSize     [3]int
 	previewBufferNComp    int
+	previewMeshSize       [3]int
 	cachedPositionsBinary []byte
 	Quantity              string       `msgpack:"quantity"`
 	Unit                  string       `msgpack:"unit"`
@@ -224,7 +224,12 @@ func (s *PreviewState) previewBuffers(nComp int, size [3]int) (*data.Slice, *dat
 }
 
 func (s *PreviewState) Update() {
-	engine.InjectAndWait(s.UpdateQuantityBuffer)
+	engine.InjectAndWait(func() {
+		if !s.addPossibleDownscaleSizes() {
+			return
+		}
+		s.UpdateQuantityBuffer()
+	})
 }
 
 type previewSizing struct {
@@ -775,28 +780,41 @@ func compStringToIndex(comp string) int {
 }
 
 // A valid destination size is a positive integer less than or equal to srcsize that evenly divides srcsize.
-func (s *PreviewState) addPossibleDownscaleSizes() {
-	// retry until the script has initialized the engine mesh
-	for !engine.MeshReady() {
-		time.Sleep(1 * time.Second)
+func possibleDownscaleSizes(srcSize int) []int {
+	if srcSize <= 0 {
+		return nil
 	}
+
+	sizes := make([]int, 0)
+	for dstsize := 1; dstsize <= srcSize; dstsize++ {
+		if srcSize%dstsize == 0 {
+			sizes = append(sizes, dstsize)
+		}
+	}
+	return sizes
+}
+
+// addPossibleDownscaleSizes refreshes the preview sizes after the script has
+// initialized the mesh. It must not wait here: Start() is called before the
+// script is evaluated in interactive mode.
+func (s *PreviewState) addPossibleDownscaleSizes() bool {
 	meshSize, _, _, _ := engine.MeshSnapshot()
-	if meshSize[0] == 0 || meshSize[1] == 0 {
-		log.Log.Err("Nx or Ny is 0")
+	if meshSize[0] <= 0 || meshSize[1] <= 0 {
+		return false
 	}
-	for dstsize := 1; dstsize <= meshSize[0]; dstsize++ {
-		if meshSize[0]%dstsize == 0 {
-			s.XPossibleSizes = append(s.XPossibleSizes, dstsize)
-		}
+	if s.previewMeshSize == meshSize && len(s.XPossibleSizes) > 0 && len(s.YPossibleSizes) > 0 {
+		return true
 	}
-	for dstsize := 1; dstsize <= meshSize[1]; dstsize++ {
-		if meshSize[1]%dstsize == 0 {
-			s.YPossibleSizes = append(s.YPossibleSizes, dstsize)
-		}
+
+	xPossibleSizes := possibleDownscaleSizes(meshSize[0])
+	yPossibleSizes := possibleDownscaleSizes(meshSize[1])
+	if len(xPossibleSizes) == 0 || len(yPossibleSizes) == 0 {
+		log.Log.Err("No possible sizes found for mesh %v", meshSize)
+		return false
 	}
-	if len(s.YPossibleSizes) == 0 || len(s.XPossibleSizes) == 0 {
-		log.Log.Err("No possible sizes found")
-	}
+
+	s.XPossibleSizes = xPossibleSizes
+	s.YPossibleSizes = yPossibleSizes
 	if engine.PreviewXDataPoints != 0 {
 		s.XChosenSize = closestInArray(s.XPossibleSizes, engine.PreviewXDataPoints)
 	} else {
@@ -807,6 +825,8 @@ func (s *PreviewState) addPossibleDownscaleSizes() {
 	} else {
 		s.YChosenSize = closestInArray(s.YPossibleSizes, 100)
 	}
+	s.previewMeshSize = meshSize
+	return true
 }
 
 func (s *PreviewState) updatePreviewType() {
