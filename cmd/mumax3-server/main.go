@@ -31,7 +31,6 @@ var (
 const (
 	MaxIPs            = 1024             // maximum number of IP addresses to portscan
 	N_SCANNERS        = 32               // number of parallel portscan goroutines
-	MAXGPU            = 16               // maximum number of GPU's to check for
 	KeepaliveInterval = 10 * time.Second // signal process liveness every KeepaliveInterval
 )
 
@@ -52,6 +51,7 @@ const GUI_PORT = 35367 // base port number for GUI (to be incremented by GPU num
 
 func main() {
 	flag.Parse()
+	log.Println("WARNING: cmd/mumax3-server is a legacy scheduler; it is not production-qualified for multi-node recovery. Prefer the local mumax3 queue.")
 
 	IPs = parseIPs()
 	MinPort, MaxPort = parsePorts()

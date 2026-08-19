@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -8,11 +10,14 @@ import (
 	"path"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mumax/3/cuda"
 	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/events"
 	"github.com/mumax/3/gui"
 	"github.com/mumax/3/httpfs"
 	"github.com/mumax/3/util"
@@ -32,7 +37,17 @@ type guistate struct {
 	mutex              sync.Mutex          // protects eventCacheBreaker and keepalive
 	_eventCacheBreaker int                 // changed on any event to make sure display is updated
 	keepalive          time.Time
-	browserSeen        bool
+	sessionInitMu      sync.Mutex
+	session            *InteractiveSessionTracker
+}
+
+func (g *guistate) sessionTracker() *InteractiveSessionTracker {
+	g.sessionInitMu.Lock()
+	defer g.sessionInitMu.Unlock()
+	if g.session == nil {
+		g.session = NewInteractiveSessionTracker(Timeout)
+	}
+	return g.session
 }
 
 // Returns the time when updateKeepAlive was called.
@@ -43,41 +58,66 @@ func (g *guistate) KeepAlive() time.Time {
 }
 
 func (g *guistate) browserDisconnected(now time.Time) bool {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
-	return g.browserSeen && now.Sub(g.keepalive) >= Timeout
+	return g.sessionTracker().ExpiredAt(now)
 }
 
 // Called on each http request to signal browser is still open.
 func (g *guistate) UpdateKeepAlive() {
+	now := time.Now()
 	g.mutex.Lock()
-	defer g.mutex.Unlock()
-	g.keepalive = time.Now()
-	g.browserSeen = true
+	g.keepalive = now
+	g.mutex.Unlock()
+	g.sessionTracker().TouchAt(now)
 }
+
+// BrowserConnected registers one main WebSocket client.
+func (g *guistate) BrowserConnected() {
+	now := time.Now()
+	g.mutex.Lock()
+	g.keepalive = now
+	g.mutex.Unlock()
+	g.sessionTracker().ClientConnectedAt(now)
+}
+
+// BrowserDisconnected unregisters one main WebSocket client.
+func (g *guistate) BrowserDisconnected() {
+	now := time.Now()
+	g.mutex.Lock()
+	g.keepalive = now
+	g.mutex.Unlock()
+	g.sessionTracker().ClientDisconnectedAt(now)
+}
+
+func (g *guistate) ActiveClients() int {
+	return g.sessionTracker().ActiveClients()
+}
+func (g *guistate) SeenClient() bool { return g.sessionTracker().SeenClient() }
+func InteractiveClientConnected()    { gui_.BrowserConnected() }
+func InteractiveActiveClients() int  { return gui_.ActiveClients() }
+func InteractiveClientDisconnected() { gui_.BrowserDisconnected() }
 
 func nop() {}
 
 // Enter interactive mode. Simulation is now exclusively controlled by web GUI
 func (g *guistate) RunInteractive() {
-
-	// periodically wake up Run so it may exit on timeout
+	fmt.Println("//entering interactive mode")
+	closed := make(chan struct{})
 	go func() {
-		for {
-			Inject <- nop
-			time.Sleep(1 * time.Second)
+		if g.sessionTracker().Wait(context.Background()) {
+			close(closed)
 		}
 	}()
-
-	fmt.Println("//entering interactive mode")
 	for {
-		f := <-Inject
-		f()
-		if g.browserDisconnected(time.Now()) {
-			break
+		select {
+		case f := <-Inject:
+			if f != nil {
+				f()
+			}
+		case <-closed:
+			fmt.Println("//browser disconnected, exiting")
+			return
 		}
 	}
-	fmt.Println("//browser disconnected, exiting")
 }
 
 // displayable quantity in GUI Parameters section
@@ -541,19 +581,61 @@ func (g *guistate) Div(heading string) string {
 	return fmt.Sprintf(`<span title="Click to show/hide" style="cursor:pointer; font-size:1.2em; font-weight:bold; color:gray" onclick="toggle('%v')">&dtrif; %v</span> <br/> <div id="%v">`, id, heading, id)
 }
 
-func GoServe(addr string) string {
+const maxLegacyGUIAutoPortAttempts = 100
+
+func retargetLegacyBasePath(basePath string, preferredPort, actualPort int) string {
+	if basePath == "" || preferredPort < 1 || actualPort < 1 || preferredPort == actualPort {
+		return basePath
+	}
+	trimmed := strings.TrimSuffix(basePath, "/")
+	suffix := "/" + strconv.Itoa(preferredPort)
+	if !strings.HasSuffix(trimmed, suffix) {
+		return basePath
+	}
+	return strings.TrimSuffix(trimmed, suffix) + "/" + strconv.Itoa(actualPort)
+}
+
+func GoServe(addr string, basePaths ...string) string {
+	basePath := ""
+	if len(basePaths) > 0 {
+		basePath = basePaths[0]
+	}
+	preferredPort := 0
+	if _, portText, err := net.SplitHostPort(addr); err == nil {
+		preferredPort, _ = strconv.Atoi(portText)
+	}
 	gui_.PrepareServer()
 
-	// find a free port starting from the usual number
-	l, err := net.Listen("tcp", addr)
-	for err != nil {
-		h, p, _ := net.SplitHostPort(addr)
-		addr = fmt.Sprint(h, ":", atoi(p)+1)
-		l, err = net.Listen("tcp", addr)
+	for attempt := 0; attempt < maxLegacyGUIAutoPortAttempts; attempt++ {
+		l, err := net.Listen("tcp", addr)
+		if err == nil {
+			actual := l.Addr().String()
+			go func() { LogErr(http.Serve(l, nil)) }()
+			httpfs.Put(OD()+"gui", []byte(actual))
+			if host, portText, err := net.SplitHostPort(actual); err == nil {
+				port, _ := strconv.Atoi(portText)
+				effectiveBasePath := retargetLegacyBasePath(basePath, preferredPort, port)
+				_ = events.Emit(events.Event{Event: "webui_ready", ListenHost: host, ListenPort: port, BasePath: effectiveBasePath})
+				fmt.Printf("//webui-ready %s%s\n", actual, effectiveBasePath)
+			}
+			return actual
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			util.PanicErr(err)
+			return ""
+		}
+		host, portText, splitErr := net.SplitHostPort(addr)
+		util.PanicErr(splitErr)
+		port, parseErr := strconv.Atoi(portText)
+		util.PanicErr(parseErr)
+		if port >= 65535 {
+			util.PanicErr(fmt.Errorf("no available legacy GUI port above %d", port))
+			return ""
+		}
+		addr = net.JoinHostPort(host, strconv.Itoa(port+1))
 	}
-	go func() { LogErr(http.Serve(l, nil)) }()
-	httpfs.Put(OD()+"gui", []byte(l.Addr().String()))
-	return addr
+	util.PanicErr(fmt.Errorf("no available legacy GUI ports after %d attempts", maxLegacyGUIAutoPortAttempts))
+	return ""
 }
 
 func atoi(a string) int {

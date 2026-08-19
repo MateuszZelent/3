@@ -74,7 +74,7 @@ func (s *ParametersState) postSelectParameterRegion(c echo.Context) error {
 	}
 
 	s.SelectedRegion = req.SelectedRegion
-	s.ws.engineState.Preview.Refresh = true
+	s.ws.setPreviewRefresh(true)
 	s.ws.broadcastEngineState()
 	return c.JSON(http.StatusOK, nil)
 }

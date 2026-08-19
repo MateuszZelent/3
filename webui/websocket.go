@@ -24,6 +24,7 @@ type WebSocketManager struct {
 	broadcastStop         chan struct{}
 	broadcastStart        sync.Once
 	engineState           *EngineState
+	stateMu               sync.Mutex
 }
 
 type connectionManager struct {
@@ -168,7 +169,11 @@ func (wsManager *WebSocketManager) websocketEntrypointFor(c echo.Context, cm *co
 
 	managed := cm.add(ws)
 	defer cm.remove(ws)
-	wsManager.engineState.Preview.Refresh = true
+	if name == "main" {
+		engine.InteractiveClientConnected()
+		defer engine.InteractiveClientDisconnected()
+	}
+	wsManager.setPreviewRefresh(true)
 	onConnect()
 
 	// Channel to signal when to stop the goroutine
@@ -195,6 +200,8 @@ func (wsManager *WebSocketManager) websocketEntrypointFor(c echo.Context, cm *co
 }
 
 func (wsManager *WebSocketManager) broadcastEngineState() {
+	wsManager.stateMu.Lock()
+	defer wsManager.stateMu.Unlock()
 	wsManager.engineState.Update()
 	msg, err := msgpack.Marshal(wsManager.engineState)
 	if err != nil {
@@ -207,6 +214,8 @@ func (wsManager *WebSocketManager) broadcastEngineState() {
 }
 
 func (wsManager *WebSocketManager) broadcastPreviewState() {
+	wsManager.stateMu.Lock()
+	defer wsManager.stateMu.Unlock()
 	if wsManager.engineState == nil || wsManager.engineState.Preview == nil {
 		return
 	}
@@ -221,6 +230,8 @@ func (wsManager *WebSocketManager) broadcastPreviewState() {
 }
 
 func (wsManager *WebSocketManager) broadcastEngineStateWithoutPreview() {
+	wsManager.stateMu.Lock()
+	defer wsManager.stateMu.Unlock()
 	if wsManager.engineState == nil {
 		return
 	}
@@ -233,6 +244,13 @@ func (wsManager *WebSocketManager) broadcastEngineStateWithoutPreview() {
 	wsManager.connections.broadcast(msg)
 }
 
+func (wsManager *WebSocketManager) setPreviewRefresh(refresh bool) {
+	wsManager.stateMu.Lock()
+	defer wsManager.stateMu.Unlock()
+	if wsManager.engineState != nil && wsManager.engineState.Preview != nil {
+		wsManager.engineState.Preview.Refresh = refresh
+	}
+}
 func (wsManager *WebSocketManager) startBroadcastLoop() {
 	wsManager.broadcastStart.Do(func() {
 		go func() {

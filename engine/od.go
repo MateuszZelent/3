@@ -3,6 +3,7 @@ package engine
 // Management of output directory.
 
 import (
+	"github.com/mumax/3/events"
 	"github.com/mumax/3/httpfs"
 	"github.com/mumax/3/util"
 	"os"
@@ -40,7 +41,9 @@ func InitIO(inputfile, od string, force bool) {
 
 	if *Flag_skipexist && !strings.HasPrefix(od, "http://") {
 		if _, err := os.Stat(strings.TrimSuffix(od, "/")); err == nil {
-			LogOut("output directory already exists; skipping due to -skip-exist:", outputdir)
+			reason := "output directory already exists; skipping due to -skip-exist: " + outputdir
+			LogOut(reason)
+			_ = events.Emit(events.Event{Event: "worker_skipped", Error: reason})
 			os.Exit(0)
 		} else if !os.IsNotExist(err) {
 			util.FatalErr(err)
