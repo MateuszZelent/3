@@ -228,7 +228,7 @@ func (t *TablePlotState) postTablePlotMaxPoints(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
 	t.MaxPoints = req.MaxPoints
-	t.ws.engineState.Preview.Refresh = true
+	t.ws.setPreviewRefresh(true)
 	t.ws.broadcastEngineState()
 	return c.JSON(http.StatusOK, nil)
 }

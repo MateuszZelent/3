@@ -74,7 +74,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "invalid configuration:", err)
 		os.Exit(2)
 	}
-	engine.Timeout = *engine.Flag_interactiveTimeout
+	configureInteractiveTimeout()
 	util.SetProgressHidden(*engine.Flag_hideprogress)
 	if *flag_version {
 		printVersion()
@@ -238,6 +238,10 @@ func validateTrustedProxyList(value string) error {
 	}
 	return nil
 }
+
+func configureInteractiveTimeout() {
+	engine.Timeout = *engine.Flag_interactiveTimeout
+}
 func runTemplateCommand(args []string) {
 	flags := flag.NewFlagSet("template", flag.ExitOnError)
 	flat := flags.Bool("flat", false, "Generate files without nested directories")
@@ -277,8 +281,6 @@ func runInteractive() {
 	}
 	outdir := fmt.Sprintf("mumax-%v-%02d-%02d_%02dh%02d%s", now.Year(), int(now.Month()), now.Day(), now.Hour(), now.Minute(), extension)
 	engine.InitIO(outdir, outdir, *engine.Flag_forceclean)
-
-	engine.Timeout = 365 * 24 * time.Hour // basically forever
 
 	// set up some sensible start configuration
 	engine.Eval(`SetGridSize(128, 64, 1)

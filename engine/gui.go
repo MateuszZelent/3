@@ -93,6 +93,7 @@ func (g *guistate) ActiveClients() int {
 }
 func (g *guistate) SeenClient() bool { return g.sessionTracker().SeenClient() }
 func InteractiveClientConnected()    { gui_.BrowserConnected() }
+func InteractiveActiveClients() int  { return gui_.ActiveClients() }
 func InteractiveClientDisconnected() { gui_.BrowserDisconnected() }
 
 func nop() {}

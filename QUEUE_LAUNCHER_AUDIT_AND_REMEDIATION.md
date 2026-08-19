@@ -738,6 +738,9 @@ Dowody automatyczne:
 - `go build ./cmd/mumax3` oraz `go build ./cmd/mumax3-server`
 - `cmd/mumax3/queue_integration_test.go`: dwa procesy helperów, dwa zajęte porty, actual-port/basePath, HTTP, POST API i oba WebSockety.
 - `cmd/mumax3/queue_shutdown_integration_test.go`: proces potomny i jego subprocess są kończone przez grupę procesów.
+- `cmd/mumax3/interactive_timeout_contract_test.go`: timeout interactive jest pobierany z flagi CLI.
+- `cmd/mumax3/queue_failfast_integration_test.go`: failfast kończy procesy workerów i ich subprocessy oraz rozróżnia `failed` od `cancelled`.
+- `webui/websocket_lifecycle_test.go`: rzeczywiste połączenia WebSocket sprawdzają licznik tylko dla głównego klienta, ignorują preview i nie ujawniają wyścigu stanu preview.
 - uruchomienia CLI z `-i/-webui-disable`, pustym `-http`, błędnym proxy path i portem `65535` kończą się kodem 2 przed inicjalizacją CUDA.
 
 Ograniczenia dowodu:

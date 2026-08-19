@@ -120,20 +120,37 @@ func RunQueue(files []string) int {
 			return 1
 		}
 	}
+	s := NewStateTab(files)
+	if queueWeb.enabled {
+		listener, err := s.ListenAndServe(queueWeb.listenAddress())
+		if err != nil {
+			log.Printf("queue web UI: %v", err)
+			exitStatus.set(1)
+			return 1
+		}
+		path := queueWeb.basePath
+		if path == "" {
+			path = "/"
+		} else if !strings.HasSuffix(path, "/") {
+			path += "/"
+		}
+		fmt.Printf("//Realtime queue overview available at http://%s%s\n", listener.Addr().String(), path)
+	}
 	idle, gpuIDs, err := initGPUs()
 	if err != nil {
 		log.Printf("queue GPU initialization: %v", err)
+		shutdownQueueServer(s)
 		exitStatus.set(1)
 		numFailed.inc()
 		return 1
 	}
 	if err := validateWorkerPortCapacity(jobWeb, gpuIDs); err != nil {
 		log.Printf("queue worker ports: %v", err)
+		shutdownQueueServer(s)
 		exitStatus.set(1)
 		numFailed.inc()
 		return 1
 	}
-	s := NewStateTab(files)
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	stopSignal := make(chan struct{})
@@ -148,31 +165,8 @@ func RunQueue(files []string) int {
 		}
 	}()
 	s.PrintTo(os.Stdout)
-	if queueWeb.enabled {
-		listener, err := s.ListenAndServe(queueWeb.listenAddress())
-		if err != nil {
-			log.Printf("queue web UI: %v", err)
-			exitStatus.set(1)
-			signal.Stop(signals)
-			close(stopSignal)
-			return 1
-		}
-		path := queueWeb.basePath
-		if path == "" {
-			path = "/"
-		} else if !strings.HasSuffix(path, "/") {
-			path += "/"
-		}
-		fmt.Printf("//Realtime queue overview available at http://%s%s\n", listener.Addr().String(), path)
-	}
 	s.Run(jobWeb, idle, len(gpuIDs))
-	if queueWeb.enabled {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		if err := s.Shutdown(ctx); err != nil {
-			log.Printf("queue web UI shutdown: %v", err)
-		}
-		cancel()
-	}
+	shutdownQueueServer(s)
 	fmt.Println(numOK.get(), "OK, ", numSkipped.get(), "skipped, ", numFailed.get(), "failed")
 	signal.Stop(signals)
 	close(stopSignal)
@@ -866,7 +860,7 @@ func parseTunnelFailed(line string) (error, bool) {
 }
 
 // Creates a concurrent channel containing the available GPU IDs for jobs.
-// Returns the channel and the number of available GPUs for the queue.
+// Returns the channel and the actual GPU IDs selected for the queue.
 func initGPUs() (idle chan int, gpuIDs []int, err error) {
 	var deviceCount int
 	func() {
@@ -1028,6 +1022,16 @@ func (s *stateTab) ListenAndServe(addr string) (net.Listener, error) {
 	return listener, nil
 }
 
+func shutdownQueueServer(s *stateTab) {
+	if s == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.Shutdown(ctx); err != nil {
+		log.Printf("queue web UI shutdown: %v", err)
+	}
+}
 func (s *stateTab) Shutdown(ctx context.Context) error {
 	s.serverMu.Lock()
 	server := s.server
