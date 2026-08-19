@@ -30,3 +30,4 @@ node_modules/
 /.config/
 test/*.zarr
 test/hanadi.mx3
+*.orig
