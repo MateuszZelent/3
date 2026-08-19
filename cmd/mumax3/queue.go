@@ -3,6 +3,8 @@ package main
 // File queue for distributing multiple input files over GPUs.
 
 import (
+	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,28 +16,90 @@ import (
 	urlpkg "net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
+	"time"
 
 	"github.com/mumax/3/cuda/cu"
 	"github.com/mumax/3/engine"
+	"github.com/mumax/3/events"
 	"github.com/mumax/3/util"
 )
 
 var (
 	exitStatus       atom = 0
 	numOK, numFailed atom = 0, 0
+	queueCUDAOnce    sync.Once
 )
 
-func RunQueue(files []string) {
+var (
+	runningMu sync.Mutex
+	running   = make(map[*exec.Cmd]runningProcess)
+)
+
+type runningProcess struct {
+	cmd    *exec.Cmd
+	cancel context.CancelFunc
+}
+
+func registerRunning(cmd *exec.Cmd, cancel context.CancelFunc) {
+	runningMu.Lock()
+	running[cmd] = runningProcess{cmd: cmd, cancel: cancel}
+	runningMu.Unlock()
+}
+
+func unregisterRunning(cmd *exec.Cmd) {
+	runningMu.Lock()
+	delete(running, cmd)
+	runningMu.Unlock()
+}
+
+func stopRunning() {
+	runningMu.Lock()
+	processes := make([]runningProcess, 0, len(running))
+	for _, process := range running {
+		if process.cmd.Process != nil {
+			_ = signalWorkerTree(process.cmd, syscall.SIGTERM)
+		}
+		processes = append(processes, process)
+	}
+	runningMu.Unlock()
+	if len(processes) == 0 {
+		return
+	}
+	time.AfterFunc(2*time.Second, func() {
+		runningMu.Lock()
+		defer runningMu.Unlock()
+		for _, process := range processes {
+			if _, ok := running[process.cmd]; !ok {
+				continue
+			}
+			if process.cmd.Process != nil {
+				_ = signalWorkerTree(process.cmd, syscall.SIGKILL)
+			}
+			if process.cancel != nil {
+				process.cancel()
+			}
+		}
+	})
+}
+
+func RunQueue(files []string) int {
+	exitStatus.set(0)
+	numOK.set(0)
+	numFailed.set(0)
 	queueWeb := queueWebAddress{}
 	if *engine.Flag_queueport != "" {
 		var err error
 		queueWeb, err = newQueueWebAddress(*engine.Flag_queueport)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("queue web UI: %v", err)
+			exitStatus.set(1)
+			return 1
 		}
 	}
 	jobWeb := queueWebAddress{}
@@ -43,18 +107,55 @@ func RunQueue(files []string) {
 		var err error
 		jobWeb, err = newQueueWebAddress(*engine.Flag_port)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("worker web UI: %v", err)
+			exitStatus.set(1)
+			return 1
 		}
 	}
 	s := NewStateTab(files)
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	stopSignal := make(chan struct{})
+	go func() {
+		select {
+		case sig := <-signals:
+			log.Printf("queue: received %v; stopping active workers", sig)
+			exitStatus.set(1)
+			s.Stop()
+			stopRunning()
+		case <-stopSignal:
+		}
+	}()
 	s.PrintTo(os.Stdout)
 	if queueWeb.enabled {
-		go s.ListenAndServe(queueWeb.listenAddress())
-		fmt.Printf("//Realtime queue overview available at http://localhost:%d%s\n", queueWeb.port, queueWeb.basePath)
+		listener, err := s.ListenAndServe(queueWeb.listenAddress())
+		if err != nil {
+			log.Printf("queue web UI: %v", err)
+			exitStatus.set(1)
+			signal.Stop(signals)
+			close(stopSignal)
+			return 1
+		}
+		path := queueWeb.basePath
+		if path == "" {
+			path = "/"
+		} else if !strings.HasSuffix(path, "/") {
+			path += "/"
+		}
+		fmt.Printf("//Realtime queue overview available at http://%s%s\n", listener.Addr().String(), path)
 	}
 	s.Run(jobWeb)
+	if queueWeb.enabled {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := s.Shutdown(ctx); err != nil {
+			log.Printf("queue web UI shutdown: %v", err)
+		}
+		cancel()
+	}
 	fmt.Println(numOK.get(), "OK, ", numFailed.get(), "failed")
-	os.Exit(int(exitStatus))
+	signal.Stop(signals)
+	close(stopSignal)
+	return int(exitStatus.get())
 }
 
 // queueWebAddress describes the queue UI address and the addresses allocated to
@@ -88,6 +189,9 @@ func (a queueWebAddress) jobAddress(gpu int) string {
 		return ""
 	}
 	port := a.port + 1 + gpu
+	if port < 1 || port > 65535 {
+		return ""
+	}
 	basePath := a.basePath
 	if basePath != "" {
 		basePath = strings.TrimSuffix(strings.TrimSuffix(basePath, "/"), "/"+strconv.Itoa(a.port)) + "/" + strconv.Itoa(port)
@@ -97,73 +201,225 @@ func (a queueWebAddress) jobAddress(gpu int) string {
 
 // StateTab holds the queue state (list of jobs + statuses).
 // All operations are atomic.
+type JobState string
+
+const (
+	JobQueued    JobState = "queued"
+	JobStarting  JobState = "starting"
+	JobRunning   JobState = "running"
+	JobReady     JobState = "ready"
+	JobSucceeded JobState = "succeeded"
+	JobFailed    JobState = "failed"
+	JobCancelled JobState = "cancelled"
+)
+
 type stateTab struct {
-	lock sync.Mutex
-	jobs []job
-	next int
+	lock              sync.Mutex
+	jobs              []job
+	next              int
+	stop              bool
+	serverMu          sync.Mutex
+	server            *http.Server
+	publicURLTemplate string
+	tunnelRequired    bool
 }
 
-// Job info.
 type job struct {
-	inFile  string // input file to run
-	webAddr string // http address for gui of running process
-	uid     int
+	inFile      string
+	launchAddr  string
+	webAddr     string
+	publicURL   string
+	errorText   string
+	state       JobState
+	uid         int
+	gpu         int
+	started     time.Time
+	pid         int
+	exitCode    int
+	exitCodeSet bool
+	tunnelError string
 }
 
-// NewStateTab constructs a queue for the given input files.
-// After construction, it is accessed atomically.
 func NewStateTab(inFiles []string) *stateTab {
-	s := new(stateTab)
+	s := &stateTab{publicURLTemplate: *engine.Flag_webuiPublicURL, tunnelRequired: engine.FlagPassed("tunnel") && strings.TrimSpace(*engine.Flag_tunnel) != ""}
 	s.jobs = make([]job, len(inFiles))
 	for i, f := range inFiles {
-		s.jobs[i] = job{inFile: f, uid: i}
+		s.jobs[i] = job{inFile: f, uid: i, state: JobQueued, gpu: -1}
 	}
 	return s
 }
 
-// StartNext advances the next job and marks it running, setting its webAddr to indicate the GUI url.
-// A copy of the job info is returned, the original remains unmodified.
-// ok is false if there is no next job.
-func (s *stateTab) StartNext(webAddr string) (next job, ok bool) {
+func (s *stateTab) StartNext(webAddr string) (jobCopy job, ok bool) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	if s.next >= len(s.jobs) {
+	if s.stop || s.next >= len(s.jobs) {
 		return job{}, false
 	}
-	s.jobs[s.next].webAddr = webAddr
-	jobCopy := s.jobs[s.next]
+	s.jobs[s.next].launchAddr = webAddr
+	s.jobs[s.next].state = JobStarting
+	s.jobs[s.next].started = time.Now()
+	jobCopy = s.jobs[s.next]
 	s.next++
 	return jobCopy, true
 }
 
-// Finish marks the job with j's uid as finished.
-func (s *stateTab) Finish(j job) {
+func (s *stateTab) SetGPU(uid, gpu int) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	s.jobs[j.uid].webAddr = ""
+	if uid >= 0 && uid < len(s.jobs) {
+		s.jobs[uid].gpu = gpu
+	}
 }
 
-// Runs all the jobs in stateTab.
+func (s *stateTab) SetPID(uid, pid int) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if uid >= 0 && uid < len(s.jobs) && s.jobs[uid].state != JobFailed && s.jobs[uid].state != JobCancelled {
+		s.jobs[uid].pid = pid
+		if s.jobs[uid].state == JobStarting {
+			s.jobs[uid].state = JobRunning
+		}
+	}
+}
+
+func (s *stateTab) SetExitCode(uid, code int) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if uid >= 0 && uid < len(s.jobs) {
+		s.jobs[uid].exitCode = code
+		s.jobs[uid].exitCodeSet = true
+	}
+}
+
+func (s *stateTab) SetReady(uid int, addr string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if uid >= 0 && uid < len(s.jobs) && s.jobs[uid].state != JobFailed && s.jobs[uid].state != JobCancelled && s.jobs[uid].state != JobSucceeded {
+		s.jobs[uid].webAddr = addr
+		s.jobs[uid].state = JobReady
+	}
+}
+
+func (s *stateTab) SetPublicURL(uid int, addr string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if uid >= 0 && uid < len(s.jobs) {
+		s.jobs[uid].publicURL = addr
+	}
+}
+
+func (s *stateTab) SetTunnelError(uid int, errText string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if uid >= 0 && uid < len(s.jobs) && s.jobs[uid].state != JobCancelled && s.jobs[uid].state != JobSucceeded {
+		s.jobs[uid].tunnelError = errText
+		s.jobs[uid].state = JobFailed
+		s.jobs[uid].errorText = "tunnel: " + errText
+	}
+}
+
+func (s *stateTab) SetFailed(uid int, errText string) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if uid >= 0 && uid < len(s.jobs) && s.jobs[uid].state != JobCancelled && s.jobs[uid].state != JobSucceeded {
+		s.jobs[uid].state = JobFailed
+		s.jobs[uid].errorText = errText
+	}
+}
+
+func (s *stateTab) SetCancelled(uid int) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if uid >= 0 && uid < len(s.jobs) && s.jobs[uid].state != JobFailed && s.jobs[uid].state != JobSucceeded {
+		s.jobs[uid].state = JobCancelled
+	}
+}
+
+func (s *stateTab) IsStopped() bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	return s.stop
+}
+
+func (s *stateTab) Stop() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.stop = true
+	for i := s.next; i < len(s.jobs); i++ {
+		if s.jobs[i].state == JobQueued {
+			s.jobs[i].state = JobCancelled
+		}
+	}
+	s.next = len(s.jobs)
+}
+
+func (s *stateTab) Finish(j job, outcome runOutcome) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if j.uid < 0 || j.uid >= len(s.jobs) {
+		return
+	}
+	switch outcome {
+	case runSucceeded:
+		if s.jobs[j.uid].state != JobFailed && s.jobs[j.uid].state != JobCancelled {
+			s.jobs[j.uid].state = JobSucceeded
+		}
+	case runCancelled:
+		if s.jobs[j.uid].state != JobFailed {
+			s.jobs[j.uid].state = JobCancelled
+		}
+	}
+}
+
 func (s *stateTab) Run(web queueWebAddress) {
-	idle, nGPU := initGPUs()
+	idle, nGPU, err := initGPUs()
+	if err != nil {
+		log.Printf("queue GPU initialization: %v", err)
+		exitStatus.set(1)
+		numFailed.inc()
+		return
+	}
 	for {
 		gpu := <-idle
 		j, ok := s.StartNext(web.jobAddress(gpu))
 		if !ok {
 			break
 		}
-		go func() {
-			run(j.inFile, gpu, j.webAddr)
-			s.Finish(j)
+		if web.enabled && j.launchAddr == "" {
+			s.SetFailed(j.uid, "worker WebUI port is outside 1..65535")
+			numFailed.inc()
+			exitStatus.set(1)
+			if *flag_failfast {
+				s.Stop()
+				stopRunning()
+			}
 			idle <- gpu
-		}()
+			continue
+		}
+		s.SetGPU(j.uid, gpu)
+		go func(j job, gpu int) {
+			outcome := run(j.inFile, gpu, j.launchAddr,
+				func(pid int) { s.SetPID(j.uid, pid) },
+				func(addr string) { s.SetReady(j.uid, addr) },
+				func(addr string) { s.SetPublicURL(j.uid, addr) },
+				func(err error) { s.SetTunnelError(j.uid, err.Error()) },
+				func(err error) {
+					s.SetFailed(j.uid, err.Error())
+					if *flag_failfast {
+						s.Stop()
+					}
+				},
+				func(code int) { s.SetExitCode(j.uid, code) },
+				func() { s.SetCancelled(j.uid) },
+				func() bool { return s.IsStopped() })
+			s.Finish(j, outcome)
+			idle <- gpu
+		}(j, gpu)
 	}
-	// drain remaining tasks (one already done)
 	for i := 1; i < nGPU; i++ {
 		<-idle
 	}
 }
-
 func atoi(a string) int {
 	i, err := strconv.Atoi(a)
 	util.PanicErr(err)
@@ -176,52 +432,375 @@ func (a *atom) set(v int) { atomic.StoreInt32((*int32)(a), int32(v)) }
 func (a *atom) get() int  { return int(atomic.LoadInt32((*int32)(a))) }
 func (a *atom) inc()      { atomic.AddInt32((*int32)(a), 1) }
 
-func run(inFile string, gpu int, webAddr string) {
-	// overridden flags
-	gpuFlag := fmt.Sprint(`-gpu=`, gpu)
-	httpFlag := fmt.Sprint(`-http=`, webAddr)
+type runOutcome int
 
-	// pass through flags
+const (
+	runSucceeded runOutcome = iota
+	runFailed
+	runCancelled
+)
+
+func run(inFile string, gpu int, webAddr string, onStarted func(int), onReady func(string), onTunnelReady func(string), onFailed func(error), onTunnelFailed func(error), onExited func(int), onCancelled func(), cancelled func() bool) runOutcome {
+	gpuFlag := fmt.Sprint("-gpu=", gpu)
+	httpFlag := fmt.Sprint("-http=", webAddr)
 	flags := []string{gpuFlag, httpFlag}
+	seen := map[string]bool{"gpu": true, "http": true}
+	var flagErr error
 	flag.Visit(func(f *flag.Flag) {
-		if f.Name != "gpu" && f.Name != "http" && f.Name != "failfast" && f.Name != "max_gpus" {
-			flags = append(flags, fmt.Sprintf("-%v=%v", f.Name, f.Value))
+		canonical := engine.CanonicalFlagName(f.Name)
+		if canonical != "gpu" && canonical != "http" && canonical != "failfast" && canonical != "max_gpus" && canonical != "webui-queue-addr" && canonical != "webui-public-url" && !seen[canonical] {
+			value := f.Value.String()
+			if canonical == "tunnel" {
+				var err error
+				value, err = workerTunnelArgument(value, gpu)
+				if err != nil {
+					flagErr = err
+					return
+				}
+			}
+			seen[canonical] = true
+			flags = append(flags, fmt.Sprintf("-%v=%v", canonical, value))
 		}
 	})
+	if flagErr != nil {
+		onFailed(flagErr)
+		if *flag_failfast {
+			stopRunning()
+		}
+		log.Printf("[%s] %v", inFile, flagErr)
+		exitStatus.set(1)
+		numFailed.inc()
+		return runFailed
+	}
 	flags = append(flags, inFile)
-
-	cmd := exec.Command(os.Args[0], flags...)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmd := exec.CommandContext(ctx, os.Args[0], flags...)
+	configureWorkerProcess(cmd)
 	log.Println(os.Args[0], flags)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Println(inFile, err)
-		log.Printf("%s\n", output)
+	fail := func(err error) runOutcome {
+		onFailed(err)
+		log.Printf("[%s] %v", inFile, err)
 		exitStatus.set(1)
 		numFailed.inc()
 		if *flag_failfast {
-			os.Exit(1)
+			stopRunning()
 		}
-	} else {
-		numOK.inc()
+		return runFailed
 	}
+	eventReader, eventWriter, err := os.Pipe()
+	if err != nil {
+		return fail(fmt.Errorf("event pipe: %w", err))
+	}
+	defer eventReader.Close()
+	cmd.ExtraFiles = []*os.File{eventWriter}
+	cmd.Env = append(os.Environ(), events.EnvFD+"=3")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		eventWriter.Close()
+		return fail(fmt.Errorf("stdout pipe: %w", err))
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		eventWriter.Close()
+		return fail(fmt.Errorf("stderr pipe: %w", err))
+	}
+	if err := cmd.Start(); err != nil {
+		eventWriter.Close()
+		return fail(fmt.Errorf("start: %w", err))
+	}
+	onStarted(cmd.Process.Pid)
+	eventWriter.Close()
+	registerRunning(cmd, cancel)
+	defer unregisterRunning(cmd)
+	ready := make(chan string, 1)
+	protocolErrCh := make(chan error, 1)
+	eventDone := make(chan struct{})
+	go func() {
+		defer close(eventDone)
+		err := events.Read(eventReader, func(event events.Event) error {
+			switch event.Event {
+			case "webui_ready":
+				if addr, ok := workerEventAddress(event); ok {
+					select {
+					case ready <- addr:
+					default:
+					}
+					return nil
+				}
+				return fmt.Errorf("invalid webui_ready event")
+			case "tunnel_ready":
+				if publicURL, ok := workerEventPublicURL(event); ok {
+					onTunnelReady(publicURL)
+					return nil
+				}
+				return fmt.Errorf("invalid tunnel_ready event")
+			case "tunnel_failed":
+				message := strings.TrimSpace(event.Error)
+				if message == "" {
+					message = "worker tunnel failed"
+				}
+				tunnelErr := errors.New(message)
+				onTunnelFailed(tunnelErr)
+				return tunnelErr
+
+			case "worker_failed":
+				if event.Error == "" {
+					return errors.New("worker reported failure")
+				}
+				return errors.New(event.Error)
+			}
+			return nil
+		})
+		if err != nil {
+			protocolErrCh <- err
+		}
+	}()
+	streamDone := make(chan struct{}, 2)
+	stream := func(r io.Reader) {
+		defer func() { streamDone <- struct{}{} }()
+		scanner := bufio.NewScanner(r)
+		scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if addr, ok := parseWebUIReady(line); ok {
+				select {
+				case ready <- addr:
+				default:
+				}
+				continue
+			}
+			if addr, ok := parseTunnelReady(line); ok {
+				onTunnelReady(addr)
+				continue
+			}
+			if tunnelErr, ok := parseTunnelFailed(line); ok {
+				onTunnelFailed(tunnelErr)
+				select {
+				case protocolErrCh <- tunnelErr:
+				default:
+				}
+				continue
+			}
+			log.Printf("[%s] %s", inFile, line)
+		}
+		if err := scanner.Err(); err != nil {
+			log.Printf("[%s] output: %v", inFile, err)
+		}
+	}
+	go stream(stdout)
+	go stream(stderr)
+	wait := make(chan error, 1)
+	go func() { wait <- cmd.Wait() }()
+	var waitErr error
+	var protocolErr error
+	var terminateOnce sync.Once
+	var terminateTimer *time.Timer
+	terminate := func() {
+		terminateOnce.Do(func() {
+			_ = signalWorkerTree(cmd, syscall.SIGTERM)
+			terminateTimer = time.AfterFunc(2*time.Second, cancel)
+		})
+	}
+	defer func() {
+		if terminateTimer != nil {
+			terminateTimer.Stop()
+		}
+	}()
+	waitForExit := func() {
+		select {
+		case waitErr = <-wait:
+		case protocolErr = <-protocolErrCh:
+			terminate()
+			waitErr = <-wait
+		}
+	}
+	readySeen := false
+	select {
+	case addr := <-ready:
+		readySeen = true
+		onReady(addr)
+		waitForExit()
+	case protocolErr = <-protocolErrCh:
+		terminate()
+		waitErr = <-wait
+	case waitErr = <-wait:
+	}
+	if protocolErr == nil {
+		select {
+		case protocolErr = <-protocolErrCh:
+		default:
+		}
+	}
+
+	if cmd.ProcessState != nil {
+		onExited(cmd.ProcessState.ExitCode())
+	}
+
+	eventReader.Close()
+	<-eventDone
+	<-streamDone
+	<-streamDone
+	select {
+	case protocolErr = <-protocolErrCh:
+	default:
+	}
+	if protocolErr != nil {
+		if cancelled() {
+			onCancelled()
+			return runCancelled
+		}
+		return fail(protocolErr)
+	}
+	if waitErr != nil {
+		if cancelled() {
+			onCancelled()
+			return runCancelled
+		}
+		return fail(waitErr)
+	}
+	if webAddr != "" && !readySeen {
+		return fail(errors.New("worker exited before webui-ready"))
+	}
+	numOK.inc()
+	return runSucceeded
+}
+
+func workerTunnelArgument(raw string, gpu int) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || gpu == 0 {
+		return raw, nil
+	}
+	host, port, hasPort, err := splitTunnelEndpoint(raw)
+	if err != nil {
+		return "", err
+	}
+	if !hasPort || port == 0 {
+		return raw, nil
+	}
+	if gpu < 0 || port > 65535-gpu {
+		return "", fmt.Errorf("tunnel port %d plus GPU offset %d exceeds 65535", port, gpu)
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port+gpu)), nil
+}
+
+func splitTunnelEndpoint(raw string) (string, int, bool, error) {
+	if host, portText, err := net.SplitHostPort(raw); err == nil {
+		port, parseErr := strconv.Atoi(portText)
+		if parseErr != nil || port < 0 || port > 65535 {
+			return "", 0, false, fmt.Errorf("invalid tunnel port %q", portText)
+		}
+		return host, port, true, nil
+	}
+	if strings.Count(raw, ":") == 1 {
+		parts := strings.SplitN(raw, ":", 2)
+		port, parseErr := strconv.Atoi(parts[1])
+		if parseErr != nil || port < 0 || port > 65535 {
+			return "", 0, false, fmt.Errorf("invalid tunnel port %q", parts[1])
+		}
+		return parts[0], port, true, nil
+	}
+	if strings.HasPrefix(raw, "[") {
+		return "", 0, false, fmt.Errorf("invalid tunnel endpoint %q", raw)
+	}
+	return raw, 0, false, nil
+}
+
+func workerEventAddress(event events.Event) (string, bool) {
+	if event.ListenPort < 1 || event.ListenPort > 65535 {
+		return "", false
+	}
+	host := strings.TrimSpace(event.ListenHost)
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	addr := net.JoinHostPort(host, strconv.Itoa(event.ListenPort)) + event.BasePath
+	if _, _, _, err := parseWebUIAddress(addr); err != nil {
+		return "", false
+	}
+	return addr, true
+}
+
+func workerEventPublicURL(event events.Event) (string, bool) {
+	if event.PublicURL == "" {
+		return "", false
+	}
+	addr, err := urlpkg.Parse(strings.TrimSpace(event.PublicURL))
+	if err != nil || (addr.Scheme != "http" && addr.Scheme != "https") || addr.Host == "" {
+		return "", false
+	}
+	if !strings.HasSuffix(addr.Path, "/") {
+		addr.Path += "/"
+	}
+	return addr.String(), true
+}
+func parseWebUIReady(line string) (string, bool) {
+	const prefix = "//webui-ready "
+	if !strings.HasPrefix(line, prefix) {
+		return "", false
+	}
+	addr := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	if _, _, _, err := parseWebUIAddress(addr); err != nil {
+		return "", false
+	}
+	return addr, true
+}
+
+func parseTunnelReady(line string) (string, bool) {
+	const prefix = "//tunnel-ready "
+	if !strings.HasPrefix(line, prefix) {
+		return "", false
+	}
+	value := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	parsed, err := urlpkg.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return "", false
+	}
+	if !strings.HasSuffix(parsed.Path, "/") {
+		parsed.Path += "/"
+	}
+	return parsed.String(), true
+}
+
+func parseTunnelFailed(line string) (error, bool) {
+	const prefix = "//tunnel-failed "
+	if !strings.HasPrefix(line, prefix) {
+		return nil, false
+	}
+	message := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	if message == "" {
+		message = "worker tunnel failed"
+	}
+	return errors.New(message), true
 }
 
 // Creates a concurrent channel containing the available GPU IDs for jobs.
 // Returns the channel and the number of available GPUs for the queue.
-func initGPUs() (chan int, int) {
-	deviceCount := cu.DeviceGetCount()
+func initGPUs() (idle chan int, nGPU int, err error) {
+	var deviceCount int
+	func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				err = fmt.Errorf("CUDA device enumeration failed: %v", recovered)
+			}
+		}()
+		queueCUDAOnce.Do(func() { cu.Init(0) })
+		deviceCount = cu.DeviceGetCount()
+	}()
+	if err != nil {
+		return nil, 0, err
+	}
 	gpuIDs, err := selectQueueGPUs(deviceCount, engine.FlagPassed("gpu"), *engine.Flag_gpu, *flag_maxGPUs)
 	if err != nil {
-		log.Fatal(err)
+		return nil, 0, err
 	}
 	log.Printf("//queue using %d of %d available GPU(s): %v", len(gpuIDs), deviceCount, gpuIDs)
-	idle := make(chan int, len(gpuIDs))
+	idle = make(chan int, len(gpuIDs))
 	for _, gpu := range gpuIDs {
 		idle <- gpu
 	}
-	return idle, len(gpuIDs)
+	return idle, len(gpuIDs), nil
 }
-
 func selectQueueGPUs(deviceCount int, explicitGPU bool, gpu, maxGPUs int) ([]int, error) {
 	if deviceCount < 1 {
 		return nil, errors.New("no GPUs available")
@@ -250,14 +829,14 @@ func (s *stateTab) PrintTo(w io.Writer) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	for i, j := range s.jobs {
-		fmt.Fprintf(w, "%3d %v %v\n", i, j.inFile, j.webAddr)
+		fmt.Fprintf(w, "%3d %-9s %v %v\n", i, j.state, j.inFile, j.webAddr)
 	}
 }
 
 func (s *stateTab) RenderHTML(w io.Writer, r *http.Request) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	fmt.Fprintln(w, ` 
+	fmt.Fprint(w, `
 <!DOCTYPE html> <html> <head> 
 	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 	<meta http-equiv="refresh" content="1">
@@ -269,26 +848,101 @@ func (s *stateTab) RenderHTML(w io.Writer, r *http.Request) {
 `)
 
 	for _, j := range s.jobs {
-		if j.webAddr != "" {
-			fmt.Fprint(w, `<b>`, j.uid, ` <a href="`, html.EscapeString(queueJobURL(r, j.webAddr)), `">`, html.EscapeString(j.inFile), " ", html.EscapeString(j.webAddr), "</a></b>\n")
-		} else {
-			fmt.Fprint(w, j.uid, " ", html.EscapeString(j.inFile), "\n")
+		if j.state == JobReady && j.webAddr != "" && (!s.tunnelRequired || j.publicURL != "") {
+			link := j.publicURL
+			if link == "" {
+				if s.publicURLTemplate != "" {
+					link = expandPublicURLTemplate(r, s.publicURLTemplate, j.webAddr)
+				} else {
+					link = queueJobURL(r, j.webAddr)
+				}
+			}
+			if link != "" {
+				fmt.Fprint(w, `<b>`, j.uid, ` <a href="`, html.EscapeString(link), `">`, html.EscapeString(j.inFile), " ", html.EscapeString(link), "</a></b>\n")
+				continue
+			}
 		}
+		detail := string(j.state)
+		if j.errorText != "" {
+			detail += ": " + j.errorText
+		} else if s.tunnelRequired && j.webAddr != "" && j.publicURL == "" {
+			detail += ": waiting for tunnel_ready"
+		}
+		if j.pid > 0 {
+			detail += fmt.Sprintf(" (gpu=%d pid=%d", j.gpu, j.pid)
+			if j.exitCodeSet {
+				detail += fmt.Sprintf(", exit=%d", j.exitCode)
+			}
+			detail += ")"
+		}
+		fmt.Fprint(w, j.uid, " [", html.EscapeString(detail), "] ", html.EscapeString(j.inFile), "\n")
 	}
 
-	fmt.Fprintln(w, `</pre><hr/></body></html>`)
+	fmt.Fprint(w, `</pre><hr/></body></html>`)
 }
 
-func (s *stateTab) ListenAndServe(addr string) {
+func expandPublicURLTemplate(r *http.Request, template, webAddr string) string {
+	_, port, _, err := parseWebUIAddress(webAddr)
+	if err != nil {
+		return ""
+	}
+	raw := strings.ReplaceAll(template, "{port}", strconv.Itoa(port))
+	if strings.HasPrefix(raw, "/") {
+		publicURL := publicRequestURL(r)
+		publicURL.Path = raw
+		if !strings.HasSuffix(publicURL.Path, "/") {
+			publicURL.Path += "/"
+		}
+		return withPublicURLPathSlash(&publicURL).String()
+	}
+	publicURL, err := urlpkg.Parse(raw)
+	if err != nil || (publicURL.Scheme != "http" && publicURL.Scheme != "https") || publicURL.Host == "" {
+		return ""
+	}
+	if !strings.HasSuffix(publicURL.Path, "/") {
+		publicURL.Path += "/"
+	}
+	return withPublicURLPathSlash(publicURL).String()
+}
+
+func (s *stateTab) ListenAndServe(addr string) (net.Listener, error) {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	server := &http.Server{Handler: s}
+	s.serverMu.Lock()
+	s.server = server
+	s.serverMu.Unlock()
 	go func() {
-		if err := http.ListenAndServe(addr, s); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Printf("queue web UI: %v", err)
 		}
 	}()
+	return listener, nil
 }
 
+func (s *stateTab) Shutdown(ctx context.Context) error {
+	s.serverMu.Lock()
+	server := s.server
+	s.server = nil
+	s.serverMu.Unlock()
+	if server == nil {
+		return nil
+	}
+	return server.Shutdown(ctx)
+}
 func (s *stateTab) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.RenderHTML(w, r)
+}
+
+func withPublicURLPathSlash(publicURL *urlpkg.URL) *urlpkg.URL {
+	if publicURL.Path == "" {
+		publicURL.Path = "/"
+	} else if !strings.HasSuffix(publicURL.Path, "/") {
+		publicURL.Path += "/"
+	}
+	return publicURL
 }
 
 // queueJobURL retains the public origin used by the browser. This makes links
@@ -304,15 +958,15 @@ func queueJobURL(r *http.Request, webAddr string) string {
 	publicURL := publicRequestURL(r)
 	if jobPath != "" {
 		publicURL.Path = joinPublicPath(forwardedPrefix(r), jobPath)
-		return publicURL.String()
+		return withPublicURLPathSlash(&publicURL).String()
 	}
 
 	if path, ok := replaceTrailingPort(publicRequestPath(r), jobPort); ok {
 		publicURL.Path = path
-		return publicURL.String()
+		return withPublicURLPathSlash(&publicURL).String()
 	}
 	publicURL.Host = hostWithPort(publicURL.Host, jobPort)
-	return publicURL.String()
+	return withPublicURLPathSlash(&publicURL).String()
 }
 
 func publicRequestURL(r *http.Request) urlpkg.URL {
@@ -320,17 +974,18 @@ func publicRequestURL(r *http.Request) urlpkg.URL {
 	if r.TLS != nil {
 		publicURL.Scheme = "https"
 	}
-
-	forwardedHost, forwardedProto := forwardedOrigin(r.Header.Get("Forwarded"))
-	if forwardedHost != "" {
-		publicURL.Host = forwardedHost
-	} else if host := firstHeaderValue(r.Header.Get("X-Forwarded-Host")); validPublicHost(host) {
-		publicURL.Host = host
-	}
-	if forwardedProto != "" {
-		publicURL.Scheme = forwardedProto
-	} else if proto := firstHeaderValue(r.Header.Get("X-Forwarded-Proto")); proto == "http" || proto == "https" {
-		publicURL.Scheme = proto
+	if trustedProxyRequest(r) {
+		forwardedHost, forwardedProto := forwardedOrigin(r.Header.Get("Forwarded"))
+		if forwardedHost != "" {
+			publicURL.Host = forwardedHost
+		} else if host := firstHeaderValue(r.Header.Get("X-Forwarded-Host")); validPublicHost(host) {
+			publicURL.Host = host
+		}
+		if forwardedProto != "" {
+			publicURL.Scheme = forwardedProto
+		} else if proto := firstHeaderValue(r.Header.Get("X-Forwarded-Proto")); proto == "http" || proto == "https" {
+			publicURL.Scheme = proto
+		}
 	}
 	if publicURL.Host == "" {
 		publicURL.Host = "localhost"
@@ -368,7 +1023,35 @@ func validPublicHost(host string) bool {
 	return host != "" && !strings.ContainsAny(host, " /\\?#@\t\r\n")
 }
 
+func trustedProxyRequest(r *http.Request) bool {
+	if strings.TrimSpace(*engine.Flag_webuiTrustedProxy) == "" {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	if ip == nil {
+		return false
+	}
+	for _, rule := range strings.Split(*engine.Flag_webuiTrustedProxy, ",") {
+		rule = strings.TrimSpace(rule)
+		if strings.Contains(rule, "/") {
+			if _, network, err := net.ParseCIDR(rule); err == nil && network.Contains(ip) {
+				return true
+			}
+		} else if allowed := net.ParseIP(rule); allowed != nil && allowed.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 func forwardedPrefix(r *http.Request) string {
+	if !trustedProxyRequest(r) {
+		return ""
+	}
 	prefix := firstHeaderValue(r.Header.Get("X-Forwarded-Prefix"))
 	if prefix == "" || !strings.HasPrefix(prefix, "/") || strings.ContainsAny(prefix, "?#\r\n") {
 		return ""

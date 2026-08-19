@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -9,10 +10,12 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mumax/3/cuda"
 	"github.com/mumax/3/cuda/cu"
+	"github.com/mumax/3/events"
 	"github.com/mumax/3/gui"
 	"github.com/mumax/3/httpfs"
 	"github.com/mumax/3/util"
@@ -33,6 +36,7 @@ type guistate struct {
 	_eventCacheBreaker int                 // changed on any event to make sure display is updated
 	keepalive          time.Time
 	browserSeen        bool
+	browserClients     int
 }
 
 // Returns the time when updateKeepAlive was called.
@@ -45,7 +49,7 @@ func (g *guistate) KeepAlive() time.Time {
 func (g *guistate) browserDisconnected(now time.Time) bool {
 	g.mutex.Lock()
 	defer g.mutex.Unlock()
-	return g.browserSeen && now.Sub(g.keepalive) >= Timeout
+	return g.browserSeen && g.browserClients == 0 && now.Sub(g.keepalive) >= Timeout
 }
 
 // Called on each http request to signal browser is still open.
@@ -56,16 +60,55 @@ func (g *guistate) UpdateKeepAlive() {
 	g.browserSeen = true
 }
 
+// BrowserConnected registers one main WebSocket client.
+func (g *guistate) BrowserConnected() {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	g.browserSeen = true
+	g.browserClients++
+	g.keepalive = time.Now()
+}
+
+// BrowserDisconnected unregisters one main WebSocket client.
+func (g *guistate) BrowserDisconnected() {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	if g.browserClients > 0 {
+		g.browserClients--
+	}
+	if g.browserClients == 0 {
+		g.keepalive = time.Now()
+	}
+}
+
+func (g *guistate) ActiveClients() int {
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
+	return g.browserClients
+}
+func InteractiveClientConnected()    { gui_.BrowserConnected() }
+func InteractiveClientDisconnected() { gui_.BrowserDisconnected() }
+
 func nop() {}
 
 // Enter interactive mode. Simulation is now exclusively controlled by web GUI
 func (g *guistate) RunInteractive() {
-
-	// periodically wake up Run so it may exit on timeout
+	stopTicker := make(chan struct{})
+	defer close(stopTicker)
 	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
 		for {
-			Inject <- nop
-			time.Sleep(1 * time.Second)
+			select {
+			case <-ticker.C:
+				select {
+				case Inject <- nop:
+				case <-stopTicker:
+					return
+				}
+			case <-stopTicker:
+				return
+			}
 		}
 	}()
 
@@ -541,19 +584,40 @@ func (g *guistate) Div(heading string) string {
 	return fmt.Sprintf(`<span title="Click to show/hide" style="cursor:pointer; font-size:1.2em; font-weight:bold; color:gray" onclick="toggle('%v')">&dtrif; %v</span> <br/> <div id="%v">`, id, heading, id)
 }
 
+const maxLegacyGUIAutoPortAttempts = 100
+
 func GoServe(addr string) string {
 	gui_.PrepareServer()
 
-	// find a free port starting from the usual number
-	l, err := net.Listen("tcp", addr)
-	for err != nil {
-		h, p, _ := net.SplitHostPort(addr)
-		addr = fmt.Sprint(h, ":", atoi(p)+1)
-		l, err = net.Listen("tcp", addr)
+	for attempt := 0; attempt < maxLegacyGUIAutoPortAttempts; attempt++ {
+		l, err := net.Listen("tcp", addr)
+		if err == nil {
+			actual := l.Addr().String()
+			go func() { LogErr(http.Serve(l, nil)) }()
+			httpfs.Put(OD()+"gui", []byte(actual))
+			if host, portText, err := net.SplitHostPort(actual); err == nil {
+				port, _ := strconv.Atoi(portText)
+				_ = events.Emit(events.Event{Event: "webui_ready", ListenHost: host, ListenPort: port})
+				fmt.Printf("//webui-ready %s\n", actual)
+			}
+			return actual
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) {
+			util.PanicErr(err)
+			return ""
+		}
+		host, portText, splitErr := net.SplitHostPort(addr)
+		util.PanicErr(splitErr)
+		port, parseErr := strconv.Atoi(portText)
+		util.PanicErr(parseErr)
+		if port >= 65535 {
+			util.PanicErr(fmt.Errorf("no available legacy GUI port above %d", port))
+			return ""
+		}
+		addr = net.JoinHostPort(host, strconv.Itoa(port+1))
 	}
-	go func() { LogErr(http.Serve(l, nil)) }()
-	httpfs.Put(OD()+"gui", []byte(l.Addr().String()))
-	return addr
+	util.PanicErr(fmt.Errorf("no available legacy GUI ports after %d attempts", maxLegacyGUIAutoPortAttempts))
+	return ""
 }
 
 func atoi(a string) int {

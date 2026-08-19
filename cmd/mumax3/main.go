@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	urlpkg "net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/mumax/3/cuda"
 	"github.com/mumax/3/engine"
+	"github.com/mumax/3/events"
 	"github.com/mumax/3/script"
 	mx3template "github.com/mumax/3/template"
 	"github.com/mumax/3/updater"
@@ -68,6 +70,11 @@ func main() {
 	} else if *engine.Flag_port == "" && !engine.FlagPassed("webui-queue-addr") {
 		*engine.Flag_queueport = ""
 	}
+	if err := validateCLIConfiguration(); err != nil {
+		fmt.Fprintln(os.Stderr, "invalid configuration:", err)
+		os.Exit(2)
+	}
+	engine.Timeout = *engine.Flag_interactiveTimeout
 	util.SetProgressHidden(*engine.Flag_hideprogress)
 	if *flag_version {
 		printVersion()
@@ -96,6 +103,16 @@ func main() {
 		log.Fatalf("invalid -storage-format %q (want ovf, zarr, or h5)", *engine.Flag_storage)
 	}
 
+	// The parent of a queued batch is a scheduler, not a simulation worker.
+	// RunQueue enumerates devices without creating a CUDA context; only the
+	// single-file path initializes the assigned device here.
+	if flag.NArg() > 1 {
+		if status := RunQueue(flag.Args()); status != 0 {
+			os.Exit(status)
+		}
+		return
+	}
+
 	cuda.Init(*engine.Flag_gpu)
 	engine.SetStructuredGPUInfo(cuda.GPUInfo)
 	printVersion()
@@ -121,11 +138,101 @@ func main() {
 		}
 	case 1:
 		runFileAndServe(flag.Arg(0))
-	default:
-		RunQueue(flag.Args())
 	}
 }
 
+func validateCLIConfiguration() error {
+	if *engine.Flag_interactive && *engine.Flag_port == "" {
+		return fmt.Errorf("-i/--interactive requires an enabled WebUI; remove -i or set -http")
+	}
+	if *engine.Flag_interactiveTimeout <= 0 {
+		return fmt.Errorf("-interactive-disconnect-timeout must be positive, got %s", *engine.Flag_interactiveTimeout)
+	}
+	if flag.NArg() > 1 && *engine.Flag_od != "" {
+		return fmt.Errorf("-o/--output-dir cannot be shared by multiple queued input files")
+	}
+	if *flag_maxGPUs < 0 {
+		return fmt.Errorf("-max_gpus must be at least 0, got %d", *flag_maxGPUs)
+	}
+	if engine.FlagPassed("gpu") && *engine.Flag_gpu < 0 {
+		return fmt.Errorf("-gpu must be non-negative, got %d", *engine.Flag_gpu)
+	}
+	if *engine.Flag_webuiPublicURL != "" {
+		if err := validatePublicURLTemplate(*engine.Flag_webuiPublicURL); err != nil {
+			return err
+		}
+	}
+	if *engine.Flag_webuiTrustedProxy != "" {
+		if err := validateTrustedProxyList(*engine.Flag_webuiTrustedProxy); err != nil {
+			return err
+		}
+	}
+	if *engine.Flag_port != "" {
+		host, port, _, err := parseWebUIAddress(*engine.Flag_port)
+		if err != nil {
+			return fmt.Errorf("invalid -http address: %w", err)
+		}
+		if flag.NArg() > 1 {
+			if engine.FlagPassed("gpu") && port+1+*engine.Flag_gpu > 65535 {
+				return fmt.Errorf("worker WebUI port for GPU %d exceeds 65535 from %s:%d", *engine.Flag_gpu, host, port)
+			}
+			if !engine.FlagPassed("gpu") && *flag_maxGPUs > 0 && port+*flag_maxGPUs > 65535 {
+				return fmt.Errorf("worker WebUI ports exceed 65535 from %s:%d", host, port)
+			}
+			if !engine.FlagPassed("gpu") && *flag_maxGPUs == 0 && port == 65535 {
+				return fmt.Errorf("queue worker WebUI needs a port above %d", port)
+			}
+		}
+	}
+	if *engine.Flag_queueport != "" {
+		if _, err := newQueueWebAddress(*engine.Flag_queueport); err != nil {
+			return fmt.Errorf("invalid queue WebUI address: %w", err)
+		}
+	}
+	return nil
+}
+
+func validatePublicURLTemplate(template string) error {
+	if !strings.Contains(template, "{port}") {
+		return fmt.Errorf("-webui-public-url must contain the {port} placeholder")
+	}
+	if strings.Contains(strings.ReplaceAll(template, "{port}", ""), "{") || strings.Contains(strings.ReplaceAll(template, "{port}", ""), "}") {
+		return fmt.Errorf("-webui-public-url contains an unsupported placeholder")
+	}
+	u, err := urlpkg.Parse(template)
+	if err != nil {
+		return fmt.Errorf("invalid -webui-public-url: %w", err)
+	}
+	if strings.HasPrefix(template, "/") {
+		if u.IsAbs() || u.Host != "" || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("relative -webui-public-url must be a path without query or fragment")
+		}
+		return nil
+	}
+	if u.Scheme != "http" && u.Scheme != "https" || u.Host == "" || u.User != nil {
+		return fmt.Errorf("absolute -webui-public-url must use http(s) and a host")
+	}
+	return nil
+}
+
+func validateTrustedProxyList(value string) error {
+	for _, raw := range strings.Split(value, ",") {
+		rule := strings.TrimSpace(raw)
+		if rule == "" {
+			continue
+		}
+		if strings.Contains(rule, "/") {
+			if _, _, err := net.ParseCIDR(rule); err != nil {
+				return fmt.Errorf("invalid trusted proxy CIDR %q: %w", rule, err)
+			}
+			continue
+		}
+		if net.ParseIP(rule) == nil {
+			return fmt.Errorf("invalid trusted proxy IP %q", rule)
+		}
+	}
+	return nil
+}
 func runTemplateCommand(args []string) {
 	flags := flag.NewFlagSet("template", flag.ExitOnError)
 	flat := flags.Bool("flat", false, "Generate files without nested directories")
@@ -227,9 +334,12 @@ func runScript(fname string) {
 func runGoFile(fname string) {
 	// pass through flags
 	flags := []string{"run", fname}
+	seen := make(map[string]bool)
 	flag.Visit(func(f *flag.Flag) {
-		if f.Name != "o" {
-			flags = append(flags, fmt.Sprintf("-%v=%v", f.Name, f.Value))
+		canonical := engine.CanonicalFlagName(f.Name)
+		if canonical != "o" && !seen[canonical] {
+			seen[canonical] = true
+			flags = append(flags, fmt.Sprintf("-%v=%v", canonical, f.Value))
 		}
 	})
 
@@ -238,6 +348,14 @@ func runGoFile(fname string) {
 	}
 
 	cmd := exec.Command("go", flags...)
+	if fdText := os.Getenv(events.EnvFD); fdText != "" {
+		if fd, err := strconv.Atoi(fdText); err == nil && fd >= 0 {
+			if eventFile := os.NewFile(uintptr(fd), "mumax-event"); eventFile != nil {
+				cmd.ExtraFiles = []*os.File{eventFile}
+				cmd.Env = append(os.Environ(), events.EnvFD+"=3")
+			}
+		}
+	}
 	log.Println("go", flags)
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
@@ -256,8 +374,16 @@ func goServeGUI() string {
 	}
 	if *engine.Flag_legacygui {
 		addr := engine.GoServe(*engine.Flag_port)
-		url := "http://127.0.0.1" + addr
-		fmt.Print("//starting legacy GUI at ", url, "\n")
+		host, actualPort, basePath, err := parseWebUIAddress(addr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		browserHost := host
+		if browserHost == "0.0.0.0" || browserHost == "::" {
+			browserHost = "127.0.0.1"
+		}
+		url := "http://" + net.JoinHostPort(browserHost, strconv.Itoa(actualPort)) + basePath + "/"
+		fmt.Printf("//starting legacy GUI at %s\n", url)
 		return url
 	}
 	host, port, basePath, err := parseWebUIAddress(*engine.Flag_port)
@@ -268,13 +394,22 @@ func goServeGUI() string {
 	if err != nil {
 		log.Fatal(err)
 	}
+	basePath = webui.RetargetBasePath(basePath, port, actualPort)
 	browserHost := host
 	if browserHost == "0.0.0.0" || browserHost == "::" {
 		browserHost = "127.0.0.1"
 	}
 	url := "http://" + net.JoinHostPort(browserHost, strconv.Itoa(actualPort)) + basePath + "/"
 	fmt.Print("//starting new web UI at ", url, "\n")
+	ensureWebUIReadyEvent(host, actualPort, basePath)
 	return url
+}
+
+func ensureWebUIReadyEvent(host string, port int, basePath string) {
+	if err := events.Emit(events.Event{Event: "webui_ready", ListenHost: host, ListenPort: port, BasePath: basePath}); err != nil {
+		log.Printf("webui event: %v", err)
+	}
+	fmt.Printf("//webui-ready %s%s\n", net.JoinHostPort(host, strconv.Itoa(port)), basePath)
 }
 
 func parseWebUIAddress(raw string) (host string, port int, basePath string, err error) {

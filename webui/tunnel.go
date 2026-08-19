@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,8 +14,10 @@ import (
 	"github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/mumax/3/engine"
+	"github.com/mumax/3/events"
 	"github.com/mumax/3/log"
 )
 
@@ -36,11 +39,16 @@ type SSHTunnel struct {
 // Load private keys from default locations like ~/.ssh/id_rsa
 func loadPrivateKeys() []ssh.AuthMethod {
 	var methods []ssh.AuthMethod
+	home, homeErr := os.UserHomeDir()
+	if homeErr != nil {
+		log.Log.Err("Could not resolve SSH home: %v", homeErr)
+		return methods
+	}
 
 	// Try to load the private keys from the default file locations
 	keyFiles := []string{
-		filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa"),
-		filepath.Join(os.Getenv("HOME"), ".ssh", "id_ed25519"),
+		filepath.Join(home, ".ssh", "id_rsa"),
+		filepath.Join(home, ".ssh", "id_ed25519"),
 	}
 
 	for _, keyFile := range keyFiles {
@@ -83,131 +91,117 @@ func fromConfig(host string, localPort, remotePort uint16) (tunnel SSHTunnel) {
 }
 
 // Start the SSH reverse tunnel
-func (tunnel *SSHTunnel) Start() {
+func (tunnel *SSHTunnel) Start(onReady func(string)) error {
 	log.Log.Debug("Starting SSH tunnel")
-	// Create SSH config
 	authMethods := []ssh.AuthMethod{}
-
-	// Add SSH agent method if available
 	if agentAuth := useSSHAgent(); agentAuth != nil {
 		authMethods = append(authMethods, agentAuth)
 	}
-
-	// Add private key methods if available
 	authMethods = append(authMethods, loadPrivateKeys()...)
-
-	// If no SSH key is available, fallback to password authentication
 	if len(authMethods) == 0 {
-		log.Log.Err("No SSH keys found, please add one to ~/.ssh/id_rsa, ~/.ssh/id_ed25519 or use an SSH agent")
+		return errors.New("no SSH keys or agent available")
 	}
-
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("resolve SSH home: %w", err)
+	}
+	hostKeyCallback, err := knownhosts.New(filepath.Join(home, ".ssh", "known_hosts"))
+	if err != nil {
+		return fmt.Errorf("load SSH known_hosts: %w", err)
+	}
 	config := &ssh.ClientConfig{
 		User:            tunnel.SSHUser,
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // For testing purposes
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         5 * time.Second,
 	}
-	// Connect to the SSH server
-	sshConn, err := ssh.Dial("tcp", tunnel.SSHHost+":"+tunnel.SSHPort, config)
+	sshPort := tunnel.SSHPort
+	if sshPort == "" {
+		sshPort = "22"
+	}
+	sshAddr := net.JoinHostPort(strings.Trim(tunnel.SSHHost, "[]"), sshPort)
+	sshConn, err := ssh.Dial("tcp", sshAddr, config)
 	if err != nil {
-		log.Log.Err("failed to dial SSH: %v", err)
-		return
+		return fmt.Errorf("failed to dial SSH: %w", err)
 	}
-	defer func() {
-		if err := sshConn.Close(); err != nil {
-			log.Log.Err("failed to close sshConn: %v", err)
-		}
-	}()
-
-	listener, err := sshConn.Listen("tcp", tunnel.remoteIP+":"+uint16ToString(tunnel.remotePort))
+	defer sshConn.Close()
+	listener, err := sshConn.Listen("tcp", net.JoinHostPort(tunnel.remoteIP, uint16ToString(tunnel.remotePort)))
 	if err != nil {
-		log.Log.Err("failed to start reverse tunnel: %v", err)
-		return
+		return fmt.Errorf("failed to start reverse tunnel: %w", err)
 	}
-	defer func() {
-		if err := listener.Close(); err != nil {
-			log.Log.Err("failed to close listener: %v", err)
-		}
-	}()
-	if tunnel.remotePort == 0 {
-		tunnel.remotePort, err = stringToUint16(strings.Split(listener.Addr().String(), ":")[1])
-		if err != nil {
-			log.Log.Err("failed to parse remote port: %v", err)
-			return
-		}
+	defer listener.Close()
+	_, assignedPort, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		return fmt.Errorf("parse reverse tunnel address: %w", err)
 	}
-
-	// Retrieve the dynamically assigned port from listener.Addr()
-	log.Log.Info("Tunnel started: http://%s:%d -> http://%s:%d", tunnel.remoteIP, tunnel.remotePort, tunnel.remoteIP, tunnel.localPort)
-
-	// Handle connections
+	tunnel.remotePort, err = stringToUint16(assignedPort)
+	if err != nil || tunnel.remotePort == 0 {
+		return fmt.Errorf("invalid reverse tunnel port %q", assignedPort)
+	}
+	publicURL := "http://" + net.JoinHostPort(strings.Trim(tunnel.SSHHost, "[]"), uint16ToString(tunnel.remotePort)) + "/"
+	log.Log.Info("Tunnel started: %s -> http://%s:%d", publicURL, tunnel.localIP, tunnel.localPort)
+	if onReady != nil {
+		onReady(publicURL)
+	}
 	for {
 		clientConn, err := listener.Accept()
 		if err != nil {
-			log.Log.Debug("Error accepting connection: %v", err)
-			continue
-		}
-
-		// Connect to the local WebUI (on worker)
-		remoteConn, err := net.Dial("tcp", net.JoinHostPort(tunnel.remoteIP, uint16ToString(tunnel.localPort)))
-		if err != nil {
-			log.Log.Debug("Error connecting to remote: %v", err)
-			if cerr := clientConn.Close(); cerr != nil {
-				log.Log.Debug("Error closing clientConn: %v", cerr)
+			if errors.Is(err, net.ErrClosed) {
+				return nil
 			}
+			return fmt.Errorf("accept reverse tunnel connection: %w", err)
+		}
+		localConn, err := net.Dial("tcp", net.JoinHostPort(tunnel.localIP, uint16ToString(tunnel.localPort)))
+		if err != nil {
+			clientConn.Close()
+			log.Log.Debug("Error connecting to local WebUI: %v", err)
 			continue
 		}
-
-		// Start proxying the data between the connections
-		go func() {
-			defer func() {
-				if err := clientConn.Close(); err != nil {
-					log.Log.Err("failed to close clientConn: %v", err)
-				}
-			}()
-			defer func() {
-				if err := remoteConn.Close(); err != nil {
-					log.Log.Err("failed to close remoteConn: %v", err)
-				}
-			}()
-			_, _ = io.Copy(clientConn, remoteConn)
-		}()
-
-		go func() {
-			defer func() {
-				if err := clientConn.Close(); err != nil {
-					log.Log.Err("failed to close clientConn: %v", err)
-				}
-			}()
-			defer func() {
-				if err := remoteConn.Close(); err != nil {
-					log.Log.Err("failed to close remoteConn: %v", err)
-				}
-			}()
-			_, _ = io.Copy(remoteConn, clientConn)
-		}()
+		go func(clientConn, localConn net.Conn) {
+			defer clientConn.Close()
+			defer localConn.Close()
+			go func() { _, _ = io.Copy(localConn, clientConn) }()
+			_, _ = io.Copy(clientConn, localConn)
+		}(clientConn, localConn)
 	}
+}
+func emitTunnelFailure(err error) {
+	if err == nil {
+		return
+	}
+	if emitErr := events.Emit(events.Event{Event: "tunnel_failed", Error: err.Error()}); emitErr != nil {
+		log.Log.Err("tunnel failure event: %v", emitErr)
+	}
+	fmt.Printf("//tunnel-failed %s\n", err)
+	log.Log.Err("SSH tunnel failed: %v", err)
 }
 
 func startTunnel(hostAndPort string) {
 	go func() {
 		localPort, err := getLocalPortWithRetry(5, 2*time.Second)
 		if err != nil {
-			log.Log.Err("Failed to get the local port: %v", err)
+			emitTunnelFailure(fmt.Errorf("get local WebUI port: %w", err))
 			return
 		}
 
 		remoteHost, remotePort, err := parseHostAndPort(hostAndPort)
 		if err != nil {
-			log.Log.Err("Failed to parse host and port: %v", err)
+			emitTunnelFailure(fmt.Errorf("parse SSH tunnel address: %w", err))
 			return
 		}
 		tunnel := fromConfig(remoteHost, localPort, remotePort)
 		if tunnel.SSHHost == "" {
-			log.Log.Err("No SSH host found in ~/.ssh/config for %s", remoteHost)
+			emitTunnelFailure(fmt.Errorf("no SSH host found in ~/.ssh/config for %s", remoteHost))
 			return
 		}
-		tunnel.Start()
+		if err := tunnel.Start(func(publicURL string) {
+			if err := events.Emit(events.Event{Event: "tunnel_ready", PublicURL: publicURL}); err != nil {
+				log.Log.Err("tunnel event: %v", err)
+			}
+			fmt.Printf("//tunnel-ready %s\n", publicURL)
+		}); err != nil {
+			emitTunnelFailure(err)
+		}
 	}()
 }
 
@@ -220,12 +214,12 @@ func getLocalPortWithRetry(maxRetries int, retryInterval time.Duration) (uint16,
 		port := engine.WebMetadata.Snapshot()["port"]
 		switch value := port.(type) {
 		case int:
-			if value >= 0 && value <= 65535 {
+			if value > 0 && value <= 65535 {
 				return uint16(value), nil
 			}
 		case string:
 			localPort, err = stringToUint16(value)
-			if err == nil {
+			if err == nil && localPort > 0 {
 				return localPort, nil // Successfully retrieved the port
 			}
 		}
@@ -237,16 +231,24 @@ func getLocalPortWithRetry(maxRetries int, retryInterval time.Duration) (uint16,
 }
 
 func parseHostAndPort(hostAndPort string) (host string, port uint16, err error) {
-	if strings.Contains(hostAndPort, ":") {
-		host = strings.Split(hostAndPort, ":")[0]
-		port, err = stringToUint16(strings.Split(hostAndPort, ":")[1])
-	} else {
-		host = hostAndPort
-		port = 0
+	raw := strings.TrimSpace(hostAndPort)
+	if raw == "" {
+		return "", 0, errors.New("empty SSH tunnel host")
 	}
-	return
+	if parsedHost, parsedPort, splitErr := net.SplitHostPort(raw); splitErr == nil {
+		parsed, parseErr := stringToUint16(parsedPort)
+		return parsedHost, parsed, parseErr
+	}
+	if strings.Count(raw, ":") == 1 {
+		parts := strings.SplitN(raw, ":", 2)
+		parsed, parseErr := stringToUint16(parts[1])
+		return parts[0], parsed, parseErr
+	}
+	if strings.HasPrefix(raw, "[") {
+		return "", 0, fmt.Errorf("invalid SSH tunnel address %q", raw)
+	}
+	return raw, 0, nil
 }
-
 func stringToUint16(s string) (uint16, error) {
 	n, err := strconv.ParseUint(s, 10, 16)
 	if err != nil {

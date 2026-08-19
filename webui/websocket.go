@@ -168,6 +168,10 @@ func (wsManager *WebSocketManager) websocketEntrypointFor(c echo.Context, cm *co
 
 	managed := cm.add(ws)
 	defer cm.remove(ws)
+	if name == "main" {
+		engine.InteractiveClientConnected()
+		defer engine.InteractiveClientDisconnected()
+	}
 	wsManager.engineState.Preview.Refresh = true
 	onConnect()
 

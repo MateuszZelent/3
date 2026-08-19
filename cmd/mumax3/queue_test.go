@@ -71,14 +71,14 @@ func TestQueueJobURL(t *testing.T) {
 			requestPath: "/",
 			host:        "localhost:35367",
 			webAddr:     "127.0.0.1:35368",
-			want:        "http://localhost:35368",
+			want:        "http://localhost:35368/",
 		},
 		{
 			name:        "LAN address",
 			requestPath: "/",
 			host:        "192.168.1.20:35367",
 			webAddr:     "0.0.0.0:35368",
-			want:        "http://192.168.1.20:35368",
+			want:        "http://192.168.1.20:35368/",
 		},
 		{
 			name:        "reverse proxy forwarded origin and prefix",
@@ -89,19 +89,22 @@ func TestQueueJobURL(t *testing.T) {
 				"X-Forwarded-Prefix": "/mumax/35367",
 			},
 			webAddr: "127.0.0.1:35368",
-			want:    "https://sim.example.org/mumax/35368",
+			want:    "https://sim.example.org/mumax/35368/",
 		},
 		{
 			name:        "configured proxy path",
 			requestPath: "/proxy/35367",
 			host:        "cluster.example.org",
 			webAddr:     "127.0.0.1:35368/proxy/35368",
-			want:        "http://cluster.example.org/proxy/35368",
+			want:        "http://cluster.example.org/proxy/35368/",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			r := httptest.NewRequest("GET", "http://"+tt.host+tt.requestPath, nil)
 			r.Host = tt.host
+			if tt.name == "reverse proxy forwarded origin and prefix" {
+				r.RemoteAddr = "127.0.0.1:1234"
+			}
 			for key, value := range tt.headers {
 				r.Header.Set(key, value)
 			}
@@ -115,11 +118,12 @@ func TestQueueJobURL(t *testing.T) {
 func TestQueueHTMLUsesPublicLinkAndEscapesJobName(t *testing.T) {
 	s := NewStateTab([]string{`<script>alert("bad")</script>.mx3`})
 	s.jobs[0].webAddr = "127.0.0.1:35368"
+	s.jobs[0].state = JobReady
 	r := httptest.NewRequest("GET", "http://localhost:35367", nil)
 	var output bytes.Buffer
 	s.RenderHTML(&output, r)
 	html := output.String()
-	if !strings.Contains(html, `href="http://localhost:35368"`) {
+	if !strings.Contains(html, `href="http://localhost:35368/"`) {
 		t.Fatalf("missing public worker link in %q", html)
 	}
 	if strings.Contains(html, "<script>") || !strings.Contains(html, "&lt;script&gt;") {

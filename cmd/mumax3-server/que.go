@@ -87,6 +87,12 @@ func LoadUserJobs(dir string) string {
 	log.Println("LoadUserJobs", dir)
 	var newJobs []*Job
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info == nil {
+			return nil
+		}
 		if strings.HasSuffix(path, ".mx3") && !strings.HasPrefix(info.Name(), ".") {
 			ID := thisAddr + "/" + path
 			log.Println("addingJob", ID)
