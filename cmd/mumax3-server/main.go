@@ -51,6 +51,7 @@ const GUI_PORT = 35367 // base port number for GUI (to be incremented by GPU num
 
 func main() {
 	flag.Parse()
+	log.Println("WARNING: cmd/mumax3-server is a legacy scheduler; it is not production-qualified for multi-node recovery. Prefer the local mumax3 queue.")
 
 	IPs = parseIPs()
 	MinPort, MaxPort = parsePorts()

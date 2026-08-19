@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,15 +32,21 @@ import (
 )
 
 var (
-	exitStatus       atom = 0
-	numOK, numFailed atom = 0, 0
-	queueCUDAOnce    sync.Once
+	exitStatus                   atom = 0
+	numOK, numFailed, numSkipped atom = 0, 0, 0
+	queueCUDAOnce                sync.Once
 )
 
 var (
 	runningMu sync.Mutex
 	running   = make(map[*exec.Cmd]runningProcess)
 )
+
+// workerCommand is injectable for process-group integration tests; production
+// always executes the current mumax3 binary.
+var workerCommand = func(ctx context.Context, args []string) *exec.Cmd {
+	return exec.CommandContext(ctx, os.Args[0], args...)
+}
 
 type runningProcess struct {
 	cmd    *exec.Cmd
@@ -92,6 +99,7 @@ func RunQueue(files []string) int {
 	exitStatus.set(0)
 	numOK.set(0)
 	numFailed.set(0)
+	numSkipped.set(0)
 	queueWeb := queueWebAddress{}
 	if *engine.Flag_queueport != "" {
 		var err error
@@ -111,6 +119,19 @@ func RunQueue(files []string) int {
 			exitStatus.set(1)
 			return 1
 		}
+	}
+	idle, gpuIDs, err := initGPUs()
+	if err != nil {
+		log.Printf("queue GPU initialization: %v", err)
+		exitStatus.set(1)
+		numFailed.inc()
+		return 1
+	}
+	if err := validateWorkerPortCapacity(jobWeb, gpuIDs); err != nil {
+		log.Printf("queue worker ports: %v", err)
+		exitStatus.set(1)
+		numFailed.inc()
+		return 1
 	}
 	s := NewStateTab(files)
 	signals := make(chan os.Signal, 1)
@@ -144,7 +165,7 @@ func RunQueue(files []string) int {
 		}
 		fmt.Printf("//Realtime queue overview available at http://%s%s\n", listener.Addr().String(), path)
 	}
-	s.Run(jobWeb)
+	s.Run(jobWeb, idle, len(gpuIDs))
 	if queueWeb.enabled {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := s.Shutdown(ctx); err != nil {
@@ -152,7 +173,7 @@ func RunQueue(files []string) int {
 		}
 		cancel()
 	}
-	fmt.Println(numOK.get(), "OK, ", numFailed.get(), "failed")
+	fmt.Println(numOK.get(), "OK, ", numSkipped.get(), "skipped, ", numFailed.get(), "failed")
 	signal.Stop(signals)
 	close(stopSignal)
 	return int(exitStatus.get())
@@ -211,6 +232,7 @@ const (
 	JobSucceeded JobState = "succeeded"
 	JobFailed    JobState = "failed"
 	JobCancelled JobState = "cancelled"
+	JobSkipped   JobState = "skipped"
 )
 
 type stateTab struct {
@@ -335,6 +357,14 @@ func (s *stateTab) SetCancelled(uid int) {
 	}
 }
 
+func (s *stateTab) SetSkipped(uid int) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if uid >= 0 && uid < len(s.jobs) && s.jobs[uid].state != JobFailed && s.jobs[uid].state != JobCancelled {
+		s.jobs[uid].state = JobSkipped
+	}
+}
+
 func (s *stateTab) IsStopped() bool {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -368,17 +398,14 @@ func (s *stateTab) Finish(j job, outcome runOutcome) {
 		if s.jobs[j.uid].state != JobFailed {
 			s.jobs[j.uid].state = JobCancelled
 		}
+	case runSkipped:
+		if s.jobs[j.uid].state != JobFailed && s.jobs[j.uid].state != JobCancelled {
+			s.jobs[j.uid].state = JobSkipped
+		}
 	}
 }
 
-func (s *stateTab) Run(web queueWebAddress) {
-	idle, nGPU, err := initGPUs()
-	if err != nil {
-		log.Printf("queue GPU initialization: %v", err)
-		exitStatus.set(1)
-		numFailed.inc()
-		return
-	}
+func (s *stateTab) Run(web queueWebAddress, idle chan int, nGPU int) {
 	for {
 		gpu := <-idle
 		j, ok := s.StartNext(web.jobAddress(gpu))
@@ -398,7 +425,7 @@ func (s *stateTab) Run(web queueWebAddress) {
 		}
 		s.SetGPU(j.uid, gpu)
 		go func(j job, gpu int) {
-			outcome := run(j.inFile, gpu, j.launchAddr,
+			outcome := run(j.uid, j.inFile, gpu, j.launchAddr,
 				func(pid int) { s.SetPID(j.uid, pid) },
 				func(addr string) { s.SetReady(j.uid, addr) },
 				func(addr string) { s.SetPublicURL(j.uid, addr) },
@@ -409,6 +436,7 @@ func (s *stateTab) Run(web queueWebAddress) {
 						s.Stop()
 					}
 				},
+				func() { s.SetSkipped(j.uid) },
 				func(code int) { s.SetExitCode(j.uid, code) },
 				func() { s.SetCancelled(j.uid) },
 				func() bool { return s.IsStopped() })
@@ -420,6 +448,7 @@ func (s *stateTab) Run(web queueWebAddress) {
 		<-idle
 	}
 }
+
 func atoi(a string) int {
 	i, err := strconv.Atoi(a)
 	util.PanicErr(err)
@@ -438,49 +467,81 @@ const (
 	runSucceeded runOutcome = iota
 	runFailed
 	runCancelled
+	runSkipped
 )
 
-func run(inFile string, gpu int, webAddr string, onStarted func(int), onReady func(string), onTunnelReady func(string), onFailed func(error), onTunnelFailed func(error), onExited func(int), onCancelled func(), cancelled func() bool) runOutcome {
-	gpuFlag := fmt.Sprint("-gpu=", gpu)
-	httpFlag := fmt.Sprint("-http=", webAddr)
-	flags := []string{gpuFlag, httpFlag}
+type workerAssignment struct {
+	GPU     int
+	WebAddr string
+}
+
+var workerControlledFlags = map[string]struct{}{
+	"gpu":              {},
+	"http":             {},
+	"failfast":         {},
+	"max_gpus":         {},
+	"webui-queue-addr": {},
+	"webui-public-url": {},
+}
+
+// childArgs constructs deterministic worker arguments from the flags explicitly
+// supplied by the parent. Aliases are canonicalized before scheduler-owned
+// values are filtered, so -g and -webui-addr cannot override the assignment.
+func childArgs(parentFlags map[string]string, assignment workerAssignment) ([]string, error) {
+	if assignment.GPU < 0 {
+		return nil, fmt.Errorf("worker GPU must be non-negative, got %d", assignment.GPU)
+	}
+	args := []string{fmt.Sprintf("-gpu=%d", assignment.GPU), "-http=" + assignment.WebAddr}
 	seen := map[string]bool{"gpu": true, "http": true}
-	var flagErr error
-	flag.Visit(func(f *flag.Flag) {
-		canonical := engine.CanonicalFlagName(f.Name)
-		if canonical != "gpu" && canonical != "http" && canonical != "failfast" && canonical != "max_gpus" && canonical != "webui-queue-addr" && canonical != "webui-public-url" && !seen[canonical] {
-			value := f.Value.String()
-			if canonical == "tunnel" {
-				var err error
-				value, err = workerTunnelArgument(value, gpu)
-				if err != nil {
-					flagErr = err
-					return
-				}
-			}
-			seen[canonical] = true
-			flags = append(flags, fmt.Sprintf("-%v=%v", canonical, value))
+	keys := make([]string, 0, len(parentFlags))
+	for name := range parentFlags {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	for _, rawName := range keys {
+		canonical := engine.CanonicalFlagName(rawName)
+		if _, controlled := workerControlledFlags[canonical]; controlled || seen[canonical] || strings.HasPrefix(canonical, "test.") {
+			continue
 		}
+		value := parentFlags[rawName]
+		if canonical == "tunnel" {
+			var err error
+			value, err = workerTunnelArgument(value, assignment.GPU)
+			if err != nil {
+				return nil, err
+			}
+		}
+		seen[canonical] = true
+		args = append(args, fmt.Sprintf("-%s=%s", canonical, value))
+	}
+	return args, nil
+}
+
+func run(uid int, inFile string, gpu int, webAddr string, onStarted func(int), onReady func(string), onTunnelReady func(string), onFailed func(error), onTunnelFailed func(error), onSkipped func(), onExited func(int), onCancelled func(), cancelled func() bool) runOutcome {
+	parentFlags := make(map[string]string)
+	flag.Visit(func(f *flag.Flag) {
+		parentFlags[f.Name] = f.Value.String()
 	})
+	flags, flagErr := childArgs(parentFlags, workerAssignment{GPU: gpu, WebAddr: webAddr})
+	flags = append(flags, inFile)
 	if flagErr != nil {
 		onFailed(flagErr)
 		if *flag_failfast {
 			stopRunning()
 		}
-		log.Printf("[%s] %v", inFile, flagErr)
+		log.Printf("[job %d %s] %v", uid, inFile, flagErr)
 		exitStatus.set(1)
 		numFailed.inc()
 		return runFailed
 	}
-	flags = append(flags, inFile)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], flags...)
+	cmd := workerCommand(ctx, flags)
 	configureWorkerProcess(cmd)
 	log.Println(os.Args[0], flags)
 	fail := func(err error) runOutcome {
 		onFailed(err)
-		log.Printf("[%s] %v", inFile, err)
+		log.Printf("[job %d %s] %v", uid, inFile, err)
 		exitStatus.set(1)
 		numFailed.inc()
 		if *flag_failfast {
@@ -494,7 +555,10 @@ func run(inFile string, gpu int, webAddr string, onStarted func(int), onReady fu
 	}
 	defer eventReader.Close()
 	cmd.ExtraFiles = []*os.File{eventWriter}
-	cmd.Env = append(os.Environ(), events.EnvFD+"=3")
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
+	cmd.Env = append(cmd.Env, events.EnvFD+"=3")
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		eventWriter.Close()
@@ -514,6 +578,7 @@ func run(inFile string, gpu int, webAddr string, onStarted func(int), onReady fu
 	registerRunning(cmd, cancel)
 	defer unregisterRunning(cmd)
 	ready := make(chan string, 1)
+	skippedCh := make(chan struct{}, 1)
 	protocolErrCh := make(chan error, 1)
 	eventDone := make(chan struct{})
 	go func() {
@@ -544,6 +609,12 @@ func run(inFile string, gpu int, webAddr string, onStarted func(int), onReady fu
 				onTunnelFailed(tunnelErr)
 				return tunnelErr
 
+			case "worker_skipped":
+				select {
+				case skippedCh <- struct{}{}:
+				default:
+				}
+				return nil
 			case "worker_failed":
 				if event.Error == "" {
 					return errors.New("worker reported failure")
@@ -553,7 +624,10 @@ func run(inFile string, gpu int, webAddr string, onStarted func(int), onReady fu
 			return nil
 		})
 		if err != nil {
-			protocolErrCh <- err
+			select {
+			case protocolErrCh <- err:
+			default:
+			}
 		}
 	}()
 	streamDone := make(chan struct{}, 2)
@@ -582,10 +656,10 @@ func run(inFile string, gpu int, webAddr string, onStarted func(int), onReady fu
 				}
 				continue
 			}
-			log.Printf("[%s] %s", inFile, line)
+			log.Printf("[job %d %s] %s", uid, inFile, line)
 		}
 		if err := scanner.Err(); err != nil {
-			log.Printf("[%s] output: %v", inFile, err)
+			log.Printf("[job %d %s] output: %v", uid, inFile, err)
 		}
 	}
 	go stream(stdout)
@@ -645,6 +719,12 @@ func run(inFile string, gpu int, webAddr string, onStarted func(int), onReady fu
 	case protocolErr = <-protocolErrCh:
 	default:
 	}
+	skipped := false
+	select {
+	case <-skippedCh:
+		skipped = true
+	default:
+	}
 	if protocolErr != nil {
 		if cancelled() {
 			onCancelled()
@@ -658,6 +738,17 @@ func run(inFile string, gpu int, webAddr string, onStarted func(int), onReady fu
 			return runCancelled
 		}
 		return fail(waitErr)
+	}
+	if skipped {
+		if onSkipped != nil {
+			onSkipped()
+		}
+		numSkipped.inc()
+		return runSkipped
+	}
+	if cancelled() {
+		onCancelled()
+		return runCancelled
 	}
 	if webAddr != "" && !readySeen {
 		return fail(errors.New("worker exited before webui-ready"))
@@ -776,7 +867,7 @@ func parseTunnelFailed(line string) (error, bool) {
 
 // Creates a concurrent channel containing the available GPU IDs for jobs.
 // Returns the channel and the number of available GPUs for the queue.
-func initGPUs() (idle chan int, nGPU int, err error) {
+func initGPUs() (idle chan int, gpuIDs []int, err error) {
 	var deviceCount int
 	func() {
 		defer func() {
@@ -788,19 +879,34 @@ func initGPUs() (idle chan int, nGPU int, err error) {
 		deviceCount = cu.DeviceGetCount()
 	}()
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-	gpuIDs, err := selectQueueGPUs(deviceCount, engine.FlagPassed("gpu"), *engine.Flag_gpu, *flag_maxGPUs)
+	gpuIDs, err = selectQueueGPUs(deviceCount, engine.FlagPassed("gpu"), *engine.Flag_gpu, *flag_maxGPUs)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	log.Printf("//queue using %d of %d available GPU(s): %v", len(gpuIDs), deviceCount, gpuIDs)
 	idle = make(chan int, len(gpuIDs))
 	for _, gpu := range gpuIDs {
 		idle <- gpu
 	}
-	return idle, len(gpuIDs), nil
+	return idle, gpuIDs, nil
 }
+func validateWorkerPortCapacity(web queueWebAddress, gpuIDs []int) error {
+	if !web.enabled {
+		return nil
+	}
+	if len(gpuIDs) == 0 {
+		return errors.New("no GPUs available for worker port allocation")
+	}
+	for _, gpu := range gpuIDs {
+		if web.port > 65535-1-gpu {
+			return fmt.Errorf("worker WebUI port for GPU %d exceeds 65535 from %s:%d", gpu, web.host, web.port)
+		}
+	}
+	return nil
+}
+
 func selectQueueGPUs(deviceCount int, explicitGPU bool, gpu, maxGPUs int) ([]int, error) {
 	if deviceCount < 1 {
 		return nil, errors.New("no GPUs available")

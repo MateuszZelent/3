@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kevinburke/ssh_config"
@@ -34,6 +36,10 @@ type SSHTunnel struct {
 	SSHUser    string // SSH user on proxy server
 	SSHHost    string // Proxy server address (e.g., proxy-server.com)
 	SSHPort    string // SSH port on the proxy server (usually 22)
+
+	mu       sync.Mutex
+	sshConn  *ssh.Client
+	listener net.Listener
 }
 
 // Load private keys from default locations like ~/.ssh/id_rsa
@@ -91,7 +97,19 @@ func fromConfig(host string, localPort, remotePort uint16) (tunnel SSHTunnel) {
 }
 
 // Start the SSH reverse tunnel
+// Start keeps the historical API while delegating lifecycle control to the
+// context-aware implementation.
 func (tunnel *SSHTunnel) Start(onReady func(string)) error {
+	return tunnel.StartContext(context.Background(), onReady)
+}
+
+// StartContext starts the reverse tunnel and closes its SSH resources when ctx
+// is cancelled or Close is called. A non-nil context is required by callers
+// that own a longer-lived worker lifecycle.
+func (tunnel *SSHTunnel) StartContext(ctx context.Context, onReady func(string)) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	log.Log.Debug("Starting SSH tunnel")
 	authMethods := []ssh.AuthMethod{}
 	if agentAuth := useSSHAgent(); agentAuth != nil {
@@ -124,12 +142,29 @@ func (tunnel *SSHTunnel) Start(onReady func(string)) error {
 	if err != nil {
 		return fmt.Errorf("failed to dial SSH: %w", err)
 	}
-	defer sshConn.Close()
+	if err := ctx.Err(); err != nil {
+		_ = sshConn.Close()
+		return err
+	}
 	listener, err := sshConn.Listen("tcp", net.JoinHostPort(tunnel.remoteIP, uint16ToString(tunnel.remotePort)))
 	if err != nil {
+		_ = sshConn.Close()
 		return fmt.Errorf("failed to start reverse tunnel: %w", err)
 	}
-	defer listener.Close()
+	tunnel.mu.Lock()
+	tunnel.sshConn = sshConn
+	tunnel.listener = listener
+	tunnel.mu.Unlock()
+	stopCloser := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = tunnel.Close()
+		case <-stopCloser:
+		}
+	}()
+	defer close(stopCloser)
+	defer tunnel.Close()
 	_, assignedPort, err := net.SplitHostPort(listener.Addr().String())
 	if err != nil {
 		return fmt.Errorf("parse reverse tunnel address: %w", err)
@@ -147,13 +182,19 @@ func (tunnel *SSHTunnel) Start(onReady func(string)) error {
 		clientConn, err := listener.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
 				return nil
 			}
 			return fmt.Errorf("accept reverse tunnel connection: %w", err)
 		}
-		localConn, err := net.Dial("tcp", net.JoinHostPort(tunnel.localIP, uint16ToString(tunnel.localPort)))
+		localConn, err := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(tunnel.localIP, uint16ToString(tunnel.localPort)))
 		if err != nil {
-			clientConn.Close()
+			_ = clientConn.Close()
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			log.Log.Debug("Error connecting to local WebUI: %v", err)
 			continue
 		}
@@ -165,6 +206,30 @@ func (tunnel *SSHTunnel) Start(onReady func(string)) error {
 		}(clientConn, localConn)
 	}
 }
+
+// Close stops the reverse listener and SSH client. It is safe to call more
+// than once and is also used by StartContext's cancellation watcher.
+func (tunnel *SSHTunnel) Close() error {
+	tunnel.mu.Lock()
+	listener := tunnel.listener
+	sshConn := tunnel.sshConn
+	tunnel.listener = nil
+	tunnel.sshConn = nil
+	tunnel.mu.Unlock()
+	var firstErr error
+	if listener != nil {
+		if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			firstErr = err
+		}
+	}
+	if sshConn != nil {
+		if err := sshConn.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 func emitTunnelFailure(err error) {
 	if err == nil {
 		return

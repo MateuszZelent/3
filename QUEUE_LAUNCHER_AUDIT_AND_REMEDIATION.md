@@ -716,8 +716,32 @@ Naprawę można uznać za zakończoną dopiero, gdy:
 - testy obejmują procesy, porty, HTTP i WebSocket, a nie tylko funkcje składające string URL;
 - legacy server jest jawnie naprawiony lub jawnie wyłączony z deklaracji wsparcia produkcyjnego.
 
-## 22. Aktualny punkt kontynuacji
+## 22. Aktualny stan implementacji i dowody
 
-W bieżącym checkoutcie istnieje lokalna poprawka `engine/gui.go` oraz test `engine/gui_interactive_test.go`, które usuwają trzysekundowe wyjście przed pierwszym połączeniem. Testy z `go test -vet=off ./engine -run Interactive -count=1` przechodzą.
+Data ostatniej weryfikacji: 2026-08-19.
 
-Ta poprawka nie zamyka QP-04, ponieważ nowy WebUI nie raportuje connect/disconnect do engine. Przed kolejnym release należy rozszerzyć ją o session tracker i integrację z `webui/websocket.go`, a następnie wykonać test z prawdziwym WebSocketem.
+Zaimplementowane w bieżącym checkoutcie:
+
+- QP-01/QP-02: JSONL event pipe `webui_ready`, rzeczywisty port/basePath, kanonikalizacja aliasów i czysta funkcja `childArgs`.
+- QP-03/QP-12: synchroniczny bind strony kolejki, `Shutdown`, stany `queued/starting/running/ready/succeeded/failed/cancelled/skipped`, PID/exit code/error.
+- QP-04/QP-05: niezależny `InteractiveSessionTracker`, integracja głównego WebSocketu, brak timeoutu przed pierwszym klientem, reconnect i konfigurowalny grace period; walidacja odbywa się przed CUDA.
+- QP-06/QP-07: context per worker, SIGTERM/SIGKILL całej grupy procesów na Linuxie, kontrolowany shutdown oraz odrzucenie współdzielonego `-o` dla wielu plików.
+- QP-08/QP-09: oddzielne porty tuneli, `tunnel_ready/tunnel_failed`, `known_hosts`, `Close`/context tunelu i ograniczony auto-port reagujący tylko na `EADDRINUSE`.
+- QP-10/QP-11: `StdoutPipe`/`StderrPipe`, limit skanera 4 MiB, prefiks `job UID`, jawny `{port}`, zaufane CIDR proxy i końcowy slash linków.
+- QP-13/QP-14: walidacja zakresu po rzeczywiście wybranych GPU oraz enumeracja GPU w parent schedulerze bez `cuda.Init` ścieżki pojedynczej symulacji.
+- LS-01–LS-04: legacy server odbiera ten sam `webui_ready`, ma zamykany heartbeat, bezpieczny callback `filepath.Walk`, dynamiczną enumerację GPU i ostrzeżenie o braku kwalifikacji produkcyjnej.
+
+Dowody automatyczne:
+
+- `go test -vet=off ./events ./cmd/mumax3 ./webui ./engine ./cmd/mumax3-server`
+- `go test -race -vet=off ./events ./cmd/mumax3 ./webui ./engine ./cmd/mumax3-server`
+- `go build ./cmd/mumax3` oraz `go build ./cmd/mumax3-server`
+- `cmd/mumax3/queue_integration_test.go`: dwa procesy helperów, dwa zajęte porty, actual-port/basePath, HTTP, POST API i oba WebSockety.
+- `cmd/mumax3/queue_shutdown_integration_test.go`: proces potomny i jego subprocess są kończone przez grupę procesów.
+- uruchomienia CLI z `-i/-webui-disable`, pustym `-http`, błędnym proxy path i portem `65535` kończą się kodem 2 przed inicjalizacją CUDA.
+
+Ograniczenia dowodu:
+
+- Pełny `go test ./...` nadal wymaga osobnego uporządkowania istniejących błędów vet/CUDA w innych pakietach; dlatego gate launchera używa jawnie `-vet=off` oraz osobnego `-race`.
+- Nie wykonano testu z prawdziwym GPU przez ten checkout ani testu z prawdziwym serwerem SSH i VS Code Remote; known_hosts i protokół są sprawdzone źródłowo/unitowo, ale nie są przez to kwalifikacją wielowęzłową.
+- `cmd/mumax3-server` pozostaje kompatybilnością legacy i nie jest deklarowany jako produkcyjnie kwalifikowany scheduler wielowęzłowy.

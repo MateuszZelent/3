@@ -169,6 +169,11 @@ func validateCLIConfiguration() error {
 	}
 	if *engine.Flag_port != "" {
 		host, port, _, err := parseWebUIAddress(*engine.Flag_port)
+		if flag.NArg() > 1 {
+			if _, err := newQueueWebAddress(*engine.Flag_port); err != nil {
+				return fmt.Errorf("invalid worker WebUI address: %w", err)
+			}
+		}
 		if err != nil {
 			return fmt.Errorf("invalid -http address: %w", err)
 		}
@@ -373,11 +378,16 @@ func goServeGUI() string {
 		return ""
 	}
 	if *engine.Flag_legacygui {
-		addr := engine.GoServe(*engine.Flag_port)
-		host, actualPort, basePath, err := parseWebUIAddress(addr)
+		host, port, basePath, err := parseWebUIAddress(*engine.Flag_port)
 		if err != nil {
 			log.Fatal(err)
 		}
+		addr := engine.GoServe(net.JoinHostPort(host, strconv.Itoa(port)), basePath)
+		host, actualPort, _, err := parseWebUIAddress(addr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		basePath = webui.RetargetBasePath(basePath, port, actualPort)
 		browserHost := host
 		if browserHost == "0.0.0.0" || browserHost == "::" {
 			browserHost = "127.0.0.1"
