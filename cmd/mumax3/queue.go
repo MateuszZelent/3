@@ -705,13 +705,20 @@ func run(uid int, inFile string, gpu int, webAddr string, onStarted func(int), o
 		onExited(cmd.ProcessState.ExitCode())
 	}
 
-	eventReader.Close()
 	<-eventDone
 	<-streamDone
 	<-streamDone
 	select {
 	case protocolErr = <-protocolErrCh:
 	default:
+	}
+	if !readySeen && protocolErr == nil {
+		select {
+		case addr := <-ready:
+			readySeen = true
+			onReady(addr)
+		default:
+		}
 	}
 	skipped := false
 	select {

@@ -737,6 +737,7 @@ Dowody automatyczne:
 - `go test -race -vet=off ./events ./cmd/mumax3 ./webui ./engine ./cmd/mumax3-server`
 - `go build ./cmd/mumax3` oraz `go build ./cmd/mumax3-server`
 - `cmd/mumax3/queue_integration_test.go`: dwa procesy helperów, dwa zajęte porty, actual-port/basePath, HTTP, POST API i oba WebSockety.
+- `run()` czeka na zakończenie readera eventów przed zamknięciem pipe i odbiera `webui_ready` także po szybkim wyjściu workera; `TestQueueAcceptsReadyEventBeforeImmediateExit` powtarza ten scenariusz 50 razy.
 - `cmd/mumax3/queue_shutdown_integration_test.go`: proces potomny i jego subprocess są kończone przez grupę procesów.
 - `cmd/mumax3/interactive_timeout_contract_test.go`: timeout interactive jest pobierany z flagi CLI.
 - `cmd/mumax3/queue_failfast_integration_test.go`: failfast kończy procesy workerów i ich subprocessy oraz rozróżnia `failed` od `cancelled`.

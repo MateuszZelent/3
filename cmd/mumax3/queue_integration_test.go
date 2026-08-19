@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -45,6 +46,9 @@ func TestQueueWorkerHelperProcess(t *testing.T) {
 	effectiveBase := webui.RetargetBasePath(basePath, preferred, actual)
 	if err := events.Emit(events.Event{Event: "webui_ready", ListenHost: "127.0.0.1", ListenPort: actual, BasePath: effectiveBase}); err != nil {
 		t.Fatal(err)
+	}
+	if os.Getenv("MUMAX_QUEUE_HELPER_EXIT") == "1" {
+		return
 	}
 
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
@@ -224,6 +228,41 @@ func TestQueueWorkersUseActualPortsAndProxyPaths(t *testing.T) {
 				t.Fatalf("WebSocket %s message = %q, err = %v", path, message, err)
 			}
 			_ = conn.Close()
+		}
+	}
+}
+
+func TestQueueAcceptsReadyEventBeforeImmediateExit(t *testing.T) {
+	oldFactory := workerCommand
+	defer func() { workerCommand = oldFactory }()
+	workerCommand = func(ctx context.Context, args []string) *exec.Cmd {
+		fullArgs := append([]string{"-test.run=^TestQueueWorkerHelperProcess$"}, args...)
+		cmd := exec.CommandContext(ctx, os.Args[0], fullArgs...)
+		cmd.Env = append(os.Environ(),
+			"MUMAX_QUEUE_HELPER=1",
+			"MUMAX_HELPER_PORT=44001",
+			"MUMAX_HELPER_BASE=",
+			"MUMAX_QUEUE_HELPER_EXIT=1",
+		)
+		return cmd
+	}
+	for i := 0; i < 50; i++ {
+		var readyAddr string
+		outcome := run(100+i, "ready-before-exit.mx3", 0, "127.0.0.1:44001",
+			func(int) {},
+			func(addr string) { readyAddr = addr },
+			func(string) {},
+			func(error) {},
+			func(error) {},
+			func() {},
+			func(int) {},
+			func() {},
+			func() bool { return false })
+		if outcome != runSucceeded {
+			t.Fatalf("iteration %d outcome = %v, want runSucceeded", i, outcome)
+		}
+		if readyAddr != "127.0.0.1:44001" {
+			t.Fatalf("iteration %d ready address = %q", i, readyAddr)
 		}
 	}
 }
