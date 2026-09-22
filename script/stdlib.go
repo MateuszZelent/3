@@ -25,6 +25,7 @@ func (w *World) LoadStdlib() {
 	w.Func("cbrt", math.Cbrt)
 	w.Func("ceil", math.Ceil)
 	w.Func("cos", math.Cos)
+	w.Func("round", math.Round)
 	w.Func("cosh", math.Cosh)
 	w.Func("erf", math.Erf)
 	w.Func("erfc", math.Erfc)

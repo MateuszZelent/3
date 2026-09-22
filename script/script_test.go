@@ -42,6 +42,9 @@ func TestEval(t *testing.T) {
 	if w.MustEval("sqrt(3*3)").(float64) != 3 {
 		t.Fail()
 	}
+	if w.MustEval("round(2.6)").(float64) != 3.0 {
+		t.Fatal("round(2.6) should be 3")
+	}
 }
 
 func TestContains(t *testing.T) {
