@@ -103,12 +103,12 @@ test('volume sampling exposes Z and preserves a cube at unequal preview sizes', 
 	expect(geometry.voxelCount).toBeGreaterThan(0);
 	for (const coordinate of geometry.target) expect(coordinate).toBeCloseTo(50);
 	await page.setViewportSize({ width: 1641, height: 1000 });
-	await page.locator('.preview-toolbar').screenshot({ path: '/tmp/preview-toolbar-desktop.png' });
+	await page.locator('.preview-studio').screenshot({ path: '/tmp/preview-toolbar-desktop.png' });
 	for (const width of [1024, 768, 390]) {
 		await page.setViewportSize({ width, height: 1000 });
 		await expect(zSlider).toBeVisible();
 		const fits = await page
-			.locator('.preview-toolbar')
+			.locator('.preview-studio')
 			.evaluate((element) => element.scrollWidth <= element.clientWidth + 1);
 		expect(fits).toBe(true);
 	}

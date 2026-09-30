@@ -20,6 +20,14 @@ export interface Preview {
 	unit: string;
 	component: string;
 	layer: number;
+	plane?: 'xy' | 'yz' | 'xz';
+	sliceIndex?: number;
+	planeUPossibleSizes?: number[];
+	planeVPossibleSizes?: number[];
+	planeUChosenSize?: number;
+	planeVChosenSize?: number;
+	appliedPlaneUSize?: number;
+	appliedPlaneVSize?: number;
 	allLayers: boolean;
 	type: string;
 	vectorFieldValues: VectorField;
@@ -54,6 +62,8 @@ export const previewState = writable<Preview>({
 	unit: '',
 	component: '',
 	layer: 0,
+	plane: 'xy',
+	sliceIndex: 0,
 	allLayers: false,
 	maxPoints: 0,
 	type: '',

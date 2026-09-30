@@ -60,7 +60,7 @@ try {
 		document.querySelector('.preview-wrapper__stats')?.textContent?.includes('scale 4.00')
 	);
 	await page
-		.locator('.preview-toolbar')
+		.locator('.studio-settings')
 		.screenshot({ path: '/tmp/3-preview-limits-appearance.png' });
 	const volumeResponse = await page.request.post(baseUrl + '/api/console/command', {
 		data: { command: 'SetGridSize(100,100,100); m=Uniform(1,0.5,-0.25)' }
@@ -108,7 +108,7 @@ try {
 	);
 	console.error(
 		await page
-			.locator('.preview-resolution-summary')
+			.locator('.resolution-summary')
 			.innerText()
 			.catch(() => '')
 	);

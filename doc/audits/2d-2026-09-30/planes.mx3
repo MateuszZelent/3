@@ -1,0 +1,12 @@
+SetGridSize(7,5,3)
+SetCellSize(5e-9,11e-9,17e-9)
+Msat=800e3
+Aex=13e-12
+m=Uniform(0,1,0)
+for z:=0;z<3;z++ {
+ for y:=0;y<5;y++ {
+  for x:=0;x<7;x++ {
+   m.SetCell(x,y,z,Vector((x-3)*100+(y-2)*10+z-1,500,0))
+  }
+ }
+}

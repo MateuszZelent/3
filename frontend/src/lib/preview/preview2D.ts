@@ -2,7 +2,11 @@ import { previewState } from '$api/incoming/preview';
 import { get } from 'svelte/store';
 import { meshState } from '$api/incoming/mesh';
 import { disposePreview3D } from './preview3D';
-import { previewSampleCoordinateNm } from './preview2DCoordinates';
+import {
+	previewSampleCoordinateNm,
+	previewPlaneAxes,
+	fitPreviewPlane
+} from './preview2DCoordinates';
 import {
 	ECHARTS_THEME_NAME,
 	THEME,
@@ -21,12 +25,12 @@ type ColorScale = {
 };
 
 type AxisMetrics = {
+	uName: string;
+	vName: string;
 	xExtentNm: number;
 	yExtentNm: number;
 	xSampleCount: number;
 	ySampleCount: number;
-	xCategories: number[];
-	yCategories: number[];
 };
 
 export function preview2D() {
@@ -128,7 +132,8 @@ function axisPointerLabelFormatter(axis: 'x' | 'y') {
 		if (params.value === undefined) {
 			return 'NaN';
 		}
-		return `${axis}: ${formatAxisCoordinate(axis, Number(params.value))} nm`;
+		const metrics = getAxisMetrics();
+		return `${axis === 'x' ? metrics.uName : metrics.vName}: ${formatAxisCoordinate(axis, Number(params.value))} nm`;
 	};
 }
 
@@ -143,13 +148,13 @@ function buildVisualMap(quantity: string, unit: string, min: number, max: number
 		calculable: false,
 		realtime: false,
 		precision: 3,
-		orient: 'vertical' as const,
-		right: 8,
-		top: 'middle' as const,
-		itemWidth: 12,
-		itemHeight: 188,
+		orient: 'horizontal' as const,
+		left: 'center' as const,
+		bottom: 8,
+		itemWidth: 10,
+		itemHeight: Math.max(60, Math.min(180, (chartInstance?.getWidth() || 360) - 180)),
 		align: 'right' as const,
-		padding: [12, 10, 12, 10],
+		padding: [8, 10, 8, 10],
 		textGap: 10,
 		backgroundColor: 'rgba(15, 23, 42, 0.76)',
 		borderColor: THEME.border,
@@ -175,18 +180,21 @@ function buildVisualMap(quantity: string, unit: string, min: number, max: number
 function getAxisMetrics(): AxisMetrics {
 	const ps = get(previewState);
 	const mesh = get(meshState);
-	const xChosenSize = Math.max(ps.appliedXChosenSize || ps.xChosenSize, 1);
-	const yChosenSize = Math.max(ps.appliedYChosenSize || ps.yChosenSize, 1);
-	const xExtentNm = mesh.dx * 1e9 * mesh.Nx;
-	const yExtentNm = mesh.dy * 1e9 * mesh.Ny;
+	const axes = previewPlaneAxes(ps.plane);
+	const counts = { x: mesh.Nx, y: mesh.Ny, z: mesh.Nz };
+	const cells = { x: mesh.dx, y: mesh.dy, z: mesh.dz };
+	const xChosenSize = Math.max(ps.appliedPlaneUSize || ps.appliedXChosenSize || ps.xChosenSize, 1);
+	const yChosenSize = Math.max(ps.appliedPlaneVSize || ps.appliedYChosenSize || ps.yChosenSize, 1);
+	const xExtentNm = cells[axes.u] * 1e9 * counts[axes.u];
+	const yExtentNm = cells[axes.v] * 1e9 * counts[axes.v];
 
 	return {
+		uName: axes.u,
+		vName: axes.v,
 		xExtentNm,
 		yExtentNm,
 		xSampleCount: xChosenSize,
-		ySampleCount: yChosenSize,
-		xCategories: Array.from({ length: xChosenSize }, (_, index) => index),
-		yCategories: Array.from({ length: yChosenSize }, (_, index) => index)
+		ySampleCount: yChosenSize
 	};
 }
 
@@ -210,8 +218,9 @@ function tooltipFormatter(params: any) {
 	const unitSuffix = ps.unit ? ` ${ps.unit}` : '';
 	return [
 		`<strong>${ps.quantity}</strong>`,
-		`x: ${formatAxisCoordinate('x', Number(params.value[0]))} nm`,
-		`y: ${formatAxisCoordinate('y', Number(params.value[1]))} nm`,
+		`${getAxisMetrics().uName}: ${formatAxisCoordinate('x', Number(params.value[0]))} nm`,
+		`${getAxisMetrics().vName}: ${formatAxisCoordinate('y', Number(params.value[1]))} nm`,
+		sectionDescription(),
 		`value: ${formatMagnitude(value)}${unitSuffix}`
 	].join('<br/>');
 }
@@ -223,13 +232,24 @@ function updateData() {
 		return;
 	}
 	const ps = get(previewState);
-	const { xCategories, yCategories } = getAxisMetrics();
+	const { xSampleCount, ySampleCount, uName, vName } = getAxisMetrics();
+	const xCategories = Array.from({ length: xSampleCount }, (_, index) => index);
+	const yCategories = Array.from({ length: ySampleCount }, (_, index) => index);
 	const visualMap = buildVisualMap(ps.quantity, ps.unit, ps.min, ps.max) as any;
 	chartInstance.setOption(
 		{
 			animation: false,
 			animationDurationUpdate: 0,
+			grid: planeGrid(),
+			toolbox: {
+				feature: {
+					saveAsImage: {
+						name: `preview-${ps.quantity}-${ps.plane || 'xy'}-${ps.allLayers ? 'mean' : (ps.sliceIndex ?? ps.layer)}`
+					}
+				}
+			},
 			xAxis: {
+				name: `${uName} (nm)`,
 				data: xCategories,
 				axisLabel: {
 					formatter: function (value: number) {
@@ -239,6 +259,7 @@ function updateData() {
 				}
 			},
 			yAxis: {
+				name: `${vName} (nm)`,
 				data: yCategories,
 				axisLabel: {
 					formatter: function (value: number) {
@@ -275,8 +296,8 @@ function init() {
 			useDirtyRect: true
 		});
 	}
-	resizeECharts();
 	setFullOptions();
+	resizeECharts();
 }
 
 /** Replace all chart options on the existing instance (no canvas destruction). */
@@ -285,7 +306,9 @@ function setFullOptions() {
 		return;
 	}
 	const ps = get(previewState);
-	const { xCategories, yCategories } = getAxisMetrics();
+	const { xSampleCount, ySampleCount, uName, vName } = getAxisMetrics();
+	const xCategories = Array.from({ length: xSampleCount }, (_, index) => index);
+	const yCategories = Array.from({ length: ySampleCount }, (_, index) => index);
 	const visualMap = buildVisualMap(ps.quantity, ps.unit, ps.min, ps.max);
 
 	// @ts-ignore
@@ -307,7 +330,7 @@ function setFullOptions() {
 			xAxis: {
 				type: 'category',
 				data: xCategories,
-				name: 'x (nm)',
+				name: `${uName} (nm)`,
 				nameLocation: 'middle',
 				nameGap: 30,
 				nameTextStyle: {
@@ -361,7 +384,7 @@ function setFullOptions() {
 			yAxis: {
 				type: 'category',
 				data: yCategories,
-				name: 'y (nm)',
+				name: `${vName} (nm)`,
 				nameLocation: 'middle',
 				nameGap: 54,
 				nameTextStyle: {
@@ -426,13 +449,7 @@ function setFullOptions() {
 					data: ps.scalarField
 				}
 			],
-			grid: {
-				containLabel: true,
-				left: 58,
-				right: 92,
-				top: 42,
-				bottom: 52
-			},
+			grid: planeGrid(),
 			toolbox: {
 				show: true,
 				top: 10,
@@ -464,7 +481,7 @@ function setFullOptions() {
 					},
 					saveAsImage: {
 						type: 'png',
-						name: 'preview'
+						name: `preview-${ps.quantity}-${ps.plane || 'xy'}-${ps.allLayers ? 'mean' : (ps.sliceIndex ?? ps.layer)}`
 					}
 				}
 			},
@@ -499,6 +516,15 @@ export function resizeECharts() {
 				return;
 			}
 			chartInstance.resize();
+			chartInstance.setOption({
+				grid: planeGrid(),
+				visualMap: buildVisualMap(
+					get(previewState).quantity,
+					get(previewState).unit,
+					get(previewState).min,
+					get(previewState).max
+				)
+			});
 		});
 	}
 
@@ -507,5 +533,48 @@ export function resizeECharts() {
 
 	if (chartInstance !== undefined && !chartInstance.isDisposed()) {
 		chartInstance.resize();
+		chartInstance.setOption({
+			grid: planeGrid(),
+			visualMap: buildVisualMap(
+				get(previewState).quantity,
+				get(previewState).unit,
+				get(previewState).min,
+				get(previewState).max
+			)
+		});
 	}
+}
+
+function planeGrid() {
+	const { xExtentNm, yExtentNm } = getAxisMetrics();
+	const width = chartInstance?.getWidth() || 400;
+	const height = chartInstance?.getHeight() || 400;
+	const fitted = fitPreviewPlane(
+		Math.max(width - 94, 1),
+		Math.max(height - 152, 1),
+		xExtentNm,
+		yExtentNm
+	);
+	return {
+		containLabel: false,
+		left: 62 + fitted.left,
+		top: 54 + fitted.top,
+		width: fitted.width,
+		height: fitted.height
+	};
+}
+
+function sectionDescription() {
+	const ps = get(previewState);
+	const { normal } = previewPlaneAxes(ps.plane);
+	if (ps.allLayers) return `Mean along ${normal}`;
+	const mesh = get(meshState);
+	const cells = { x: mesh.dx, y: mesh.dy, z: mesh.dz };
+	const counts = { x: mesh.Nx, y: mesh.Ny, z: mesh.Nz };
+	const position = previewSampleCoordinateNm(
+		ps.sliceIndex ?? ps.layer,
+		counts[normal],
+		cells[normal] * counts[normal] * 1e9
+	);
+	return `${normal}: ${formatDistanceNm(position)} nm · layer ${ps.sliceIndex ?? ps.layer}`;
 }

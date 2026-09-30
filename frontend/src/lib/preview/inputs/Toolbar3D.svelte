@@ -41,6 +41,7 @@
 		type TopoComponent
 	} from '$lib/preview/preview3D';
 
+	export let embedded = false;
 	let expanded = false;
 	let brightnessVal: number;
 	let opacityVal: number;
@@ -87,26 +88,31 @@
 </script>
 
 {#if isVisible}
-	<div class="toolbar" class:expanded>
-		<button class="toggle-btn" onclick={() => (expanded = !expanded)} title="3D Controls">⚙</button>
+	<div class="toolbar" class:expanded class:embedded>
+		{#if !embedded}<button
+				class="toggle-btn"
+				onclick={() => (expanded = !expanded)}
+				title="3D Controls">⚙</button
+			>{/if}
 
-		{#if expanded}
+		{#if expanded || embedded}
 			<div class="toolbar-content">
-				<div class="control-group">
-					<div class="control-label">Render mode</div>
-					<div class="btn-group btn-group--pair">
-						{#each renderModes as { key, label }}
-							<button
-								class="seg-btn"
-								class:active={$renderMode === key}
-								onclick={() => setRenderMode(key)}
-							>
-								{label}
-							</button>
-						{/each}
+				{#if !embedded}
+					<div class="control-group">
+						<div class="control-label">Render mode</div>
+						<div class="btn-group btn-group--pair">
+							{#each renderModes as { key, label }}
+								<button
+									class="seg-btn"
+									class:active={$renderMode === key}
+									onclick={() => setRenderMode(key)}
+								>
+									{label}
+								</button>
+							{/each}
+						</div>
 					</div>
-				</div>
-
+				{/if}
 				<div class="control-group">
 					<div class="control-label">
 						Brightness
@@ -124,21 +130,22 @@
 					/>
 				</div>
 
-				<div class="control-group">
-					<div class="control-label">Quality</div>
-					<div class="btn-group btn-group--wide">
-						{#each qualityLevels as { key, label }}
-							<button
-								class="seg-btn"
-								class:active={$qualityLevel === key}
-								onclick={() => setQuality(key)}
-							>
-								{label}
-							</button>
-						{/each}
+				{#if !embedded}
+					<div class="control-group">
+						<div class="control-label">Quality</div>
+						<div class="btn-group btn-group--wide">
+							{#each qualityLevels as { key, label }}
+								<button
+									class="seg-btn"
+									class:active={$qualityLevel === key}
+									onclick={() => setQuality(key)}
+								>
+									{label}
+								</button>
+							{/each}
+						</div>
 					</div>
-				</div>
-
+				{/if}
 				<div class="control-group">
 					<div class="control-label">Section / ROI</div>
 					<SelectField
@@ -331,6 +338,35 @@
 {/if}
 
 <style>
+	.toolbar.embedded {
+		position: static;
+		width: 100%;
+		z-index: auto;
+	}
+	.embedded .toolbar-content {
+		margin-top: 0.8rem;
+		min-width: 0;
+		max-width: none;
+		max-height: none;
+		padding: 0;
+		background: transparent;
+		border: 0;
+		box-shadow: none;
+		backdrop-filter: none;
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 1rem;
+	}
+	.embedded .toolbar-content :global(.ui-toggle),
+	.embedded .divider {
+		grid-column: 1/-1;
+	}
+	@media (max-width: 500px) {
+		.embedded .toolbar-content {
+			grid-template-columns: 1fr;
+		}
+	}
+
 	.toolbar {
 		position: absolute;
 		left: var(--space-sm);

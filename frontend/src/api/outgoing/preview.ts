@@ -45,3 +45,14 @@ export function postScale(scale: number) {
 export function postFullResolution() {
 	return post('preview/fullResolution', {});
 }
+
+export function postSection(section: {
+	plane?: 'xy' | 'yz' | 'xz';
+	mode?: 'single' | 'average';
+	sliceIndex?: number;
+}) {
+	return post('preview/section', section);
+}
+export function postPlaneResolution(resolution: { uSize?: number; vSize?: number }) {
+	return post('preview/planeResolution', resolution);
+}
