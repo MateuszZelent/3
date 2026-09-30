@@ -25,6 +25,7 @@
 			<button
 				type="button"
 				class="ui-segmented__option"
+				aria-pressed={value === option.value}
 				data-active={value === option.value}
 				disabled={option.disabled}
 				onclick={() => onchange?.(option.value)}

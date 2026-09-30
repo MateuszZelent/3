@@ -20,8 +20,6 @@ cudakernels:
 
 frontend:
 	cd frontend && npm ci && npm run check && npm run test:unit && npm run build
-	rm -rf webui/static
-	cp -R frontend/dist webui/static
 
 doc:
 	cd doc && $(MAKE)

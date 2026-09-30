@@ -81,6 +81,11 @@
 		}))
 	);
 
+	const zSamplingSupported = $derived(($previewState.zPossibleSizes?.length ?? 0) > 0);
+	const zSizes = $derived(zSamplingSupported ? $previewState.zPossibleSizes :
+		Array.from({ length: Math.max($meshState.Nz, 1) }, (_, i) => i + 1)
+			.filter(n => $meshState.Nz % n === 0));
+
 	const renderOptions = $derived(
 		(['glyph', 'voxel'] as Preview3DRenderMode[]).map((mode) => ({
 			value: mode,
@@ -127,9 +132,6 @@
 		}, 120);
 	}
 
-	function toggleAllLayers() {
-		postAllLayers(!$previewState.allLayers);
-	}
 
 	function onFullscreenChange() {
 		if (!document.fullscreenElement && viewMode === 'fullscreen') {
@@ -251,90 +253,54 @@
 	{/snippet}
 
 	<div class="preview-toolbar">
-		<SelectField
-			label="Quantity"
-			value={$previewState.quantity}
-			options={quantityOptions}
-			onchange={postQuantity}
-		/>
-		<SegmentedControl
-			label="Component"
-			value={$previewState.component}
-			options={componentOptions}
-			onchange={postComponent}
-		/>
-		{#if $previewState.xPossibleSizes.length > 0}
-			<Slider
-				label="X data points"
-				value={$previewState.xChosenSize}
-				values={$previewState.xPossibleSizes}
-				onChangeFunction={postXChosenSize}
-			/>
-		{/if}
-		{#if $previewState.yPossibleSizes.length > 0}
-			<Slider
-				label="Y data points"
-				value={$previewState.yChosenSize}
-				values={$previewState.yPossibleSizes}
-				onChangeFunction={postYChosenSize}
-			/>
-		{/if}
-		{#if $previewState.allLayers && $previewState.type === '3D' && ($previewState.zPossibleSizes?.length ?? 0) > 0}
-			<Slider
-				label="Z data points"
-				value={$previewState.zChosenSize}
-				values={$previewState.zPossibleSizes}
-				onChangeFunction={postZChosenSize}
-			/>
-		{/if}
-		<div class="preview-toolbar__stack">
-			<Toggle
-				label="Auto-scale preview"
-				checked={$previewState.autoScaleEnabled}
-				onchange={postAutoScaleEnabled}
-			/>
-			{#if $meshState.Nz > 1}
-				<Slider
-					label="Layer"
-					value={$previewState.layer}
-					values={Array.from({ length: $meshState.Nz }, (_, index) => index)}
-					onChangeFunction={postLayer}
-					isDisabled={$previewState.allLayers}
-				/>
-			{/if}
-			<div class="preview-toolbar__actions">
-				<Button
-					variant="outline"
-					tone="accent"
-					onclick={resetCamera}
-					disabled={$previewState.nComp !== 3 || $previewState.type !== '3D'}
-				>
-					Reset camera
-				</Button>
-				<Button
-					variant={$previewState.allLayers ? 'solid' : 'outline'}
-					tone="info"
-					onclick={toggleAllLayers}
-					disabled={$meshState.Nz < 2}
-				>
-					{$previewState.allLayers ? 'All layers' : 'Single layer'}
-				</Button>
-			</div>
+		<div class="preview-controls-row preview-controls-row--data">
+			<SelectField label="Quantity" value={$previewState.quantity} options={quantityOptions} onchange={postQuantity} />
+			<SegmentedControl label="Component" value={$previewState.component} options={componentOptions} onchange={postComponent} />
 		</div>
-		<SegmentedControl
-			label="Quality"
-			value={$qualityLevel}
-			options={qualityOptions}
-			onchange={(next) => setQuality(next as QualityLevel)}
-		/>
-		{#if $previewState.type === '3D' && $previewState.nComp === 3}
-			<SegmentedControl
-				label="Render"
-				value={$renderMode}
-				options={renderOptions}
-				onchange={(next) => setRenderMode(next as Preview3DRenderMode)}
-			/>
-		{/if}
+
+		<fieldset class="preview-controls-group">
+			<legend>Layers &amp; resolution</legend>
+			<div class="preview-controls-row preview-controls-row--mode">
+				<SegmentedControl label="Show" value={$previewState.allLayers ? 'all' : 'single'}
+					options={[
+						{ value: 'single', label: 'Single layer' },
+						{ value: 'all', label: 'All layers', disabled: $meshState.Nz < 2 }
+					]}
+					onchange={(mode) => postAllLayers(mode === 'all')} />
+				<Toggle label="Auto-adjust resolution" checked={$previewState.autoScaleEnabled} onchange={postAutoScaleEnabled} />
+			</div>
+			<div class="preview-resolution-grid">
+				{#if $previewState.xPossibleSizes.length > 0}
+					<Slider label="X data points" value={$previewState.xChosenSize} values={$previewState.xPossibleSizes} onChangeFunction={postXChosenSize} />
+				{/if}
+				{#if $previewState.yPossibleSizes.length > 0}
+					<Slider label="Y data points" value={$previewState.yChosenSize} values={$previewState.yPossibleSizes} onChangeFunction={postYChosenSize} />
+				{/if}
+				{#if $previewState.allLayers && $previewState.type === '3D'}
+					<Slider label="Z data points" value={$previewState.zChosenSize || $meshState.Nz}
+						values={zSizes} onChangeFunction={postZChosenSize} isDisabled={!zSamplingSupported} />
+				{:else if !$previewState.allLayers && $meshState.Nz > 1}
+					<Slider label="Z layer" value={$previewState.layer}
+						values={Array.from({ length: $meshState.Nz }, (_, i) => i)} onChangeFunction={postLayer} />
+				{/if}
+			</div>
+			{#if $previewState.allLayers && $previewState.type === '3D' && !zSamplingSupported}
+				<p class="preview-control-hint" role="status">Z resolution is unavailable in this running simulation. Start it with an updated application to enable this control.</p>
+			{:else if $previewState.allLayers && $previewState.type !== '3D'}
+				<p class="preview-control-hint">All layers are projected onto the XY plane. Select the 3D component to adjust Z resolution.</p>
+			{/if}
+		</fieldset>
+
+		<fieldset class="preview-controls-group">
+			<legend>Appearance</legend>
+			<div class="preview-controls-row preview-controls-row--appearance">
+				{#if $previewState.type === '3D' && $previewState.nComp === 3}
+					<SegmentedControl label="Render" value={$renderMode} options={renderOptions} onchange={(next) => setRenderMode(next as Preview3DRenderMode)} />
+					<SegmentedControl label="Quality" value={$qualityLevel} options={qualityOptions} onchange={(next) => setQuality(next as QualityLevel)} />
+				{/if}
+				<Button variant="outline" tone="accent" onclick={resetCamera} disabled={$previewState.nComp !== 3 || $previewState.type !== '3D'}>Reset camera</Button>
+			</div>
+		</fieldset>
 	</div>
 
 	{#if $previewState.autoDownscaled && $previewState.autoDownscaleMessage}
@@ -405,20 +371,66 @@
 
 	.preview-toolbar {
 		display: grid;
-		grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
-		gap: 0.8rem;
-		align-items: start;
+		gap: 0.85rem;
+		container-type: inline-size;
 	}
 
-	.preview-toolbar__stack {
+	.preview-controls-row, .preview-resolution-grid {
 		display: grid;
 		gap: 0.8rem;
+		align-items: end;
+		min-width: 0;
 	}
 
-	.preview-toolbar__actions {
-		display: grid;
+	.preview-controls-row--data, .preview-controls-row--mode {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: 0.75rem;
+	}
+
+	.preview-controls-row--mode {
+		align-items: center;
+		margin-bottom: 0.85rem;
+	}
+
+	.preview-resolution-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+
+	.preview-controls-row--appearance {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+	}
+
+	.preview-controls-group {
+		min-width: 0;
+		margin: 0;
+		padding: 0.8rem;
+		border: 1px solid var(--border-subtle);
+		border-radius: var(--radius-md);
+	}
+
+	.preview-controls-group legend {
+		padding: 0 0.4rem;
+		font-size: 0.75rem;
+		color: var(--text-3);
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.preview-control-hint {
+		margin: 0.8rem 0 0;
+		font-size: 0.85rem;
+		color: var(--text-2);
+	}
+
+	@container (max-width: 620px) {
+		.preview-controls-row--appearance, .preview-controls-row--mode {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	@container (max-width: 420px) {
+		.preview-controls-row--data, .preview-resolution-grid {
+			grid-template-columns: 1fr;
+		}
 	}
 
 	.preview-notice {
@@ -534,16 +546,4 @@
 		background: linear-gradient(135deg, transparent 45%, rgba(107, 167, 255, 0.45) 45%);
 	}
 
-	@media (max-width: 1279px) {
-		.preview-toolbar {
-			grid-template-columns: repeat(2, minmax(0, 1fr));
-		}
-	}
-
-	@media (max-width: 767px) {
-		.preview-toolbar,
-		.preview-toolbar__actions {
-			grid-template-columns: 1fr;
-		}
-	}
 </style>

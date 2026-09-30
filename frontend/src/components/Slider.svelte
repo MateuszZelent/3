@@ -12,8 +12,10 @@
 	const sliderMax = $derived(Math.max(values.length - 1, 0));
 
 	let index = $state(0);
+	let editing = $state(false);
 
 	$effect(() => {
+		if (editing) return;
 		if (!values.length) {
 			index = 0;
 			return;
@@ -40,9 +42,15 @@
 			value={index}
 			disabled={isDisabled || values.length === 0}
 			oninput={(event) => {
+				editing = true;
 				index = Number((event.currentTarget as HTMLInputElement).value);
 			}}
-			onchange={() => onChangeFunction(currentValue)}
+			onchange={(event) => {
+				const chosenIndex = Number((event.currentTarget as HTMLInputElement).value);
+				onChangeFunction(values[chosenIndex] ?? values[0] ?? 0);
+				editing = false;
+			}}
+			onblur={() => { editing = false; }}
 		/>
 		<div class="slider-field__meta">
 			<span>{values[0] ?? 0}</span>

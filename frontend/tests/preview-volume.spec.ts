@@ -60,10 +60,25 @@ test('volume sampling exposes Z and preserves a cube at unequal preview sizes', 
 	});
 	const zSlider = page.locator('label.slider-field').filter({ hasText: 'Z data points' });
 	await expect(zSlider).toHaveCount(0);
-	await page.getByRole('button', { name: 'Single layer', exact: true }).click();
+	await page.getByRole('button', { name: 'All layers', exact: true }).click();
 	await expect(zSlider).toBeVisible();
+	await expect(page.getByRole('button', { name: 'All layers', exact: true })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
 	const request = page.waitForRequest((req) => req.url().endsWith('/api/preview/ZChosenSize'));
-	await zSlider.locator('input').fill('3');
+	await zSlider.locator('input').evaluate((element: HTMLInputElement) => {
+		element.value = '3';
+		element.dispatchEvent(new Event('input', { bubbles: true }));
+	});
+	// A new server frame must not overwrite an in-progress drag.
+	await page.evaluate(async () => {
+		const path = '/src/api/incoming/preview.ts';
+		const { previewState } = await import(path);
+		previewState.update((state: any) => ({ ...state, zPossibleSizes: [...state.zPossibleSizes] }));
+	});
+	await expect(zSlider.locator('input')).toHaveValue('3');
+	await zSlider.locator('input').dispatchEvent('change');
 	expect((await request).postDataJSON()).toEqual({ zChosenSize: 10 });
 	await expect(zSlider.locator('strong')).toHaveText('10');
 	const geometry = await page.evaluate(async () => {
@@ -86,5 +101,29 @@ test('volume sampling exposes Z and preserves a cube at unequal preview sizes', 
 	expect(geometry.last).toEqual([95, 95, 99]);
 	expect(geometry.voxelCount).toBeGreaterThan(0);
 	for (const coordinate of geometry.target) expect(coordinate).toBeCloseTo(50);
+	await page.setViewportSize({ width: 1641, height: 1000 });
+	await page.locator('.preview-toolbar').screenshot({ path: '/tmp/preview-toolbar-desktop.png' });
+	for (const width of [1024, 768, 390]) {
+		await page.setViewportSize({ width, height: 1000 });
+		await expect(zSlider).toBeVisible();
+		const fits = await page
+			.locator('.preview-toolbar')
+			.evaluate((element) => element.scrollWidth <= element.clientWidth + 1);
+		expect(fits).toBe(true);
+	}
+	await page.evaluate(async () => {
+		const path = '/src/api/incoming/preview.ts';
+		const { previewState } = await import(path);
+		previewState.update((state: object) => ({
+			...state,
+			zPossibleSizes: undefined,
+			zChosenSize: undefined
+		}));
+	});
+	await expect(zSlider.locator('input')).toBeDisabled();
+	await expect(page.getByText('Z resolution is unavailable', { exact: false })).toBeVisible();
+	await page.getByRole('button', { name: 'Single layer', exact: true }).click();
+	await expect(zSlider).toHaveCount(0);
+	await expect(page.locator('label.slider-field').filter({ hasText: 'Z layer' })).toBeVisible();
 	expect(errors).toEqual([]);
 });
