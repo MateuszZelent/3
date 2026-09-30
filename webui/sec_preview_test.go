@@ -162,3 +162,12 @@ func TestVectorSnapshotNormalizesSubnormalValues(t *testing.T) {
 		t.Fatalf("normalization overflow: %v", state.VectorFieldValues)
 	}
 }
+
+func TestFullGeometrySnapshotPreservesOccupiedZeroWithoutMask(t *testing.T) {
+	cpu := data.NewSlice(3, [3]int{1, 1, 1})
+	state := &PreviewState{pendingCPU: cpu}
+	state.processVectorSnapshot()
+	if state.VectorCount != 1 {
+		t.Fatal("full geometry zero was discarded without occupancy buffer")
+	}
+}

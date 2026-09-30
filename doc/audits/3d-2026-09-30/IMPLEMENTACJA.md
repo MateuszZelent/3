@@ -12,9 +12,9 @@ Data: 2026-09-30. Wspierany build: `cmd/mumax3`, frontend główny i `webui`. Os
 | F6 | 4×4×4 bloki dla dużych scen, culling i bounds uwzględniające geometrię oraz aktualną topografię. |
 | F7 | Walidacja dokładnego 12N i limitu N; atomowe zatwierdzanie cache pozycji; wire buffers usuwane ze store. |
 | F8 | Zachowanie renderera/kamery przy zmianach jakości; zwalnianie starych bloków przy zmianie topologii i rendererów przy unmount. |
-| F9 | Subscription widoczności, status oddzielnego strumienia, sequence/step/timestamp, odrzucanie starszych ramek, pomiar CPU aktualizacji i zlecenia draw. |
+| F9 | Subscription widoczności, status oddzielnego strumienia, sequence/step/timestamp, odrzucanie starszych ramek, końcowa klatka solvera pozostaje pending do zwolnienia credit/cadence, main metadata także dla idle clients, pomiar CPU aktualizacji i zlecenia draw. |
 | B1 | CUDA tworzy spójny snapshot; normalizacja, selekcja i packing odbywają się poza InjectAndWait. stateMu zachowuje własność buforów do zakończenia CPU processing. |
-| B2 | Domyślna częstotliwość m: 1 Hz; drogie quantities: 0,2 Hz. Gdy żaden klient nie ma credit, podgląd nie jest liczony. Nie zastępujemy dokładnych pól solvera przybliżeniem. |
+| B2 | Domyślna częstotliwość m: 1 Hz; drogie quantities: 0,2 Hz. Gdy żaden klient nie ma credit, podgląd nie jest liczony. Pełna domyślna geometria nie materializuje osobnego źródłowego bufora occupancy. Nie zastępujemy dokładnych pól solvera przybliżeniem. |
 | B3 | Jeden launch resize na komponentę dla całego wybranego Z; scalar max-abs projekcja na GPU. Ciągła pinned allocation, asynchroniczne DMA komponentów w streamie z jedną końcową barierą. Nie deklarujemy overlap CPU/GPU. |
 | B4 | Double buffer pozycji, reuse wartości, liniowe przejście, niezależna occupancy, sprawdzanie wszystkich NaN/Inf i bezpieczna normalizacja subnormalnych wartości. |
 | B5 | Jedna klatka in-flight, matching ACK sequence/revision, kolejka latest-only, values-only wyłącznie po potwierdzeniu topologii, resync/keyframe, timeout writer. |

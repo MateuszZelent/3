@@ -55,6 +55,9 @@ func GeometryQuantity() Quantity { return &geometry }
 
 func GeometrySlice() (*data.Slice, bool) { return geometry.Slice() }
 
+// Called on the engine thread. Nil geometry storage denotes a full universe.
+func GeometryIsFull() bool { return geometry.Gpu().IsNil() }
+
 func AvailableQuantities() map[string]Quantity {
 	result := make(map[string]Quantity, len(gui_.Quants))
 	for name, quantity := range gui_.Quants {

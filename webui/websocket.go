@@ -19,7 +19,6 @@ type WebSocketManager struct {
 	upgrader              websocket.Upgrader
 	connections           *connectionManager
 	previewConnections    *connectionManager
-	lastStep              int
 	lastPreviewBroadcast  time.Time
 	lastMainBroadcast     time.Time
 	mainBroadcastInterval time.Duration
@@ -505,7 +504,19 @@ func (wsManager *WebSocketManager) setPreviewRefresh(refresh bool) {
 func (wsManager *WebSocketManager) previewNeedsRefresh() bool {
 	wsManager.stateMu.Lock()
 	defer wsManager.stateMu.Unlock()
-	return wsManager.engineState != nil && wsManager.engineState.Preview != nil && wsManager.engineState.Preview.Refresh
+	if wsManager.engineState == nil || wsManager.engineState.Preview == nil {
+		return false
+	}
+	preview := wsManager.engineState.Preview
+	if preview.Refresh {
+		return true
+	}
+	if !engine.MeshReady() {
+		return false
+	}
+	currentStep := 0
+	engine.InjectAndWait(func() { currentStep = engine.NSteps })
+	return preview.Step != currentStep
 }
 
 func (wsManager *WebSocketManager) previewDue() bool {
@@ -532,18 +543,16 @@ func (wsManager *WebSocketManager) startBroadcastLoop() {
 				case <-wsManager.broadcastStop:
 					return
 				default:
-					if engine.NSteps != wsManager.lastStep || wsManager.previewNeedsRefresh() {
-						if wsManager.previewConnections.activeCount() > 0 && wsManager.previewDue() {
-							wsManager.broadcastPreviewState()
+					if wsManager.previewConnections.activeCount() > 0 && wsManager.previewDue() && wsManager.previewNeedsRefresh() {
+						wsManager.broadcastPreviewState()
+					}
+					// Final solver output and console entries must also reach idle clients.
+					if wsManager.connections.count() > 0 {
+						now := time.Now()
+						if wsManager.lastMainBroadcast.IsZero() || now.Sub(wsManager.lastMainBroadcast) >= wsManager.mainBroadcastInterval {
+							wsManager.broadcastEngineStateWithoutPreview()
+							wsManager.lastMainBroadcast = now
 						}
-						if wsManager.connections.count() > 0 {
-							now := time.Now()
-							if wsManager.lastMainBroadcast.IsZero() || now.Sub(wsManager.lastMainBroadcast) >= wsManager.mainBroadcastInterval {
-								wsManager.broadcastEngineStateWithoutPreview()
-								wsManager.lastMainBroadcast = now
-							}
-						}
-						wsManager.lastStep = engine.NSteps
 					}
 					time.Sleep(1 * time.Second)
 				}

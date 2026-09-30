@@ -508,6 +508,10 @@ func (s *PreviewState) captureVectorCPU(cpu *data.Slice, stride, depth int) {
 	s.pendingDepth = depth
 	// Preserve occupied cells even if opposing vectors average to zero. Geometry
 	// is independent of vector magnitude; it is never inferred from a zero vector.
+	if engine.GeometryIsFull() {
+		s.pendingOccupancy = nil
+		return
+	}
 	geom, recycle := engine.GeometrySlice()
 	if recycle {
 		defer cuda.Recycle(geom)
@@ -542,7 +546,10 @@ func (s *PreviewState) processVectorSnapshot() {
 	host := cpu.Host()
 	size := cpu.Size()
 	limit := cpu.Len()
-	occupancy := s.pendingOccupancy.Host()[0]
+	var occupancy []float32
+	if s.pendingOccupancy != nil {
+		occupancy = s.pendingOccupancy.Host()[0]
+	}
 	values := s.VectorFieldValues[:0]
 	if cap(values) < limit {
 		values = make([]Vector3f, 0, limit)
@@ -561,7 +568,7 @@ func (s *PreviewState) processVectorSnapshot() {
 			continue
 		}
 		zero := x == 0 && y == 0 && z == 0
-		if zero && occupancy[i] <= 0 {
+		if zero && occupancy != nil && occupancy[i] <= 0 {
 			continue
 		}
 		norm := float64(x)*float64(x) + float64(y)*float64(y) + float64(z)*float64(z)
