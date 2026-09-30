@@ -1,9 +1,19 @@
 <script lang="ts">
-	import { connected,previewConnected,previewError,setPreviewVisible, setPreviewClientBudget } from '$api/websocket';
+	import {
+		connected,
+		previewConnected,
+		previewError,
+		setPreviewVisible,
+		previewClientBudget,
+		setPreviewClientBudget
+	} from '$api/websocket';
 	import { meshState } from '$api/incoming/mesh';
 	import { previewState } from '$api/incoming/preview';
 	import {
-		postAllLayers,postMaxPoints,postScale,
+		postAllLayers,
+		postMaxPoints,
+		postFullResolution,
+		postScale,
 		postComponent,
 		postAutoScaleEnabled,
 		postLayer,
@@ -20,12 +30,13 @@
 	import SegmentedControl from '$lib/ui/SegmentedControl.svelte';
 	import StatusBadge from '$lib/ui/StatusBadge.svelte';
 	import Toggle from '$lib/ui/Toggle.svelte';
+	import TextField from '$lib/ui/TextField.svelte';
 	import { panelPreferences, setPreferredPreviewMode } from '$lib/ui/preferences';
 	import type { SelectOption } from '$lib/ui/SelectField.svelte';
 	import type { ViewportMode } from '$lib/ui/types';
 	import { get } from 'svelte/store';
 	import { onDestroy, onMount } from 'svelte';
-	import { preview2D, resizeECharts,disposePreview2D } from './preview2D';
+	import { preview2D, resizeECharts, disposePreview2D } from './preview2D';
 	import {
 		preview3D,
 		qualityLevel,
@@ -34,7 +45,12 @@
 		setQuality,
 		setRenderMode,
 		threeDPreview,
-		visibleRenderCount,previewPerformance,disposePreview3D,
+		visibleRenderCount,
+		previewPerformance,
+		disposePreview3D,
+		glyphSampling,
+		voxelSampling,
+		clipAxis,
 		type Preview3DRenderMode,
 		type QualityLevel
 	} from './preview3D';
@@ -42,10 +58,10 @@
 	import ViewCube from './ViewCube.svelte';
 	import { quantities } from './inputs/quantities';
 
-	let previewNow=$state(Date.now());
- let viewMode = $state<ViewportMode>('inline');
+	let previewNow = $state(Date.now());
+	let viewMode = $state<ViewportMode>('inline');
 	let previewWrapper: HTMLDivElement;
- let visibilityObserver:IntersectionObserver|null=null;
+	let visibilityObserver: IntersectionObserver | null = null;
 
 	let popX = $state(60);
 	let popY = $state(60);
@@ -83,10 +99,23 @@
 		}))
 	);
 
+	const budgetOptions = [131072, 262144, 500000, 1000000].map((value) => ({
+		value: String(value),
+		label: `${value.toLocaleString()} points`
+	}));
+	const transferOptions = budgetOptions.map((option) => ({
+		...option,
+		label: option.value === '1000000' ? 'Full preview (up to 1M)' : option.label
+	}));
+
 	const zSamplingSupported = $derived(($previewState.zPossibleSizes?.length ?? 0) > 0);
-	const zSizes = $derived(zSamplingSupported ? $previewState.zPossibleSizes :
-		Array.from({ length: Math.max($meshState.Nz, 1) }, (_, i) => i + 1)
-			.filter(n => $meshState.Nz % n === 0));
+	const zSizes = $derived(
+		zSamplingSupported
+			? $previewState.zPossibleSizes
+			: Array.from({ length: Math.max($meshState.Nz, 1) }, (_, i) => i + 1).filter(
+					(n) => $meshState.Nz % n === 0
+				)
+	);
 
 	const renderOptions = $derived(
 		(['glyph', 'voxel'] as Preview3DRenderMode[]).map((mode) => ({
@@ -133,7 +162,6 @@
 			resizeECharts();
 		}, 120);
 	}
-
 
 	function onFullscreenChange() {
 		if (!document.fullscreenElement && viewMode === 'fullscreen') {
@@ -198,20 +226,27 @@
 	}
 
 	onMount(() => {
- const ageTimer=setInterval(()=>{previewNow=Date.now()},1000);
- visibilityObserver=new IntersectionObserver(entries=>setPreviewVisible(entries[0]?.isIntersecting??true));
- if(previewWrapper)visibilityObserver.observe(previewWrapper);
+		const ageTimer = setInterval(() => {
+			previewNow = Date.now();
+		}, 1000);
+		visibilityObserver = new IntersectionObserver((entries) =>
+			setPreviewVisible(entries[0]?.isIntersecting ?? true)
+		);
+		if (previewWrapper) visibilityObserver.observe(previewWrapper);
 		document.addEventListener('fullscreenchange', onFullscreenChange);
 		document.addEventListener('mousemove', onMouseMove);
 		document.addEventListener('mouseup', onMouseUp);
 		window.addEventListener('amumax:preview-mode', onPreviewModeRequest as EventListener);
 		scheduleResize();
 		void renderCurrentPreview();
- return ()=>clearInterval(ageTimer);
+		return () => clearInterval(ageTimer);
 	});
 
 	onDestroy(() => {
- visibilityObserver?.disconnect();setPreviewVisible(false);disposePreview3D();disposePreview2D();
+		visibilityObserver?.disconnect();
+		setPreviewVisible(false);
+		disposePreview3D();
+		disposePreview2D();
 		document.removeEventListener('fullscreenchange', onFullscreenChange);
 		document.removeEventListener('mousemove', onMouseMove);
 		document.removeEventListener('mouseup', onMouseUp);
@@ -261,67 +296,178 @@
 
 	<div class="preview-toolbar">
 		<div class="preview-controls-row preview-controls-row--data">
-			<SelectField label="Quantity" value={$previewState.quantity} options={quantityOptions} onchange={postQuantity} />
-			<SegmentedControl label="Component" value={$previewState.component} options={componentOptions} onchange={postComponent} />
+			<SelectField
+				label="Quantity"
+				value={$previewState.quantity}
+				options={quantityOptions}
+				onchange={postQuantity}
+			/>
+			<SegmentedControl
+				label="Component"
+				value={$previewState.component}
+				options={componentOptions}
+				onchange={postComponent}
+			/>
 		</div>
 
 		<fieldset class="preview-controls-group">
 			<legend>Layers &amp; resolution</legend>
 			<div class="preview-controls-row preview-controls-row--mode">
-				<SegmentedControl label="Show" value={$previewState.allLayers ? 'all' : 'single'}
+				<SegmentedControl
+					label="Show"
+					value={$previewState.allLayers ? 'all' : 'single'}
 					options={[
 						{ value: 'single', label: 'Single layer' },
 						{ value: 'all', label: 'All layers', disabled: $meshState.Nz < 2 }
 					]}
-					onchange={(mode) => postAllLayers(mode === 'all')} />
-				<Toggle label="Auto-adjust resolution" checked={$previewState.autoScaleEnabled} onchange={postAutoScaleEnabled} />
+					onchange={(mode) => postAllLayers(mode === 'all')}
+				/>
+				<Toggle
+					label="Auto-adjust resolution"
+					checked={$previewState.autoScaleEnabled}
+					onchange={postAutoScaleEnabled}
+				/>
 			</div>
 			<div class="preview-resolution-grid">
 				{#if $previewState.xPossibleSizes.length > 0}
-					<Slider label="X data points" value={$previewState.xChosenSize} values={$previewState.xPossibleSizes} onChangeFunction={postXChosenSize} />
+					<Slider
+						label="X data points"
+						value={$previewState.xChosenSize}
+						values={$previewState.xPossibleSizes}
+						onChangeFunction={postXChosenSize}
+					/>
 				{/if}
 				{#if $previewState.yPossibleSizes.length > 0}
-					<Slider label="Y data points" value={$previewState.yChosenSize} values={$previewState.yPossibleSizes} onChangeFunction={postYChosenSize} />
+					<Slider
+						label="Y data points"
+						value={$previewState.yChosenSize}
+						values={$previewState.yPossibleSizes}
+						onChangeFunction={postYChosenSize}
+					/>
 				{/if}
 				{#if $previewState.allLayers && $previewState.type === '3D'}
-					<Slider label="Z data points" value={$previewState.zChosenSize || $meshState.Nz}
-						values={zSizes} onChangeFunction={postZChosenSize} isDisabled={!zSamplingSupported} />
+					<Slider
+						label="Z data points"
+						value={$previewState.zChosenSize || $meshState.Nz}
+						values={zSizes}
+						onChangeFunction={postZChosenSize}
+						isDisabled={!zSamplingSupported}
+					/>
 				{:else if !$previewState.allLayers && $meshState.Nz > 1}
-					<Slider label="Z layer" value={$previewState.layer}
-						values={Array.from({ length: $meshState.Nz }, (_, i) => i)} onChangeFunction={postLayer} />
+					<Slider
+						label="Z layer"
+						value={$previewState.layer}
+						values={Array.from({ length: $meshState.Nz }, (_, i) => i)}
+						onChangeFunction={postLayer}
+					/>
 				{/if}
 			</div>
+			<div class="preview-resolution-summary">
+				<p class="preview-control-hint">
+					Requested: {$previewState.xChosenSize} × {$previewState.yChosenSize} × {$previewState.allLayers &&
+					$previewState.type === '3D'
+						? $previewState.zChosenSize
+						: 1}. Applied: {$previewState.appliedXChosenSize} × {$previewState.appliedYChosenSize}
+					× {$previewState.allLayers && $previewState.type === '3D'
+						? $previewState.appliedZChosenSize
+						: 1}.
+				</p>
+				<Button
+					size="sm"
+					variant="outline"
+					onclick={postFullResolution}
+					disabled={!$previewState.xPossibleSizes.length || !$previewState.yPossibleSizes.length}
+					>Full mesh resolution</Button
+				>
+			</div>
 			{#if $previewState.allLayers && $previewState.type === '3D' && !zSamplingSupported}
-				<p class="preview-control-hint" role="status">Z resolution is unavailable in this running simulation. Start it with an updated application to enable this control.</p>
+				<p class="preview-control-hint" role="status">
+					Z resolution is unavailable in this running simulation. Start it with an updated
+					application to enable this control.
+				</p>
 			{:else if $previewState.allLayers && $previewState.type !== '3D'}
-				<p class="preview-control-hint">All layers are projected onto the XY plane. Select the 3D component to adjust Z resolution.</p>
+				<p class="preview-control-hint">
+					All layers are projected onto the XY plane. Select the 3D component to adjust Z
+					resolution.
+				</p>
 			{/if}
 		</fieldset>
 
 		<fieldset class="preview-controls-group">
 			<legend>Appearance</legend>
-   <label>Preview budget <select aria-label="Preview budget" value={$previewState.maxPoints} onchange={(e)=>postMaxPoints(Number(e.currentTarget.value))}>
-   {#each [131072,262144,500000,1000000] as budget}<option value={budget}>{budget.toLocaleString()} samples</option>{/each}
-   </select></label>
- <label>Client sampling <select aria-label="Client sampling budget" onchange={(e)=>setPreviewClientBudget(Number(e.currentTarget.value))}><option value={131072}>128k</option><option value={262144} selected>262k</option><option value={1000000}>1M</option></select></label>
-   <label>Field scale (0 = adaptive) <input aria-label="Field scale" type="number" min="0" step="any" value={$previewState.fixedScale??0} onchange={(e)=>postScale(Number(e.currentTarget.value))} /></label>
+			<div class="preview-controls-row preview-controls-row--budgets">
+				<SelectField
+					label="Auto-adjust budget"
+					value={$previewState.maxPoints}
+					options={budgetOptions}
+					disabled={!$previewState.autoScaleEnabled}
+					onchange={(value) => postMaxPoints(Number(value))}
+				/>
+				<SelectField
+					label="Transfer limit"
+					value={$previewClientBudget}
+					options={transferOptions}
+					onchange={(value) => setPreviewClientBudget(Number(value))}
+				/>
+				<TextField
+					label="Field scale"
+					hint="0 = adaptive"
+					type="number"
+					min={0}
+					step="any"
+					value={$previewState.fixedScale ?? 0}
+					disabled={$previewState.type !== '3D'}
+					onchange={(event) => postScale(Number((event.currentTarget as HTMLInputElement).value))}
+				/>
+			</div>
+			<p class="preview-control-hint">
+				Budgets cap the selected resolution; increase X/Y/Z to request more points.
+				{#if !$previewState.autoScaleEnabled}Auto-adjust is off; the safety limit is 1,000,000
+					points.{/if}
+				{#if $previewClientBudget < 1000000}Transfer limit can further sample the server preview.{/if}
+			</p>
+
 			<div class="preview-controls-row preview-controls-row--appearance">
 				{#if $previewState.type === '3D' && $previewState.nComp === 3}
-					<SegmentedControl label="Render" value={$renderMode} options={renderOptions} onchange={(next) => setRenderMode(next as Preview3DRenderMode)} />
-					<SegmentedControl label="Quality" value={$qualityLevel} options={qualityOptions} onchange={(next) => setQuality(next as QualityLevel)} />
+					<SegmentedControl
+						label="Render"
+						value={$renderMode}
+						options={renderOptions}
+						onchange={(next) => setRenderMode(next as Preview3DRenderMode)}
+					/>
+					<SegmentedControl
+						label="Quality"
+						value={$qualityLevel}
+						options={qualityOptions}
+						onchange={(next) => setQuality(next as QualityLevel)}
+					/>
 				{/if}
-				<Button variant="outline" tone="accent" onclick={resetCamera} disabled={$previewState.nComp !== 3 || $previewState.type !== '3D'}>Reset camera</Button>
+				<Button
+					variant="outline"
+					tone="accent"
+					onclick={resetCamera}
+					disabled={$previewState.nComp !== 3 || $previewState.type !== '3D'}>Reset camera</Button
+				>
 			</div>
 		</fieldset>
 	</div>
 
 	{#if $previewError}<p role="alert">{$previewError}</p>{/if}
- {#if $connected&&!$previewConnected}<p class="preview-control-hint">Preview stream disconnected; the displayed field may be stale.</p>{/if}
- <p class="preview-control-hint">{#if $previewState.allLayers&&$previewState.type!=='3D'}Signed max-abs projection over every Z layer; XY values are area averages.{:else}XY values are area averages; Z uses sampled layers. Sampling and thresholds can hide thin or opposing structures.{/if}</p>
+	{#if $connected && !$previewConnected}<p class="preview-control-hint">
+			Preview stream disconnected; the displayed field may be stale.
+		</p>{/if}
+	<p class="preview-control-hint">
+		{#if $previewState.allLayers && $previewState.type !== '3D'}Signed max-abs projection over every
+			Z layer; XY values are area averages.{:else}XY values are area averages; Z uses sampled
+			layers. Sampling and thresholds can hide thin or opposing structures.{/if}
+	</p>
 
- {#if $previewState.autoDownscaled && $previewState.autoDownscaleMessage}
+	{#if $previewState.autoDownscaled && $previewState.autoDownscaleMessage}
 		<div class="preview-notice">
-			<StatusBadge label="Auto-scaled" tone="warn" />
+			<StatusBadge
+				label={$previewState.autoScaleEnabled ? 'Auto-scaled' : 'Safety limit'}
+				tone="warn"
+			/>
 			<p>{$previewState.autoDownscaleMessage}</p>
 		</div>
 	{/if}
@@ -368,12 +514,30 @@
 
 		{#if $previewState.type === '3D' && $previewState.nComp === 3 && hasData}
 			<div class="preview-wrapper__stats">
-				{$renderMode === 'voxel' ? 'Voxels' : 'Arrows'}: {$visibleRenderCount.toLocaleString()} / {$previewState.vectorCount.toLocaleString()}
-    · {$previewPerformance.updateMs.toFixed(1)} ms update
- {#if $previewState.timestamp} · step {$previewState.step} · {Math.max(0,(previewNow-$previewState.timestamp)/1000).toFixed(1)} s old{/if}
-    {#if $previewPerformance.lod} · simplified geometry{/if}
-    {#if $previewState.normScale} · sampling {$previewState.transportSampling||1}× · scale {$previewState.normScale.toPrecision(3)}{/if}
-    {#if $previewState.invalidCount} · invalid {$previewState.invalidCount}{/if}
+				{$renderMode === 'voxel' ? 'Voxels' : 'Arrows'}: {$visibleRenderCount.toLocaleString()}
+				· received {$previewState.vectorCount.toLocaleString()} / {(
+					$previewState.serverVectorCount ?? $previewState.vectorCount
+				).toLocaleString()} server points · grid {$previewState.appliedXChosenSize}
+				× {$previewState.appliedYChosenSize} × {$previewState.allLayers
+					? $previewState.appliedZChosenSize
+					: 1}
+				· display sampling {$renderMode === 'voxel' ? $voxelSampling : $glyphSampling}×
+				{#if $clipAxis !== 'none'}
+					· section {$clipAxis.toUpperCase()}{/if}
+				· {$previewPerformance.updateMs.toFixed(1)} ms update
+				{#if $previewState.timestamp}
+					· step {$previewState.step} · {Math.max(
+						0,
+						(previewNow - $previewState.timestamp) / 1000
+					).toFixed(1)} s old{/if}
+				{#if $previewPerformance.lod}
+					· simplified geometry{/if}
+				{#if $previewState.normScale}
+					· transfer sampling {$previewState.transportSampling || 1}× · scale {$previewState.normScale.toPrecision(
+						3
+					)}{/if}
+				{#if $previewState.invalidCount}
+					· invalid {$previewState.invalidCount}{/if}
 			</div>
 		{/if}
 
@@ -396,14 +560,16 @@
 		container-type: inline-size;
 	}
 
-	.preview-controls-row, .preview-resolution-grid {
+	.preview-controls-row,
+	.preview-resolution-grid {
 		display: grid;
 		gap: 0.8rem;
 		align-items: end;
 		min-width: 0;
 	}
 
-	.preview-controls-row--data, .preview-controls-row--mode {
+	.preview-controls-row--data,
+	.preview-controls-row--mode {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
@@ -416,8 +582,25 @@
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
 
+	.preview-controls-row--budgets {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		margin-bottom: 0.85rem;
+	}
+
 	.preview-controls-row--appearance {
 		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+	}
+
+	.preview-resolution-summary {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		flex-wrap: wrap;
+		gap: 0.8rem;
+		margin-top: 0.8rem;
+	}
+	.preview-resolution-summary .preview-control-hint {
+		margin: 0;
 	}
 
 	.preview-controls-group {
@@ -443,13 +626,16 @@
 	}
 
 	@container (max-width: 620px) {
-		.preview-controls-row--appearance, .preview-controls-row--mode {
+		.preview-controls-row--appearance,
+		.preview-controls-row--budgets,
+		.preview-controls-row--mode {
 			grid-template-columns: 1fr;
 		}
 	}
 
 	@container (max-width: 420px) {
-		.preview-controls-row--data, .preview-resolution-grid {
+		.preview-controls-row--data,
+		.preview-resolution-grid {
 			grid-template-columns: 1fr;
 		}
 	}
@@ -544,10 +730,13 @@
 	.preview-wrapper__stats {
 		position: absolute;
 		left: 0.9rem;
+		right: 0.9rem;
+		width: fit-content;
+		max-width: calc(100% - 1.8rem);
 		bottom: 0.9rem;
 		z-index: 2;
 		padding: 0.35rem 0.6rem;
-		border-radius: 999px;
+		border-radius: var(--radius-md);
 		border: 1px solid rgba(255, 255, 255, 0.12);
 		background: rgba(9, 14, 25, 0.84);
 		backdrop-filter: blur(10px);
@@ -566,5 +755,4 @@
 		cursor: nwse-resize;
 		background: linear-gradient(135deg, transparent 45%, rgba(107, 167, 255, 0.45) 45%);
 	}
-
 </style>

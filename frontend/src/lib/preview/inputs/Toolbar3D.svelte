@@ -1,8 +1,17 @@
 <script lang="ts">
+	import SelectField from '$lib/ui/SelectField.svelte';
+	import Toggle from '$lib/ui/Toggle.svelte';
 	import { previewState as p } from '$api/incoming/preview';
 	import {
 		brightness,
-  voxelOpaque,setVoxelOpaque,glyphSampling,setGlyphSampling,clipAxis,clipMin,clipMax,setClip,
+		voxelOpaque,
+		setVoxelOpaque,
+		glyphSampling,
+		setGlyphSampling,
+		clipAxis,
+		clipMin,
+		clipMax,
+		setClip,
 		qualityLevel,
 		renderMode,
 		resetCamera,
@@ -85,7 +94,7 @@
 			<div class="toolbar-content">
 				<div class="control-group">
 					<div class="control-label">Render mode</div>
-					<div class="btn-group btn-group--wide">
+					<div class="btn-group btn-group--pair">
 						{#each renderModes as { key, label }}
 							<button
 								class="seg-btn"
@@ -130,23 +139,61 @@
 					</div>
 				</div>
 
-				     <div class="control-group">
-      <div class="control-label">Section / ROI</div>
-      <select aria-label="Section axis" value={$clipAxis} onchange={(e)=>setClip(e.currentTarget.value as 'none'|'x'|'y'|'z',$clipMin,$clipMax)}>
-       <option value="none">Full field</option><option value="x">X</option><option value="y">Y</option><option value="z">Z</option>
-      </select>
-      {#if $clipAxis!=='none'}
-       <label>From <input aria-label="Section start" type="range" min="0" max="1" step="0.01" value={$clipMin} oninput={(e)=>setClip($clipAxis,Number(e.currentTarget.value),$clipMax)} /></label>
-       <label>To <input aria-label="Section end" type="range" min="0" max="1" step="0.01" value={$clipMax} oninput={(e)=>setClip($clipAxis,$clipMin,Number(e.currentTarget.value))} /></label>
-      {/if}
-     </div>
-     {#if $renderMode==='glyph'}
-      <div class="control-group"><div class="control-label">Arrow sampling</div><div class="btn-group">
-       {#each samplingModes as {key,label}}<button class="seg-btn" class:active={$glyphSampling===key} onclick={()=>setGlyphSampling(key)}>{label}</button>{/each}
-      </div></div>
-     {/if}
-{#if $renderMode === 'voxel'}
- <label class="control-label"><input aria-label="Opaque voxels" type="checkbox" checked={$voxelOpaque} onchange={(e)=>setVoxelOpaque(e.currentTarget.checked)} /> Opaque (fast)</label>
+				<div class="control-group">
+					<div class="control-label">Section / ROI</div>
+					<SelectField
+						label="Section axis"
+						value={$clipAxis}
+						options={[
+							{ value: 'none', label: 'Full field' },
+							...['x', 'y', 'z'].map((value) => ({
+								value,
+								label: value.toUpperCase()
+							}))
+						]}
+						onchange={(value) => setClip(value as 'none' | 'x' | 'y' | 'z', $clipMin, $clipMax)}
+					/>
+					{#if $clipAxis !== 'none'}
+						<label class="control-label section-range"
+							>From <input
+								class="slider"
+								aria-label="Section start"
+								type="range"
+								min="0"
+								max="1"
+								step="0.01"
+								value={$clipMin}
+								oninput={(e) => setClip($clipAxis, Number(e.currentTarget.value), $clipMax)}
+							/></label
+						>
+						<label class="control-label section-range"
+							>To <input
+								class="slider"
+								aria-label="Section end"
+								type="range"
+								min="0"
+								max="1"
+								step="0.01"
+								value={$clipMax}
+								oninput={(e) => setClip($clipAxis, $clipMin, Number(e.currentTarget.value))}
+							/></label
+						>
+					{/if}
+				</div>
+				{#if $renderMode === 'glyph'}
+					<div class="control-group">
+						<div class="control-label">Arrow sampling</div>
+						<div class="btn-group btn-group--wide">
+							{#each samplingModes as { key, label }}<button
+									class="seg-btn"
+									class:active={$glyphSampling === key}
+									onclick={() => setGlyphSampling(key)}>{label}</button
+								>{/each}
+						</div>
+					</div>
+				{/if}
+				{#if $renderMode === 'voxel'}
+					<Toggle label="Opaque voxels (fast)" checked={$voxelOpaque} onchange={setVoxelOpaque} />
 					<div class="control-group">
 						<div class="control-label">Color by</div>
 						<div class="btn-group">
@@ -387,6 +434,16 @@
 		background: rgba(255, 255, 255, 0.03);
 	}
 
+	.section-range {
+		display: grid;
+		grid-template-columns: 2.6rem minmax(0, 1fr);
+		gap: 0.6rem;
+	}
+
+	.btn-group--pair {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
 	.btn-group--wide {
 		grid-template-columns: repeat(3, minmax(0, 1fr));
 	}
@@ -418,7 +475,11 @@
 	}
 
 	.action-btn--topo-active {
-		background: linear-gradient(135deg, rgba(52, 211, 153, 0.85), rgba(16, 185, 129, 0.85)) !important;
+		background: linear-gradient(
+			135deg,
+			rgba(52, 211, 153, 0.85),
+			rgba(16, 185, 129, 0.85)
+		) !important;
 		color: #08101d !important;
 		border-color: rgba(52, 211, 153, 0.5) !important;
 	}
@@ -447,7 +508,7 @@
 		border-color: var(--border-interactive);
 		color: var(--text-1);
 	}
-	
+
 	@media (max-width: 767px) {
 		.toolbar-content {
 			min-width: 196px;

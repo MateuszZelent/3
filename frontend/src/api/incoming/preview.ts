@@ -6,6 +6,7 @@ export type ScalarField = Array<Array<number>>;
 
 export interface Preview {
 	transportSampling?: number;
+	serverVectorCount?: number;
 	sequence?: number;
 	step?: number;
 	timestamp?: number;

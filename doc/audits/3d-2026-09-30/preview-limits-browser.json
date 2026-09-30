@@ -1,0 +1,63 @@
+{
+  "result": [
+    {
+      "name": "manual-full",
+      "text": "Arrows: 1,000,000 · received 1,000,000 / 1,000,000 server points · grid 1000 × 1000 × 1 · display sampling 1× · 92.5 ms update · step 0 · 0.4 s old · simplified geometry · transfer sampling 1× · scale 1.00"
+    },
+    {
+      "name": "explicit-128k-transfer",
+      "text": "Arrows: 62,500 · received 62,500 / 1,000,000 server points · grid 1000 × 1000 × 1 · display sampling 1× · 19.9 ms update · step 0 · 0.0 s old · simplified geometry · transfer sampling 4× · scale 1.00"
+    },
+    {
+      "name": "restored-full-transfer",
+      "text": "Arrows: 1,000,000 · received 1,000,000 / 1,000,000 server points · grid 1000 × 1000 × 1 · display sampling 1× · 111.4 ms update · step 0 · 1.0 s old · simplified geometry · transfer sampling 1× · scale 1.00"
+    },
+    {
+      "name": "auto-500k",
+      "text": "Arrows: 499,849 · received 499,849 / 499,849 server points · grid 707 × 707 × 1 · display sampling 1× · 69.0 ms update · step 0 · 0.0 s old · simplified geometry · transfer sampling 1× · scale 1.00"
+    },
+    {
+      "name": "auto-1m",
+      "text": "Arrows: 1,000,000 · received 1,000,000 / 1,000,000 server points · grid 1000 × 1000 × 1 · display sampling 1× · 172.8 ms update · step 0 · 0.4 s old · simplified geometry · transfer sampling 1× · scale 1.00"
+    },
+    {
+      "name": "volume-100x100x100-full",
+      "text": "Arrows: 1,000,000 · received 1,000,000 / 1,000,000 server points · grid 100 × 100 × 100 · display sampling 1× · 130.1 ms update · step 0 · 0.0 s old · simplified geometry · transfer sampling 1× · scale 4.00"
+    },
+    {
+      "name": "volume-128k-transfer",
+      "text": "Arrows: 125,000 · received 125,000 / 1,000,000 server points · grid 100 × 100 × 100 · display sampling 1× · 80.9 ms update · step 0 · 0.0 s old · simplified geometry · transfer sampling 2× · scale 4.00"
+    },
+    {
+      "name": "volume-restored-full",
+      "text": "Arrows: 1,000,000 · received 1,000,000 / 1,000,000 server points · grid 100 × 100 × 100 · display sampling 1× · 144.0 ms update · step 0 · 0.0 s old · simplified geometry · transfer sampling 1× · scale 4.00"
+    },
+    {
+      "name": "near-hard-limit-keeps-256-layers",
+      "text": "Arrows: 984,064 · received 984,064 / 984,064 server points · grid 62 × 62 × 256 · display sampling 1× · 0.3 ms update · step 0 · 0.0 s old · simplified geometry · transfer sampling 1× · scale 4.00"
+    },
+    {
+      "name": "reconnected-near-hard-limit",
+      "text": "Arrows: 984,064 · received 984,064 / 984,064 server points · grid 62 × 62 × 256 · display sampling 1× · 115.1 ms update · step 0 · 24.1 s old · simplified geometry · transfer sampling 1× · scale 4.00"
+    }
+  ],
+  "errors": [],
+  "socketEvents": [
+    {
+      "action": "open",
+      "url": "ws://127.0.0.1:35367/ws"
+    },
+    {
+      "action": "open",
+      "url": "ws://127.0.0.1:35367/ws/preview"
+    },
+    {
+      "action": "open",
+      "url": "ws://127.0.0.1:35367/ws"
+    },
+    {
+      "action": "open",
+      "url": "ws://127.0.0.1:35367/ws/preview"
+    }
+  ]
+}

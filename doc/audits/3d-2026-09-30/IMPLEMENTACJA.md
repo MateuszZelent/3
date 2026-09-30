@@ -7,7 +7,7 @@ Data: 2026-09-30. Wspierany build: `cmd/mumax3`, frontend główny i `webui`. Os
 | F1 | InstancedBufferGeometry: 3 float pozycji i 3 float wektora; orientacja, normalne, paleta, gap i topografia w shaderze. Upload nowej klatki przy stałej topologii: 12 bajtów na aktywną instancję. |
 | F2 | Jawny tryb opaque z depthWrite, przekrój/ROI na osi X/Y/Z; przezroczyste bloki sortuje renderer. |
 | F3 | Geometria 3/6/12/16 segmentów zależna od rozmiaru glyphu na ekranie; DPR ograniczany podczas gestu. |
-| F4 | Cache indeksów sampling, pojemność wybranych elementów, sampling strzałek i wokseli; profile transportu 128k/262k/1M na klienta. |
+| F4 | Cache indeksów sampling, pojemność wybranych elementów, sampling strzałek i wokseli; profile transportu 128k/262k/500k/1M na klienta, domyślnie pełny podgląd do 1M. |
 | F5 | Zmiany suwaków scalane na RAF; uniforms nie wymagają ponownego uploadu instancji. |
 | F6 | 4×4×4 bloki dla dużych scen, culling i bounds uwzględniające geometrię oraz aktualną topografię. |
 | F7 | Walidacja dokładnego 12N i limitu N; atomowe zatwierdzanie cache pozycji; wire buffers usuwane ze store. |
@@ -41,3 +41,7 @@ Kernel XY uwzględnia częściową powierzchnię komórek dla niedzielnych wymia
 ## Alternatywy rozważane w audycie
 
 Ray marching/texture3D, surface extraction, OIT, WebGPU, ROI po stronie CUDA oraz dodatkowe tryby redukcji Z są nowymi reprezentacjami lub opcjonalnymi alternatywami, nie równoległymi poprawkami istniejącego renderera. Release zachowuje glyph/voxel i signed scalar projection. Nie przeprowadzono jeszcze pomiaru solver slowdown dla m/B_eff przez tunel, screen-space LOD na różnych fizycznych GPU, ani długiej sesji 1M z wieloma klientami; nie deklarujemy realizacji celów FPS/p95 audytu bez tych pomiarów.
+
+## Uzupełnienie po zgłoszeniu UI i limitu 62500
+
+Korekty Appearance, konfliktu domyślnych budżetów, wykorzystania budżetu XY, pierwszej ramki WebSocket i ustawiania pełnej rozdzielczości opisano w [POPRAWKI_UI_LIMITOW.md](POPRAWKI_UI_LIMITOW.md).

@@ -38,7 +38,8 @@ export const previewConnected = writable(false);
 export const previewError = writable('');
 let previewSocket: WebSocket | null = null;
 let previewVisible = true;
-let clientBudget = 262144;
+// Receive the full server preview by default. Auto-adjust owns the default limit.
+export const previewClientBudget = writable(1000000);
 let lastSequence = 0;
 let pendingAck: { sequence: number; revision: number } | null = null;
 let previewRenderScheduled = false;
@@ -48,7 +49,9 @@ let cachedTopologyRevision = -1;
 
 function typedArrayView<T extends Float32Array | Int32Array>(
 	bytes: Uint8Array,
-	ctor: { new (buffer: ArrayBufferLike, byteOffset: number, length: number): T }
+	ctor: {
+		new (buffer: ArrayBufferLike, byteOffset: number, length: number): T;
+	}
 ): T {
 	if (bytes.byteLength % 12 !== 0) throw new Error('Incomplete vector buffer');
 	const byteLength = bytes.byteLength;
@@ -209,7 +212,7 @@ function connectWS(
 				ws?.send(
 					JSON.stringify({
 						protocol: 2,
-						maxPoints: clientBudget,
+						maxPoints: get(previewClientBudget),
 						subscribe: previewVisible && !document.hidden
 					})
 				);
@@ -349,7 +352,7 @@ export function setPreviewVisible(visible: boolean) {
 }
 
 export function setPreviewClientBudget(maxPoints: number) {
-	clientBudget = maxPoints;
+	previewClientBudget.set(maxPoints);
 	if (previewSocket?.readyState === WebSocket.OPEN)
 		previewSocket.send(JSON.stringify({ protocol: 2, maxPoints, resync: true }));
 }

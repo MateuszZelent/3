@@ -4,6 +4,9 @@
 		value?: string | number;
 		type?: string;
 		placeholder?: string;
+		min?: number;
+		max?: number;
+		step?: number | 'any';
 		hint?: string;
 		unit?: string;
 		readonly?: boolean;
@@ -21,6 +24,9 @@
 		value = '',
 		type = 'text',
 		placeholder = '',
+		min,
+		max,
+		step,
 		hint = '',
 		unit = '',
 		readonly = false,
@@ -45,17 +51,21 @@
 	{/if}
 	<span class="ui-textfield__control" data-readonly={readonly}>
 		<input
+			aria-label={label || undefined}
 			{name}
 			{type}
 			{placeholder}
+			{min}
+			{max}
+			{step}
 			{readonly}
 			{disabled}
 			inputmode={inputMode}
-			value={value}
+			{value}
 			data-mono={mono}
-			oninput={oninput}
-			onchange={onchange}
-			onkeydown={onkeydown}
+			{oninput}
+			{onchange}
+			{onkeydown}
 		/>
 		{#if unit}
 			<span class="ui-textfield__unit">{unit}</span>

@@ -32,7 +32,12 @@
 		</span>
 	{/if}
 	<span class="ui-select__control">
-		<select {disabled} value={String(value)} onchange={handleChange}>
+		<select
+			{disabled}
+			aria-label={label || undefined}
+			value={String(value)}
+			onchange={handleChange}
+		>
 			{#each options as option}
 				<option value={option.value} disabled={option.disabled}>
 					{option.group ? `${option.group} / ${option.label}` : option.label}

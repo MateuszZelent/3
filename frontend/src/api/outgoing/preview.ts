@@ -41,3 +41,7 @@ export function postMaxPoints(maxPoints: number) {
 export function postScale(scale: number) {
 	return post('preview/scale', { scale });
 }
+
+export function postFullResolution() {
+	return post('preview/fullResolution', {});
+}

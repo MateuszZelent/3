@@ -30,6 +30,7 @@ type PreviewState struct {
 	occupancyGPU          *data.Slice
 	sparePositions        []Vector3i
 	cachedTopologyKey     string
+	ServerVectorCount     int     `msgpack:"serverVectorCount"`
 	TransportSampling     int     `msgpack:"transportSampling"`
 	Sequence              uint64  `msgpack:"sequence"`
 	Step                  int     `msgpack:"step"`
@@ -209,6 +210,7 @@ func initPreviewAPI(e *echo.Group, ws *WebSocketManager) *PreviewState {
 	previewState.AppliedXChosenSize = previewState.XChosenSize
 	previewState.AppliedYChosenSize = previewState.YChosenSize
 	previewState.AppliedLayerStride = 1
+	e.POST("/api/preview/fullResolution", previewState.postFullResolution)
 	e.POST("/api/preview/scale", previewState.postPreviewScale)
 	e.POST("/api/preview/component", previewState.postPreviewComponent)
 	e.POST("/api/preview/quantity", previewState.postPreviewQuantity)
@@ -453,7 +455,9 @@ func (s *PreviewState) resolvePreviewSizing(depthLayers int) previewSizing {
 		budget = previewHardLimit
 		enabled = float64(requestedX)*float64(requestedY)*float64(requestedZ) > float64(previewHardLimit)
 	}
-	applied := resolvePreviewGrid(requested, [3][]int{s.XPossibleSizes, s.YPossibleSizes, zSizes}, budget, enabled)
+	// XY area averaging supports any destination size. Restricting automatic
+	// sizes to slider presets can waste most of the budget in large jumps.
+	applied := resolvePreviewGrid(requested, [3][]int{nil, nil, zSizes}, budget, enabled)
 	return previewSizing{
 		RequestedX: requestedX, RequestedY: requestedY,
 		AppliedX: applied[0], AppliedY: applied[1],
@@ -486,7 +490,11 @@ func (s *PreviewState) applyResolvedSizing(sizing previewSizing) {
 	if !s.AutoScaleEnabled {
 		limit = previewHardLimit
 	}
-	message := fmt.Sprintf("Preview auto-scaled from %s to %s to stay within %d points", requestedShape, appliedShape, limit)
+	reason := "Preview auto-scaled"
+	if !s.AutoScaleEnabled {
+		reason = "Preview reduced by safety limit"
+	}
+	message := fmt.Sprintf("%s from %s to %s to stay within %d points", reason, requestedShape, appliedShape, limit)
 	if sizing.LayerStride > 1 {
 		message = fmt.Sprintf("%s (sampling every %d layer)", message, sizing.LayerStride)
 	}
@@ -962,6 +970,22 @@ func containsInt(arr []int, target int) bool {
 		}
 	}
 	return false
+}
+
+// Resolve every axis against the current server mesh in one operation. Browser
+// metadata can lag after a Console mesh change or an All layers toggle.
+func (s *PreviewState) postFullResolution(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
+	if !s.addPossibleDownscaleSizes() {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Mesh is not initialized"})
+	}
+	s.XChosenSize = s.XPossibleSizes[len(s.XPossibleSizes)-1]
+	s.YChosenSize = s.YPossibleSizes[len(s.YPossibleSizes)-1]
+	s.ZChosenSize = max(s.previewMeshSize[2], 1)
+	s.Refresh = true
+	s.ws.broadcastPreviewStateLocked()
+	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *PreviewState) postXChosenSize(c echo.Context) error {

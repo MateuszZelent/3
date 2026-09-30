@@ -193,6 +193,8 @@ func (managed *managedConnection) writeLoop() {
 }
 
 // Credits bound in-flight preview frames; old clients retain full-frame fallback.
+// Slow rendering or background tabs keep their single credit outstanding until
+// ACK/resync or disconnect. A render stall must not force a reconnect loop.
 func (managed *managedConnection) waitReady() bool {
 	for {
 		managed.controlMu.Lock()
@@ -204,11 +206,6 @@ func (managed *managedConnection) waitReady() bool {
 		select {
 		case <-managed.ready:
 		case <-managed.stop:
-			return false
-		case <-time.After(15 * time.Second):
-			// A sleeping/stalled browser must reconnect and receive a complete keyframe.
-			managed.failOnce.Do(func() { close(managed.failed) })
-			managed.ws.Close()
 			return false
 		}
 	}
@@ -229,13 +226,16 @@ func (managed *managedConnection) control(data []byte) {
 	if request.Protocol == 2 {
 		managed.ackEnabled = true
 		if managed.budget == 0 {
-			managed.budget = 262144
+			managed.budget = previewHardLimit
 		}
 	}
 	if request.Budget >= 8 && request.Budget <= previewHardLimit {
 		managed.budget = 131072
 		if request.Budget >= 262144 {
 			managed.budget = 262144
+		}
+		if request.Budget >= 500000 {
+			managed.budget = 500000
 		}
 		if request.Budget >= previewHardLimit {
 			managed.budget = previewHardLimit
@@ -368,8 +368,13 @@ func (wsManager *WebSocketManager) sendInitialState(managed *managedConnection, 
 			preview.Refresh = true
 			preview.Update()
 		}
-		payload = preview
-		frame.sequence, frame.revision = preview.Sequence, preview.TopologyRevision
+		// Use the same wire metadata and revision convention as later frames.
+		frame = encodePreviewFrame(preview, 1)
+		select {
+		case managed.send <- frame:
+		case <-managed.stop:
+		}
+		return
 	} else {
 		wsManager.engineState.UpdateWithoutPreview()
 		payload = wsManager.engineState.WithoutPreview()
@@ -422,37 +427,46 @@ func (wsManager *WebSocketManager) broadcastPreviewStateLocked() {
 	}
 	wsManager.previewConnections.mu.Unlock()
 	for budget := range budgets {
-		preview := wsManager.engineState.Preview
-		if preview.Type != "3D" || preview.VectorCount <= budget {
-			continue
+		profile, sampling := previewTransportProfile(wsManager.engineState.Preview, budget)
+		if sampling > 1 {
+			frame.profiles[budget] = encodePreviewFrame(profile, sampling)
 		}
-		step := 2
-		var profile PreviewState
-		for {
-			profile = *preview
-			profile.VectorFieldValues = nil
-			profile.VectorFieldPositions = nil
-			for i, position := range preview.VectorFieldPositions {
-				z := position.Z / max(preview.AppliedLayerStride, 1)
-				if position.X%step == 0 && position.Y%step == 0 && (!preview.AllLayers || z%step == 0) {
-					profile.VectorFieldPositions = append(profile.VectorFieldPositions, position)
-					profile.VectorFieldValues = append(profile.VectorFieldValues, preview.VectorFieldValues[i])
-				}
-			}
-			if len(profile.VectorFieldValues) <= budget {
-				break
-			}
-			step *= 2
-		}
-		profile.VectorCount = len(profile.VectorFieldValues)
-		profile.VectorValuesBinary = packVectorValues(nil, profile.VectorFieldValues)
-		profile.VectorPositionsBinary = packVectorPositions(nil, profile.VectorFieldPositions)
-		profile.DataPointsCount = profile.VectorCount
-		frame.profiles[budget] = encodePreviewFrame(&profile, step)
 	}
 	wsManager.previewConnections.broadcastFrame(frame)
 	wsManager.engineState.Preview.Refresh = false
 	wsManager.lastPreviewBroadcast = time.Now()
+}
+
+// A transfer limit is opt-in. The default profile retains the server's entire
+// applied grid, including when Auto-adjust is disabled.
+func previewTransportProfile(preview *PreviewState, budget int) (*PreviewState, int) {
+	if preview.Type != "3D" || preview.VectorCount <= budget {
+		return preview, 1
+	}
+	step := 2
+	var profile PreviewState
+	for {
+		profile = *preview
+		profile.VectorFieldValues = nil
+		profile.VectorFieldPositions = nil
+		for i, position := range preview.VectorFieldPositions {
+			z := position.Z / max(preview.AppliedLayerStride, 1)
+			if position.X%step == 0 && position.Y%step == 0 && (!preview.AllLayers || z%step == 0) {
+				profile.VectorFieldPositions = append(profile.VectorFieldPositions, position)
+				profile.VectorFieldValues = append(profile.VectorFieldValues, preview.VectorFieldValues[i])
+			}
+		}
+		if len(profile.VectorFieldValues) <= budget {
+			break
+		}
+		step *= 2
+	}
+	profile.VectorCount = len(profile.VectorFieldValues)
+	profile.VectorValuesBinary = packVectorValues(nil, profile.VectorFieldValues)
+	profile.VectorPositionsBinary = packVectorPositions(nil, profile.VectorFieldPositions)
+	profile.DataPointsCount = profile.VectorCount
+	profile.ServerVectorCount = preview.VectorCount
+	return &profile, step
 }
 
 // Share each negotiated sampling profile across clients; engine capture is done once.
@@ -460,6 +474,9 @@ func (wsManager *WebSocketManager) broadcastPreviewStateLocked() {
 func encodePreviewFrame(state *PreviewState, sampling int) outboundFrame {
 	preview := *state
 	preview.TransportSampling = sampling
+	if sampling == 1 {
+		preview.ServerVectorCount = state.VectorCount
+	}
 	preview.TopologyRevision = state.TopologyRevision*32 + uint64(sampling)
 	full, err := msgpack.Marshal(&preview)
 	if err != nil {

@@ -2,6 +2,7 @@ package webui
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -89,8 +90,8 @@ func TestPreviewSizingManualZ(t *testing.T) {
 	state.ZChosenSize = 500
 	state.XChosenSize, state.YChosenSize = 500, 500
 	sizing = state.resolvePreviewSizing(500)
-	if sizing.AppliedX != 50 || sizing.AppliedY != 50 || sizing.AppliedDepth != 50 || sizing.LayerStride != 10 {
-		t.Fatalf("cube is not sampled equally: %+v", sizing)
+	if sizing.AppliedX != 51 || sizing.AppliedY != 51 || sizing.AppliedDepth != 50 || sizing.LayerStride != 10 {
+		t.Fatalf("cube budget or sampled depth is wrong: %+v", sizing)
 	}
 	state.applyResolvedSizing(sizing)
 	if !state.AutoDownscaled || state.AppliedZChosenSize != 50 {
@@ -169,5 +170,88 @@ func TestFullGeometrySnapshotPreservesOccupiedZeroWithoutMask(t *testing.T) {
 	state.processVectorSnapshot()
 	if state.VectorCount != 1 {
 		t.Fatal("full geometry zero was discarded without occupancy buffer")
+	}
+}
+
+func TestPreviewBudgetUsesAreaAveragingRatherThanSliderPresets(t *testing.T) {
+	state := &PreviewState{
+		XChosenSize: 500, YChosenSize: 500,
+		XPossibleSizes: possiblePreviewXYSizes(500), YPossibleSizes: possiblePreviewXYSizes(500),
+		MaxPoints: 131072, AutoScaleEnabled: true,
+	}
+	sizing := state.resolvePreviewSizing(1)
+	if sizing.AppliedX != 362 || sizing.AppliedY != 362 || sizing.AppliedPoints != 131044 {
+		t.Fatalf("automatic resolution wastes budget: %+v", sizing)
+	}
+	state.AutoScaleEnabled = false
+	sizing = state.resolvePreviewSizing(1)
+	if sizing.AppliedPoints != 250000 || sizing.AutoDownscaled {
+		t.Fatalf("Auto-adjust off retained soft limit: %+v", sizing)
+	}
+}
+
+func TestPreviewTransferLimit62500IsOptIn(t *testing.T) {
+	state := &PreviewState{Type: "3D", AutoScaleEnabled: false, AppliedXChosenSize: 1000, AppliedYChosenSize: 1000}
+	values := make([]Vector3f, previewHardLimit)
+	positions := make([]Vector3i, previewHardLimit)
+	for i := range positions {
+		values[i].X = 1
+		positions[i] = Vector3i{X: i % 1000, Y: i / 1000}
+	}
+	state.setVectorPayload(values, positions)
+	connection := &managedConnection{ready: make(chan struct{}, 1)}
+	connection.control([]byte(`{"protocol":2}`))
+	profile, sampling := previewTransportProfile(state, connection.budget)
+	if profile.VectorCount != 1000000 || sampling != 1 {
+		t.Fatalf("default client secretly limits manual resolution: %d, sampling %d", profile.VectorCount, sampling)
+	}
+	connection.control([]byte(`{"maxPoints":131072}`))
+	profile, sampling = previewTransportProfile(state, connection.budget)
+	if profile.VectorCount != 62500 || sampling != 4 || profile.ServerVectorCount != 1000000 {
+		t.Fatalf("explicit sampled profile metadata wrong: %d / %d, sampling %d", profile.VectorCount, profile.ServerVectorCount, sampling)
+	}
+	connection.control([]byte(`{"maxPoints":1000000}`))
+	profile, sampling = previewTransportProfile(state, connection.budget)
+	if profile.VectorCount != 1000000 || sampling != 1 || state.VectorCount != 1000000 {
+		t.Fatal("raising transfer limit did not restore original grid")
+	}
+}
+
+func TestPreviewClientBudgetProfiles(t *testing.T) {
+	for _, budget := range []int{131072, 262144, 500000, 1000000} {
+		connection := &managedConnection{ready: make(chan struct{}, 1)}
+		connection.control([]byte(fmt.Sprintf(`{"protocol":2,"maxPoints":%d}`, budget)))
+		if connection.budget != budget {
+			t.Fatalf("negotiated %d as %d", budget, connection.budget)
+		}
+	}
+}
+
+func TestInitialPreviewUsesWireMetadata(t *testing.T) {
+	state := &PreviewState{Type: "3D", Sequence: 12, TopologyRevision: 3, VectorCount: 1}
+	state.setVectorPayload([]Vector3f{{X: 1}}, []Vector3i{{}})
+	manager := newWebSocketManager()
+	manager.engineState = &EngineState{Preview: state}
+	connection := &managedConnection{send: make(chan outboundFrame, 1), stop: make(chan struct{})}
+	manager.sendInitialState(connection, "preview")
+	initial := <-connection.send
+	expected := encodePreviewFrame(state, 1)
+	if initial.revision != expected.revision {
+		t.Fatalf("initial revision %d differs from stream %d", initial.revision, expected.revision)
+	}
+	var decoded PreviewState
+	if err := msgpack.Unmarshal(initial.full, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.ServerVectorCount != 1 || decoded.TransportSampling != 1 {
+		t.Fatalf("initial counts/sampling missing: %d/%d", decoded.ServerVectorCount, decoded.TransportSampling)
+	}
+}
+
+func TestPreviewNearHardLimitKeepsDepth(t *testing.T) {
+	state := &PreviewState{XChosenSize: 64, YChosenSize: 64, ZChosenSize: 256, AllLayers: true, Type: "3D", MaxPoints: 131072, AutoScaleEnabled: false}
+	sizing := state.resolvePreviewSizing(256)
+	if sizing.AppliedDepth != 256 || sizing.AppliedX != 62 || sizing.AppliedY != 62 || sizing.AppliedPoints != 984064 {
+		t.Fatalf("small safety reduction discarded half the layers: %+v", sizing)
 	}
 }
