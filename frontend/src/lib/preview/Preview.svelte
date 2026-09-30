@@ -9,6 +9,7 @@
 		postLayer,
 		postQuantity,
 		postXChosenSize,
+		postZChosenSize,
 		postYChosenSize
 	} from '$api/outgoing/preview';
 	import Slider from '$components/Slider.svelte';
@@ -276,6 +277,14 @@
 				value={$previewState.yChosenSize}
 				values={$previewState.yPossibleSizes}
 				onChangeFunction={postYChosenSize}
+			/>
+		{/if}
+		{#if $previewState.allLayers && $previewState.type === '3D' && ($previewState.zPossibleSizes?.length ?? 0) > 0}
+			<Slider
+				label="Z data points"
+				value={$previewState.zChosenSize}
+				values={$previewState.zPossibleSizes}
+				onChangeFunction={postZChosenSize}
 			/>
 		{/if}
 		<div class="preview-toolbar__stack">

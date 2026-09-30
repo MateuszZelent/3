@@ -30,3 +30,7 @@ export function postAllLayers(allLayers: boolean) {
 export function postAutoScaleEnabled(autoScaleEnabled: boolean) {
 	post('preview/autoScaleEnabled', { autoScaleEnabled });
 }
+
+export function postZChosenSize(zChosenSize: number) {
+	post('preview/ZChosenSize', { zChosenSize });
+}

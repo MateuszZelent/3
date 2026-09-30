@@ -8,6 +8,7 @@ import { get, writable } from 'svelte/store';
 import { disposePreview2D } from './preview2D';
 import { vectorOrientationColor } from './previewColors';
 import { resolveVoxelTopography } from './voxelTopography';
+import { preview3DLayout } from './preview3DLayout';
 import { THEME } from '$lib/theme/echarts-theme';
 
 export type QualityLevel = 'low' | 'high' | 'ultra';
@@ -83,10 +84,19 @@ const _tempVec = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 const _color = new THREE.Color();
 
+function getLayout() {
+	const preview = get(previewState);
+	return preview3DLayout(
+		get(meshState),
+		getPreviewWidthCells(),
+		getPreviewHeightCells(),
+		preview.appliedLayerStride || 1,
+		preview.allLayers
+	);
+}
+
 function getWorldExtents() {
-	const xSize = getPreviewWidthCells();
-	const ySize = getPreviewHeightCells();
-	const depthCells = getDepthCells();
+	const { xSize, ySize, depthCells } = getLayout();
 	return {
 		xSize,
 		ySize,
@@ -99,8 +109,8 @@ function getWorldExtents() {
 }
 
 function getPreviewShapeKey() {
-	const state = get(previewState);
-	return `${getPreviewWidthCells()}x${getPreviewHeightCells()}x${getDepthCells()}:${state.allLayers}`;
+	const { xSize, ySize, depthCells } = getLayout();
+	return `${xSize}x${ySize}x${depthCells}:${get(previewState).allLayers}`;
 }
 
 function nextMeshCapacity(required: number) {
@@ -243,10 +253,6 @@ function getConfig(): QualityConfig {
 	return QUALITY_CONFIGS[get(qualityLevel)];
 }
 
-function getDepthCells() {
-	return get(previewState).allLayers ? Math.max(get(meshState).Nz, 1) : 1;
-}
-
 function getPreviewWidthCells() {
 	const state = get(previewState);
 	return Math.max(state.appliedXChosenSize || state.xChosenSize, 1);
@@ -320,6 +326,8 @@ function createArrowGeometry() {
 		throw new Error('Could not create arrow geometry');
 	}
 
+	shaftGeometry.dispose();
+	headGeometry.dispose();
 	arrowGeometry.computeVertexNormals();
 	return arrowGeometry;
 }
@@ -500,6 +508,7 @@ function updateMaterialAppearance() {
 }
 
 function disposeMesh(mesh: THREE.InstancedMesh) {
+	mesh.dispose();
 	mesh.geometry.dispose();
 	if (Array.isArray(mesh.material)) {
 		mesh.material.forEach((material) => material.dispose());
@@ -597,6 +606,7 @@ function updateGlyphMesh(mesh: THREE.InstancedMesh) {
 	}
 
 	const colors = instanceColor.array as Float32Array;
+	const layout = getLayout();
 	let visibleCount = 0;
 
 	for (let i = 0; i < count; i++) {
@@ -608,8 +618,15 @@ function updateGlyphMesh(mesh: THREE.InstancedMesh) {
 
 		if (!isVisible) continue;
 
-		_dummy.position.set(positions[offset], positions[offset + 2], positions[offset + 1]);
-		_dummy.scale.set(1, 1, 1);
+		_dummy.position.set(
+			(positions[offset] + 0.5) * layout.stepX,
+			preview.allLayers
+				? (Math.floor(positions[offset + 2] / Math.max(preview.appliedLayerStride, 1)) + 0.5) *
+						layout.stepZ
+				: layout.zCell / 2,
+			(positions[offset + 1] + 0.5) * layout.stepY
+		);
+		_dummy.scale.setScalar(layout.glyphScale);
 		_tempVec.set(vx, vz, vy).normalize();
 		_dummy.quaternion.setFromUnitVectors(_defaultUp, _tempVec);
 
@@ -625,8 +642,15 @@ function updateGlyphMesh(mesh: THREE.InstancedMesh) {
 
 	mesh.count = visibleCount;
 	visibleRenderCount.set(visibleCount);
-	mesh.instanceMatrix.needsUpdate = true;
-	instanceColor.needsUpdate = true;
+	// Upload only live instances, not the unused power-of-two capacity.
+	mesh.instanceMatrix.clearUpdateRanges();
+	instanceColor.clearUpdateRanges();
+	if (visibleCount > 0) {
+		mesh.instanceMatrix.addUpdateRange(0, visibleCount * 16);
+		instanceColor.addUpdateRange(0, visibleCount * 3);
+		mesh.instanceMatrix.needsUpdate = true;
+		instanceColor.needsUpdate = true;
+	}
 }
 
 function updateVoxelMesh(mesh: THREE.InstancedMesh) {
@@ -648,10 +672,11 @@ function updateVoxelMesh(mesh: THREE.InstancedMesh) {
 	}
 
 	const colors = instanceColor.array as Float32Array;
+	const layout = getLayout();
 	const step = get(voxelSampling);
 	const baseScale = Math.max(0.12, step * (1 - get(voxelGap)));
 	const allLayers = preview.allLayers;
-	const depthScale = allLayers ? baseScale : Math.max(0.22, baseScale * 0.42);
+	const depthScale = baseScale * (allLayers ? layout.stepZ : layout.zCell);
 	const threshold = get(voxelThreshold);
 	const colorMode = get(voxelColorMode);
 	const topo = get(topoEnabled);
@@ -671,22 +696,36 @@ function updateVoxelMesh(mesh: THREE.InstancedMesh) {
 			colorMode === 'orientation'
 				? vectorMagnitude(vx, vy, vz)
 				: Math.abs(componentValue(vx, vy, vz, colorMode));
-		const isVisible = isSampledPosition(px, py, pz, step, allLayers) && metric >= threshold;
+		const isVisible =
+			isSampledPosition(
+				px,
+				py,
+				Math.floor(pz / Math.max(preview.appliedLayerStride, 1)),
+				step,
+				allLayers
+			) && metric >= threshold;
 		if (!isVisible) continue;
 
-		let worldY = pz;
+		const centerZ = allLayers
+			? (Math.floor(pz / Math.max(preview.appliedLayerStride, 1)) + 0.5) * layout.stepZ
+			: layout.zCell / 2;
+		let worldY = centerZ;
 		let voxelHeight = depthScale;
 		if (topo) {
 			const topoDisplacement = componentValue(vx, vy, vz, topoComp) * topoMul;
-			const topography = resolveVoxelTopography(pz, depthScale, topoDisplacement);
+			const topography = resolveVoxelTopography(
+				centerZ,
+				depthScale,
+				topoDisplacement * layout.glyphScale
+			);
 			worldY = topography.centerZ;
 			voxelHeight = topography.depthScale;
 		}
 
-		_dummy.position.set(px, worldY, py);
+		_dummy.position.set((px + 0.5) * layout.stepX, worldY, (py + 0.5) * layout.stepY);
 		_dummy.quaternion.identity();
 
-		_dummy.scale.set(baseScale, voxelHeight, baseScale);
+		_dummy.scale.set(baseScale * layout.stepX, voxelHeight, baseScale * layout.stepY);
 
 		applyVoxelColor(vx, vy, vz, colorMode, _color);
 		colors[visibleCount * 3 + 0] = _color.r;
@@ -700,8 +739,15 @@ function updateVoxelMesh(mesh: THREE.InstancedMesh) {
 
 	mesh.count = visibleCount;
 	visibleRenderCount.set(visibleCount);
-	mesh.instanceMatrix.needsUpdate = true;
-	instanceColor.needsUpdate = true;
+	// Upload only live instances, not the unused power-of-two capacity.
+	mesh.instanceMatrix.clearUpdateRanges();
+	instanceColor.clearUpdateRanges();
+	if (visibleCount > 0) {
+		mesh.instanceMatrix.addUpdateRange(0, visibleCount * 16);
+		instanceColor.addUpdateRange(0, visibleCount * 3);
+		mesh.instanceMatrix.needsUpdate = true;
+		instanceColor.needsUpdate = true;
+	}
 	updateMaterialAppearance();
 }
 

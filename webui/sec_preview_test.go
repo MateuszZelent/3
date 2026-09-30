@@ -63,3 +63,35 @@ func TestSetVectorPayloadPacksCompleteBinaryFrame(t *testing.T) {
 		t.Fatalf("value-only frame omitted positions: %d bytes", len(state.VectorPositionsBinary))
 	}
 }
+
+func TestPreviewSizingManualZ(t *testing.T) {
+	state := &PreviewState{
+		XChosenSize: 100, YChosenSize: 100, ZChosenSize: 10,
+		XPossibleSizes: possibleDownscaleSizes(500), YPossibleSizes: possibleDownscaleSizes(500),
+		AllLayers: true, Type: "3D", MaxPoints: 131072, AutoScaleEnabled: true,
+	}
+	sizing := state.resolvePreviewSizing(500)
+	if sizing.AppliedDepth != 10 || sizing.LayerStride != 50 || sizing.AutoDownscaled {
+		t.Fatalf("manual Z sampling ignored or mislabeled: %+v", sizing)
+	}
+	state.applyResolvedSizing(sizing)
+	if state.AppliedZChosenSize != 10 || state.AutoDownscaleMessage != "" {
+		t.Fatalf("wrong UI metadata: %+v", state)
+	}
+	state.AllLayers = false
+	sizing = state.resolvePreviewSizing(1)
+	if sizing.AppliedDepth != 1 || sizing.LayerStride != 1 {
+		t.Fatalf("Z control changed single-layer mode: %+v", sizing)
+	}
+	state.AllLayers = true
+	state.ZChosenSize = 500
+	state.XChosenSize, state.YChosenSize = 500, 500
+	sizing = state.resolvePreviewSizing(500)
+	if sizing.AppliedX != 50 || sizing.AppliedY != 50 || sizing.AppliedDepth != 50 || sizing.LayerStride != 10 {
+		t.Fatalf("cube is not sampled equally: %+v", sizing)
+	}
+	state.applyResolvedSizing(sizing)
+	if !state.AutoDownscaled || state.AppliedZChosenSize != 50 {
+		t.Fatalf("auto scaling metadata missing: %+v", state)
+	}
+}

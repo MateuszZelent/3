@@ -25,6 +25,9 @@ export interface Preview {
 	dataPointsCount: number;
 	xPossibleSizes: number[];
 	yPossibleSizes: number[];
+	zPossibleSizes: number[];
+	zChosenSize: number;
+	appliedZChosenSize: number;
 	xChosenSize: number;
 	yChosenSize: number;
 	appliedXChosenSize: number;
@@ -55,6 +58,9 @@ export const previewState = writable<Preview>({
 	dataPointsCount: 0,
 	xPossibleSizes: [],
 	yPossibleSizes: [],
+	zPossibleSizes: [],
+	zChosenSize: 0,
+	appliedZChosenSize: 0,
 	xChosenSize: 0,
 	yChosenSize: 0,
 	appliedXChosenSize: 0,

@@ -49,6 +49,9 @@ type PreviewState struct {
 	DataPointsCount      int    `msgpack:"dataPointsCount"`
 	XPossibleSizes       []int  `msgpack:"xPossibleSizes"`
 	YPossibleSizes       []int  `msgpack:"yPossibleSizes"`
+	ZPossibleSizes       []int  `msgpack:"zPossibleSizes"`
+	ZChosenSize          int    `msgpack:"zChosenSize"`
+	AppliedZChosenSize   int    `msgpack:"appliedZChosenSize"`
 	XChosenSize          int    `msgpack:"xChosenSize"`
 	YChosenSize          int    `msgpack:"yChosenSize"`
 	AppliedXChosenSize   int    `msgpack:"appliedXChosenSize"`
@@ -179,6 +182,7 @@ func initPreviewAPI(e *echo.Group, ws *WebSocketManager) *PreviewState {
 	e.POST("/api/preview/refresh", previewState.postPreviewRefresh)
 	e.POST("/api/preview/XChosenSize", previewState.postXChosenSize)
 	e.POST("/api/preview/YChosenSize", previewState.postYChosenSize)
+	e.POST("/api/preview/ZChosenSize", previewState.postZChosenSize)
 	e.POST("/api/preview/allLayers", previewState.postAllLayers)
 	e.POST("/api/preview/autoScaleEnabled", previewState.postAutoScaleEnabled)
 
@@ -372,20 +376,6 @@ func floorAllowedSize(arr []int, target int) int {
 	return best
 }
 
-func previousAllowedSize(arr []int, current int) int {
-	if current <= 1 || len(arr) == 0 {
-		return 1
-	}
-	prev := 1
-	for _, value := range arr {
-		if value >= current {
-			break
-		}
-		prev = value
-	}
-	return prev
-}
-
 func (s *PreviewState) resolvePreviewSizing(depthLayers int) previewSizing {
 	requestedX := maxInt(s.XChosenSize, 1)
 	requestedY := maxInt(s.YChosenSize, 1)
@@ -396,76 +386,30 @@ func (s *PreviewState) resolvePreviewSizing(depthLayers int) previewSizing {
 		requestedY = closestInArray(s.YPossibleSizes, requestedY)
 	}
 
-	sizing := previewSizing{
-		RequestedX:     requestedX,
-		RequestedY:     requestedY,
-		AppliedX:       requestedX,
-		AppliedY:       requestedY,
-		RequestedDepth: maxInt(depthLayers, 1),
-		AppliedDepth:   maxInt(depthLayers, 1),
-		LayerStride:    1,
+	depthLayers = maxInt(depthLayers, 1)
+	requestedZ := depthLayers
+	zSizes := possibleDownscaleSizes(depthLayers)
+	if s.AllLayers && s.Type == "3D" && s.ZChosenSize > 0 {
+		requestedZ = floorAllowedSize(zSizes, min(s.ZChosenSize, depthLayers))
 	}
-	sizing.RequestedPoints = sizing.RequestedX * sizing.RequestedY * sizing.RequestedDepth
-
-	maxPoints := maxInt(s.MaxPoints, 8)
-	if !s.AutoScaleEnabled || sizing.RequestedPoints <= maxPoints {
-		sizing.AppliedPoints = sizing.RequestedPoints
-		return sizing
+	requested := [3]int{requestedX, requestedY, requestedZ}
+	applied := resolvePreviewGrid(requested, [3][]int{s.XPossibleSizes, s.YPossibleSizes, zSizes}, maxInt(s.MaxPoints, 8), s.AutoScaleEnabled)
+	return previewSizing{
+		RequestedX: requestedX, RequestedY: requestedY,
+		AppliedX: applied[0], AppliedY: applied[1],
+		RequestedDepth: requestedZ, AppliedDepth: applied[2],
+		LayerStride:     depthLayers / applied[2],
+		RequestedPoints: requestedX * requestedY * requestedZ,
+		AppliedPoints:   applied[0] * applied[1] * applied[2],
+		AutoDownscaled:  applied != requested,
 	}
-
-	scale := math.Sqrt(float64(maxPoints) / float64(sizing.RequestedPoints))
-	targetX := maxInt(1, int(math.Floor(float64(sizing.RequestedX)*scale)))
-	targetY := maxInt(1, int(math.Floor(float64(sizing.RequestedY)*scale)))
-	sizing.AppliedX = floorAllowedSize(s.XPossibleSizes, targetX)
-	sizing.AppliedY = floorAllowedSize(s.YPossibleSizes, targetY)
-	if sizing.AppliedX > sizing.RequestedX {
-		sizing.AppliedX = sizing.RequestedX
-	}
-	if sizing.AppliedY > sizing.RequestedY {
-		sizing.AppliedY = sizing.RequestedY
-	}
-
-	for {
-		sizing.AppliedDepth = ceilDiv(sizing.RequestedDepth, sizing.LayerStride)
-		sizing.AppliedPoints = sizing.AppliedX * sizing.AppliedY * sizing.AppliedDepth
-		if sizing.AppliedPoints <= maxPoints {
-			break
-		}
-
-		reduced := false
-		if sizing.AppliedX >= sizing.AppliedY && sizing.AppliedX > 1 {
-			next := previousAllowedSize(s.XPossibleSizes, sizing.AppliedX)
-			if next < sizing.AppliedX {
-				sizing.AppliedX = next
-				reduced = true
-			}
-		}
-		if !reduced && sizing.AppliedY > 1 {
-			next := previousAllowedSize(s.YPossibleSizes, sizing.AppliedY)
-			if next < sizing.AppliedY {
-				sizing.AppliedY = next
-				reduced = true
-			}
-		}
-		if !reduced && sizing.RequestedDepth > 1 && sizing.AppliedDepth > 1 {
-			sizing.LayerStride++
-			reduced = true
-		}
-		if !reduced {
-			break
-		}
-	}
-
-	sizing.AppliedDepth = ceilDiv(sizing.RequestedDepth, sizing.LayerStride)
-	sizing.AppliedPoints = sizing.AppliedX * sizing.AppliedY * sizing.AppliedDepth
-	sizing.AutoDownscaled = sizing.AppliedX != sizing.RequestedX || sizing.AppliedY != sizing.RequestedY || sizing.LayerStride != 1
-	return sizing
 }
 
 func (s *PreviewState) applyResolvedSizing(sizing previewSizing) {
 	s.AppliedXChosenSize = sizing.AppliedX
 	s.AppliedYChosenSize = sizing.AppliedY
 	s.AppliedLayerStride = sizing.LayerStride
+	s.AppliedZChosenSize = sizing.AppliedDepth
 	s.AutoDownscaled = sizing.AutoDownscaled
 	if !sizing.AutoDownscaled {
 		s.AutoDownscaleMessage = ""
@@ -494,7 +438,7 @@ func (s *PreviewState) updateAllLayers(GPUIn *data.Slice, componentCount int, la
 	CPUOut, GPUOut := s.previewBuffers(componentCount, [3]int{xSize, ySize, depth})
 
 	dstLayer := 0
-	for layer := 0; layer < nz; layer += stride {
+	for layer := stride / 2; layer < nz; layer += stride {
 		for c := 0; c < componentCount; c++ {
 			cuda.ResizeLayerTo(GPUOut.Comp(c), GPUIn.Comp(c), dstLayer, layer)
 		}
@@ -502,15 +446,18 @@ func (s *PreviewState) updateAllLayers(GPUIn *data.Slice, componentCount int, la
 	}
 	data.Copy(CPUOut, GPUOut)
 
-	valArray := make([]Vector3f, 0, xSize*ySize*depth)
+	valArray := s.VectorFieldValues[:0]
+	if cap(valArray) < xSize*ySize*depth {
+		valArray = make([]Vector3f, 0, xSize*ySize*depth)
+	}
 	posArray := make([]Vector3i, 0, xSize*ySize*depth)
 	vf := CPUOut.Vectors()
 	for layerIndex := 0; layerIndex < depth; layerIndex++ {
-		sourceLayer := layerIndex * stride
+		sourceLayer := layerIndex*stride + stride/2
 		yLen := len(vf[0][layerIndex])
 		xLen := len(vf[0][layerIndex][0])
-		for posx := 0; posx < xLen; posx++ {
-			for posy := 0; posy < yLen; posy++ {
+		for posy := 0; posy < yLen; posy++ {
+			for posx := 0; posx < xLen; posx++ {
 				valx := vf[0][layerIndex][posy][posx]
 				valy := vf[1][layerIndex][posy][posx]
 				valz := vf[2][layerIndex][posy][posx]
@@ -815,6 +762,12 @@ func (s *PreviewState) addPossibleDownscaleSizes() bool {
 
 	s.XPossibleSizes = xPossibleSizes
 	s.YPossibleSizes = yPossibleSizes
+	s.ZPossibleSizes = possibleDownscaleSizes(meshSize[2])
+	if s.ZChosenSize <= 0 {
+		s.ZChosenSize = meshSize[2]
+	} else {
+		s.ZChosenSize = closestInArray(s.ZPossibleSizes, s.ZChosenSize)
+	}
 	if engine.PreviewXDataPoints != 0 {
 		s.XChosenSize = closestInArray(s.XPossibleSizes, engine.PreviewXDataPoints)
 	} else {
@@ -982,6 +935,19 @@ func (s *PreviewState) postYChosenSize(c echo.Context) error {
 	s.YChosenSize = req.YChosenSize
 	s.Refresh = true
 	engine.InjectAndWait(s.updateMask)
+	s.ws.broadcastEngineState()
+	return c.JSON(http.StatusOK, nil)
+}
+
+func (s *PreviewState) postZChosenSize(c echo.Context) error {
+	var req struct {
+		ZChosenSize int `msgpack:"zChosenSize"`
+	}
+	if err := c.Bind(&req); err != nil || !containsInt(s.ZPossibleSizes, req.ZChosenSize) {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid zChosenSize"})
+	}
+	s.ZChosenSize = req.ZChosenSize
+	s.Refresh = true
 	s.ws.broadcastEngineState()
 	return c.JSON(http.StatusOK, nil)
 }
