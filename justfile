@@ -3,13 +3,13 @@ cuda_cc := "50 52 53 60 61 62 70 72 75 80 86 87 89 90"
 
 # Build the local CUDA/Go toolchain image used by build-cuda.
 image:
-	sudo podman build -t matmoa/amumax:build -f {{repo_dir}}/amumax/Dockerfile {{repo_dir}}
+	sudo podman build -t mumax3-build -f {{repo_dir}}/docker/mumax3-build.Dockerfile {{repo_dir}}
 
-# Build CUDA kernels in the Amumax CUDA/Go container; artifacts stay in this checkout.
+# Build CUDA kernels in the CUDA/Go container; artifacts stay in this checkout.
 build-cuda:
 	sudo rm -rf {{repo_dir}}/.go
 	sudo rm -f {{repo_dir}}/cuda/*_wrapper.go_linux_cuda*.tmp
-	sudo podman run --rm --user "$(id -u):$(id -g)" -e GOPATH=/tmp/go -e GOCACHE=/tmp/go-cache -e CUDA_CC="{{cuda_cc}}" -v {{repo_dir}}:/src -w /src matmoa/amumax:build make cudakernels
+	sudo podman run --rm --user "$(id -u):$(id -g)" -e GOPATH=/tmp/go -e GOCACHE=/tmp/go-cache -e CUDA_CC="{{cuda_cc}}" -v {{repo_dir}}:/src -w /src mumax3-build make cudakernels
 
 # Build and embed the Web UI served by the Mumax3 binary.
 build-frontend:
@@ -31,7 +31,7 @@ package-release: build-cuda build-frontend
 	#!/usr/bin/env bash
 	set -euo pipefail
 	sudo rm -rf {{repo_dir}}/build
-	sudo podman run --rm --user "$(id -u):$(id -g)" -e GOPATH=/tmp/go -e GOCACHE=/tmp/go-cache -e CUDA_CC="{{cuda_cc}}" -v {{repo_dir}}:/src -w /src matmoa/amumax:build sh -ceu '
+	sudo podman run --rm --user "$(id -u):$(id -g)" -e GOPATH=/tmp/go -e GOCACHE=/tmp/go-cache -e CUDA_CC="{{cuda_cc}}" -v {{repo_dir}}:/src -w /src mumax3-build sh -ceu '
 		mkdir -p build
 		commit_hash="$(git rev-parse --short HEAD 2>/dev/null || printf unknown)"
 		build_version="$(git describe --tags --always --dirty 2>/dev/null || printf development)"

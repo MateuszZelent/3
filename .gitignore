@@ -26,6 +26,7 @@ node_modules/
 /frontend/dist/
 /mumax3
 /amumax2
+/amumax/
 /build/
 /.config/
 test/*.zarr
