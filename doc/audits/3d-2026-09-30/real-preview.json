@@ -4,23 +4,23 @@
       "sequence": 1,
       "step": 10,
       "revision": 1,
-      "count": 5928,
+      "count": 10000,
       "sampling": 0,
       "keyframe": true,
-      "bytes": 143163,
-      "captureMs": 27.164,
-      "processMs": 0.48
+      "bytes": 240891,
+      "captureMs": 25.443,
+      "processMs": 0.546
     },
     {
       "sequence": 2,
       "step": 10,
       "revision": 33,
-      "count": 5928,
+      "count": 10000,
       "sampling": 1,
       "keyframe": true,
-      "bytes": 143163,
-      "captureMs": 3.606,
-      "processMs": 0.35
+      "bytes": 240891,
+      "captureMs": 0.944,
+      "processMs": 0.284
     },
     {
       "sequence": 3,
@@ -30,8 +30,8 @@
       "sampling": 1,
       "keyframe": true,
       "bytes": 1920894,
-      "captureMs": 4.339,
-      "processMs": 2.695
+      "captureMs": 7.932,
+      "processMs": 4.01
     },
     {
       "sequence": 6,
@@ -41,8 +41,8 @@
       "sampling": 1,
       "keyframe": true,
       "bytes": 3146626,
-      "captureMs": 7.639,
-      "processMs": 3.675
+      "captureMs": 6.435,
+      "processMs": 3.726
     },
     {
       "sequence": 7,
@@ -52,8 +52,8 @@
       "sampling": 1,
       "keyframe": true,
       "bytes": 6292354,
-      "captureMs": 12.296,
-      "processMs": 9.843
+      "captureMs": 15.979,
+      "processMs": 7.8
     },
     {
       "sequence": 8,
@@ -63,8 +63,8 @@
       "sampling": 1,
       "keyframe": false,
       "bytes": 3146599,
-      "captureMs": 4.157,
-      "processMs": 8.94
+      "captureMs": 3.128,
+      "processMs": 7.31
     },
     {
       "sequence": 9,
@@ -74,8 +74,8 @@
       "sampling": 2,
       "keyframe": true,
       "bytes": 787326,
-      "captureMs": 2.826,
-      "processMs": 6.285
+      "captureMs": 3.225,
+      "processMs": 6.028
     },
     {
       "sequence": 10,
@@ -85,8 +85,30 @@
       "sampling": 2,
       "keyframe": true,
       "bytes": 787326,
-      "captureMs": 3.826,
-      "processMs": 6.288
+      "captureMs": 3.258,
+      "processMs": 6.09
+    },
+    {
+      "sequence": 11,
+      "step": 11,
+      "revision": 162,
+      "count": 32768,
+      "sampling": 2,
+      "keyframe": false,
+      "bytes": 394083,
+      "captureMs": 0.584,
+      "processMs": 6.072
+    },
+    {
+      "sequence": 12,
+      "step": 13,
+      "revision": 162,
+      "count": 32768,
+      "sampling": 2,
+      "keyframe": false,
+      "bytes": 394083,
+      "captureMs": 0.772,
+      "processMs": 6.165
     }
   ],
   "pauseVerified": true

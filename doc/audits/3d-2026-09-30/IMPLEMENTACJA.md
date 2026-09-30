@@ -35,7 +35,7 @@ Kernel XY uwzględnia częściową powierzchnię komórek dla niedzielnych wymia
 - Kontener CUDA 12.4, RTX 4080 SUPER: testy cuda/engine/webui/cmd/mumax3 i build binarki.
 - Kernel GPU vs niezależne ważone obliczenia CPU: wejście 7×5×6, wyjście 3×2×3 oraz signed max-abs projection.
 - `go test -race -vet=off ./webui ./engine`: przechodzi. Nie jest to dowód braku race w całej aktywnej symulacji.
-- Realny backend: 262144 próbek, 6292354 B keyframe i 3146599 B values-only bez kompresji; profil 128k wybiera 32768 próbek (sampling 2 w 3D). Pauza/wznowienie sprawdzone. Zapis w `real-preview.json`.
+- Realny backend: 262144 próbek, 6292354 B keyframe i 3146599 B values-only bez kompresji; profil 128k wybiera 32768 próbek (sampling 2 w 3D). Pauza/wznowienie oraz końcowa klatka kroku 13 po Steps(3) sprawdzone. Zapis w `real-preview.json`.
 - Benchmarki CPU przed/po w tej samej przeglądarce SwiftShader: `cpu-benchmark.json`, `cpu-benchmark-after.json`; 7 kolejnych nowych buforów wejściowych. Mediany: 200k glyph ~4,6 ms vs ~74 ms; 1M glyph ~21,6 ms vs ~376 ms. Pierwsza budowa topologii pozostaje kosztowna (~102/143 ms). Nie są to pomiary FPS sprzętowego GPU ani throughput solvera przez tunel.
 
 ## Alternatywy rozważane w audycie
