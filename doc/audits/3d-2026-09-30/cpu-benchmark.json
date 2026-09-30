@@ -1,0 +1,153 @@
+{
+  "rows": [
+    {
+      "n": 200000,
+      "mode": "glyph",
+      "firstMs": 141.40000000596046,
+      "samplesMs": [
+        74.09999999403954,
+        73.69999998807907,
+        73.80000001192093,
+        75.59999999403954,
+        72.90000000596046,
+        75,
+        74.59999999403954
+      ],
+      "visible": 200000,
+      "capacity": 262144,
+      "trianglesPerInstance": 72,
+      "matrixBytes": 16777216,
+      "colorBytes": 3145728
+    },
+    {
+      "n": 200000,
+      "mode": "voxel",
+      "firstMs": 85.7999999821186,
+      "samplesMs": [
+        63.5,
+        62.80000001192093,
+        64,
+        64,
+        64.40000000596046,
+        62.79999998211861,
+        63.599999994039536
+      ],
+      "visible": 200000,
+      "capacity": 262144,
+      "trianglesPerInstance": 12,
+      "matrixBytes": 16777216,
+      "colorBytes": 3145728
+    },
+    {
+      "n": 262144,
+      "mode": "glyph",
+      "firstMs": 155.2000000178814,
+      "samplesMs": [
+        100,
+        126.09999999403954,
+        123,
+        98.09999999403954,
+        101.80000001192093,
+        100.19999998807907,
+        96.90000000596046
+      ],
+      "visible": 262144,
+      "capacity": 262144,
+      "trianglesPerInstance": 72,
+      "matrixBytes": 16777216,
+      "colorBytes": 3145728
+    },
+    {
+      "n": 262144,
+      "mode": "voxel",
+      "firstMs": 104,
+      "samplesMs": [
+        86.19999998807907,
+        88.40000000596046,
+        85.59999999403954,
+        82.40000000596046,
+        79.80000001192093,
+        81.5,
+        80.19999998807907
+      ],
+      "visible": 262144,
+      "capacity": 262144,
+      "trianglesPerInstance": 12,
+      "matrixBytes": 16777216,
+      "colorBytes": 3145728
+    },
+    {
+      "n": 1000000,
+      "mode": "glyph",
+      "firstMs": 459.69999998807907,
+      "samplesMs": [
+        378.60000002384186,
+        379.7999999821186,
+        375.30000001192093,
+        374.69999998807907,
+        373.19999998807907,
+        376,
+        389
+      ],
+      "visible": 1000000,
+      "capacity": 1048576,
+      "trianglesPerInstance": 72,
+      "matrixBytes": 67108864,
+      "colorBytes": 12582912
+    },
+    {
+      "n": 1000000,
+      "mode": "voxel",
+      "firstMs": 411.30000001192093,
+      "samplesMs": [
+        320.5,
+        330.09999999403954,
+        308.2999999821186,
+        304.10000002384186,
+        304.69999998807907,
+        307.5,
+        316.40000000596046
+      ],
+      "visible": 1000000,
+      "capacity": 1048576,
+      "trianglesPerInstance": 12,
+      "matrixBytes": 67108864,
+      "colorBytes": 12582912
+    },
+    {
+      "n": 1000000,
+      "mode": "voxel",
+      "step": 2,
+      "samplesMs": [
+        50.900000005960464,
+        48.29999998211861,
+        46,
+        47.70000001788139,
+        47.29999998211861,
+        46.5,
+        46.10000002384186
+      ],
+      "visible": 125000,
+      "capacity": 1048576
+    },
+    {
+      "n": 1000000,
+      "mode": "voxel",
+      "step": 4,
+      "samplesMs": [
+        12.199999988079071,
+        12.099999994039536,
+        11.900000005960464,
+        12.900000005960464,
+        11.300000011920929,
+        12.599999994039536,
+        12.599999994039536
+      ],
+      "visible": 15625,
+      "capacity": 1048576
+    }
+  ],
+  "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+  "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+  "notes": "Synchronous CPU update only; no GPU draw, transport or backend measured; 7 warm calls, high quality defaults unless browser storage says otherwise."
+}

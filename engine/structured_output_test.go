@@ -102,3 +102,21 @@ func TestStructuredFileReferences(t *testing.T) {
 		t.Fatalf("Zarr dataset reference parsed as %q %d %v", dir, step, ok)
 	}
 }
+
+func TestTablePreviewSnapshotBoundedAndIndependent(t *testing.T) {
+	previous := tableHistory
+	defer func() { tableHistory = previous }()
+	tableHistory = tableHistoryState{columns: []string{"t", "unused"}, units: []string{"s", ""}, data: map[string][]float64{"t": {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, "unused": {9}}}
+	columns, _, values := TablePreviewSnapshot([]string{"t"}, 2, 3)
+	if len(columns) != 2 || len(values) != 1 || len(values["t"]) != 2 || values["t"][0] != 6 || values["t"][1] != 9 {
+		t.Fatalf("unexpected bounded snapshot: %v %v", columns, values)
+	}
+	values["t"][0] = 100
+	if tableHistory.data["t"][6] != 6 {
+		t.Fatal("snapshot aliases scientific history")
+	}
+	_, _, values = TablePreviewSnapshot(nil, 0, 1)
+	if len(values) != 0 {
+		t.Fatal("metadata request copied history")
+	}
+}

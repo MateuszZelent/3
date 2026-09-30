@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { connected } from '$api/websocket';
+	import { connected,previewConnected,previewError,setPreviewVisible, setPreviewClientBudget } from '$api/websocket';
 	import { meshState } from '$api/incoming/mesh';
 	import { previewState } from '$api/incoming/preview';
 	import {
-		postAllLayers,
+		postAllLayers,postMaxPoints,postScale,
 		postComponent,
 		postAutoScaleEnabled,
 		postLayer,
@@ -25,7 +25,7 @@
 	import type { ViewportMode } from '$lib/ui/types';
 	import { get } from 'svelte/store';
 	import { onDestroy, onMount } from 'svelte';
-	import { preview2D, resizeECharts } from './preview2D';
+	import { preview2D, resizeECharts,disposePreview2D } from './preview2D';
 	import {
 		preview3D,
 		qualityLevel,
@@ -34,7 +34,7 @@
 		setQuality,
 		setRenderMode,
 		threeDPreview,
-		visibleRenderCount,
+		visibleRenderCount,previewPerformance,disposePreview3D,
 		type Preview3DRenderMode,
 		type QualityLevel
 	} from './preview3D';
@@ -42,8 +42,10 @@
 	import ViewCube from './ViewCube.svelte';
 	import { quantities } from './inputs/quantities';
 
-	let viewMode = $state<ViewportMode>('inline');
+	let previewNow=$state(Date.now());
+ let viewMode = $state<ViewportMode>('inline');
 	let previewWrapper: HTMLDivElement;
+ let visibilityObserver:IntersectionObserver|null=null;
 
 	let popX = $state(60);
 	let popY = $state(60);
@@ -196,15 +198,20 @@
 	}
 
 	onMount(() => {
+ const ageTimer=setInterval(()=>{previewNow=Date.now()},1000);
+ visibilityObserver=new IntersectionObserver(entries=>setPreviewVisible(entries[0]?.isIntersecting??true));
+ if(previewWrapper)visibilityObserver.observe(previewWrapper);
 		document.addEventListener('fullscreenchange', onFullscreenChange);
 		document.addEventListener('mousemove', onMouseMove);
 		document.addEventListener('mouseup', onMouseUp);
 		window.addEventListener('amumax:preview-mode', onPreviewModeRequest as EventListener);
 		scheduleResize();
 		void renderCurrentPreview();
+ return ()=>clearInterval(ageTimer);
 	});
 
 	onDestroy(() => {
+ visibilityObserver?.disconnect();setPreviewVisible(false);disposePreview3D();disposePreview2D();
 		document.removeEventListener('fullscreenchange', onFullscreenChange);
 		document.removeEventListener('mousemove', onMouseMove);
 		document.removeEventListener('mouseup', onMouseUp);
@@ -293,6 +300,11 @@
 
 		<fieldset class="preview-controls-group">
 			<legend>Appearance</legend>
+   <label>Preview budget <select aria-label="Preview budget" value={$previewState.maxPoints} onchange={(e)=>postMaxPoints(Number(e.currentTarget.value))}>
+   {#each [131072,262144,500000,1000000] as budget}<option value={budget}>{budget.toLocaleString()} samples</option>{/each}
+   </select></label>
+ <label>Client sampling <select aria-label="Client sampling budget" onchange={(e)=>setPreviewClientBudget(Number(e.currentTarget.value))}><option value={131072}>128k</option><option value={262144} selected>262k</option><option value={1000000}>1M</option></select></label>
+   <label>Field scale (0 = adaptive) <input aria-label="Field scale" type="number" min="0" step="any" value={$previewState.fixedScale??0} onchange={(e)=>postScale(Number(e.currentTarget.value))} /></label>
 			<div class="preview-controls-row preview-controls-row--appearance">
 				{#if $previewState.type === '3D' && $previewState.nComp === 3}
 					<SegmentedControl label="Render" value={$renderMode} options={renderOptions} onchange={(next) => setRenderMode(next as Preview3DRenderMode)} />
@@ -303,7 +315,11 @@
 		</fieldset>
 	</div>
 
-	{#if $previewState.autoDownscaled && $previewState.autoDownscaleMessage}
+	{#if $previewError}<p role="alert">{$previewError}</p>{/if}
+ {#if $connected&&!$previewConnected}<p class="preview-control-hint">Preview stream disconnected; the displayed field may be stale.</p>{/if}
+ <p class="preview-control-hint">{#if $previewState.allLayers&&$previewState.type!=='3D'}Signed max-abs projection over every Z layer; XY values are area averages.{:else}XY values are area averages; Z uses sampled layers. Sampling and thresholds can hide thin or opposing structures.{/if}</p>
+
+ {#if $previewState.autoDownscaled && $previewState.autoDownscaleMessage}
 		<div class="preview-notice">
 			<StatusBadge label="Auto-scaled" tone="warn" />
 			<p>{$previewState.autoDownscaleMessage}</p>
@@ -352,7 +368,12 @@
 
 		{#if $previewState.type === '3D' && $previewState.nComp === 3 && hasData}
 			<div class="preview-wrapper__stats">
-				{$renderMode === 'voxel' ? 'Voxels' : 'Arrows'}: {$visibleRenderCount.toLocaleString()}
+				{$renderMode === 'voxel' ? 'Voxels' : 'Arrows'}: {$visibleRenderCount.toLocaleString()} / {$previewState.vectorCount.toLocaleString()}
+    · {$previewPerformance.updateMs.toFixed(1)} ms update
+ {#if $previewState.timestamp} · step {$previewState.step} · {Math.max(0,(previewNow-$previewState.timestamp)/1000).toFixed(1)} s old{/if}
+    {#if $previewPerformance.lod} · simplified geometry{/if}
+    {#if $previewState.normScale} · sampling {$previewState.transportSampling||1}× · scale {$previewState.normScale.toPrecision(3)}{/if}
+    {#if $previewState.invalidCount} · invalid {$previewState.invalidCount}{/if}
 			</div>
 		{/if}
 

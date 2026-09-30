@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mumax/3/data"
 	"github.com/mumax/3/engine"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 func TestAddPossibleDownscaleSizesDoesNotWaitForMesh(t *testing.T) {
@@ -93,5 +95,70 @@ func TestPreviewSizingManualZ(t *testing.T) {
 	state.applyResolvedSizing(sizing)
 	if !state.AutoDownscaled || state.AppliedZChosenSize != 50 {
 		t.Fatalf("auto scaling metadata missing: %+v", state)
+	}
+}
+
+func TestVectorSnapshotOccupancyFiniteAndFixedScale(t *testing.T) {
+	cpu := data.NewSlice(3, [3]int{4, 1, 1})
+	cpu.Host()[0][1] = 2
+	cpu.Host()[1][2] = float32(math.Inf(1))
+	cpu.Host()[2][3] = float32(math.NaN())
+	occupancy := data.NewSlice(1, [3]int{4, 1, 1})
+	for i := range occupancy.Host()[0] {
+		occupancy.Host()[0][i] = 1
+	}
+	state := &PreviewState{pendingCPU: cpu, pendingOccupancy: occupancy, FixedScale: 4}
+	state.processVectorSnapshot()
+	if state.VectorCount != 2 || state.InvalidCount != 2 || state.VectorFieldValues[1].X != .5 || state.NormScale != 4 {
+		t.Fatalf("invalid snapshot: %+v", state)
+	}
+	if state.VectorFieldValues[0] != (Vector3f{}) {
+		t.Fatal("occupied zero vector was removed")
+	}
+	revision := state.TopologyRevision
+	state.Layer = 1
+	state.processVectorSnapshot()
+	if state.TopologyRevision == revision {
+		t.Fatal("layer change did not invalidate topology")
+	}
+}
+
+func TestPreviewHardLimitWithoutAutoscale(t *testing.T) {
+	state := &PreviewState{XChosenSize: 1000, YChosenSize: 1000, AllLayers: true, Type: "3D", MaxPoints: 8}
+	sizing := state.resolvePreviewSizing(1000)
+	if sizing.AppliedPoints > previewHardLimit || !sizing.AutoDownscaled {
+		t.Fatalf("hard limit bypass: %+v", sizing)
+	}
+}
+
+func TestWireProfileRevisionsIncludeSampling(t *testing.T) {
+	state := &PreviewState{TopologyRevision: 1, Sequence: 12, VectorCount: 1}
+	state.setVectorPayload([]Vector3f{{X: 1}}, []Vector3i{{X: 2}})
+	full := encodePreviewFrame(state, 1)
+	sampled := encodePreviewFrame(state, 2)
+	if full.revision == sampled.revision {
+		t.Fatal("sampling shares topology revision")
+	}
+	var decoded map[string]interface{}
+	if err := msgpack.Unmarshal(sampled.full, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := decoded["vectorPositionsBinary"]; !ok {
+		t.Fatal("profile keyframe is not self-contained")
+	}
+	if err := msgpack.Unmarshal(sampled.delta, &decoded); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVectorSnapshotNormalizesSubnormalValues(t *testing.T) {
+	cpu := data.NewSlice(3, [3]int{1, 1, 1})
+	cpu.Host()[0][0] = math.SmallestNonzeroFloat32
+	occupancy := data.NewSlice(1, [3]int{1, 1, 1})
+	occupancy.Host()[0][0] = 1
+	state := &PreviewState{pendingCPU: cpu, pendingOccupancy: occupancy}
+	state.processVectorSnapshot()
+	if len(state.VectorFieldValues) != 1 || state.VectorFieldValues[0].X != 1 {
+		t.Fatalf("normalization overflow: %v", state.VectorFieldValues)
 	}
 }

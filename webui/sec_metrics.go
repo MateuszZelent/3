@@ -1,12 +1,14 @@
 package webui
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -17,8 +19,15 @@ import (
 	"github.com/mumax/3/log"
 )
 
+type metricsCollector struct {
+	mu     sync.Mutex
+	busy   bool
+	result *MetricsState
+}
+
 type MetricsState struct {
-	ws *WebSocketManager
+	collector *metricsCollector
+	ws        *WebSocketManager
 
 	lastGPUUpdate      time.Time
 	gpuRefreshInterval time.Duration
@@ -44,6 +53,7 @@ func initMetricsAPI(e *echo.Group, ws *WebSocketManager) *MetricsState {
 	pid := os.Getpid()
 	metricState := &MetricsState{
 		PID:                pid,
+		collector:          &metricsCollector{},
 		ws:                 ws,
 		gpuRefreshInterval: 5 * time.Second,
 	}
@@ -52,24 +62,45 @@ func initMetricsAPI(e *echo.Group, ws *WebSocketManager) *MetricsState {
 	return metricState
 }
 
+// Poll external processes and OS counters without holding the WebUI state lock.
 func (m *MetricsState) Update() {
-	if m.Error != "" {
+	if m.collector == nil {
+		m.collector = &metricsCollector{}
+	}
+	c := m.collector
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.result != nil {
+		ws := m.ws
+		*m = *c.result
+		m.ws, m.collector = ws, c
+		c.result = nil
+	}
+	if c.busy || m.Error != "" || (!m.lastGPUUpdate.IsZero() && time.Since(m.lastGPUUpdate) < m.gpuRefreshInterval) {
 		return
 	}
-	m.getProgramCPUUsage()
-	m.getTotalCPUUsage()
-	m.getTotalRAMUsage()
-	if m.lastGPUUpdate.IsZero() || time.Since(m.lastGPUUpdate) >= m.gpuRefreshInterval {
-		m.getGPUStats1()
-		m.getGPUStats2()
-		m.lastGPUUpdate = time.Now()
-	}
+	c.busy = true
+	snapshot := *m
+	go func() {
+		snapshot.getProgramCPUUsage()
+		snapshot.getTotalCPUUsage()
+		snapshot.getTotalRAMUsage()
+		snapshot.getGPUStats1()
+		snapshot.getGPUStats2()
+		snapshot.lastGPUUpdate = time.Now()
+		c.mu.Lock()
+		c.result = &snapshot
+		c.busy = false
+		c.mu.Unlock()
+	}()
 }
 
 // Function to get GPU stats via `nvidia-smi`
 func (m *MetricsState) getGPUStats1() {
 	// Get all compute apps, filter by pid, and get the gpu uuid, name, and vram used
-	cmd := exec.Command("nvidia-smi",
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "nvidia-smi",
 		"--query-compute-apps=pid,used_gpu_memory,gpu_name,gpu_uuid",
 		"--format=csv,nounits,noheader",
 	)
@@ -125,7 +156,9 @@ func (m *MetricsState) getGPUStats2() {
 		return
 	}
 	// filter using the gpu uuid
-	cmd := exec.Command("nvidia-smi",
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "nvidia-smi",
 		"--query-gpu=uuid,temperature.gpu,power.draw,memory.total,utilization.gpu,power.limit",
 		"--format=csv,nounits,noheader",
 	)
@@ -246,7 +279,10 @@ func (m *MetricsState) getTotalRAMUsage() {
 }
 
 func (m *MetricsState) postMetricsReset(c echo.Context) error {
+	m.ws.stateMu.Lock()
 	m.Error = ""
-	m.ws.broadcastEngineState() // Use the instance to call the method
+	m.lastGPUUpdate = time.Time{}
+	m.ws.stateMu.Unlock()
+	m.ws.broadcastEngineStateWithoutPreview() // Use the instance to call the method
 	return c.JSON(http.StatusOK, "")
 }

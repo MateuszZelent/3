@@ -2,6 +2,7 @@
 	import { previewState as p } from '$api/incoming/preview';
 	import {
 		brightness,
+  voxelOpaque,setVoxelOpaque,glyphSampling,setGlyphSampling,clipAxis,clipMin,clipMax,setClip,
 		qualityLevel,
 		renderMode,
 		resetCamera,
@@ -129,7 +130,23 @@
 					</div>
 				</div>
 
-				{#if $renderMode === 'voxel'}
+				     <div class="control-group">
+      <div class="control-label">Section / ROI</div>
+      <select aria-label="Section axis" value={$clipAxis} onchange={(e)=>setClip(e.currentTarget.value as 'none'|'x'|'y'|'z',$clipMin,$clipMax)}>
+       <option value="none">Full field</option><option value="x">X</option><option value="y">Y</option><option value="z">Z</option>
+      </select>
+      {#if $clipAxis!=='none'}
+       <label>From <input aria-label="Section start" type="range" min="0" max="1" step="0.01" value={$clipMin} oninput={(e)=>setClip($clipAxis,Number(e.currentTarget.value),$clipMax)} /></label>
+       <label>To <input aria-label="Section end" type="range" min="0" max="1" step="0.01" value={$clipMax} oninput={(e)=>setClip($clipAxis,$clipMin,Number(e.currentTarget.value))} /></label>
+      {/if}
+     </div>
+     {#if $renderMode==='glyph'}
+      <div class="control-group"><div class="control-label">Arrow sampling</div><div class="btn-group">
+       {#each samplingModes as {key,label}}<button class="seg-btn" class:active={$glyphSampling===key} onclick={()=>setGlyphSampling(key)}>{label}</button>{/each}
+      </div></div>
+     {/if}
+{#if $renderMode === 'voxel'}
+ <label class="control-label"><input aria-label="Opaque voxels" type="checkbox" checked={$voxelOpaque} onchange={(e)=>setVoxelOpaque(e.currentTarget.checked)} /> Opaque (fast)</label>
 					<div class="control-group">
 						<div class="control-label">Color by</div>
 						<div class="btn-group">

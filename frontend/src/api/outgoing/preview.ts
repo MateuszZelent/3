@@ -34,3 +34,10 @@ export function postAutoScaleEnabled(autoScaleEnabled: boolean) {
 export function postZChosenSize(zChosenSize: number) {
 	post('preview/ZChosenSize', { zChosenSize });
 }
+
+export function postMaxPoints(maxPoints: number) {
+	return post('preview/maxpoints', { maxPoints });
+}
+export function postScale(scale: number) {
+	return post('preview/scale', { scale });
+}

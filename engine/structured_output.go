@@ -379,6 +379,35 @@ func recordTableHistory(columns, units []string, values []float64) {
 	}
 }
 
+// TablePreviewSnapshot copies only the requested, bounded tail. Sampling stays
+// aligned to row zero, so successive frames retain the same selected rows.
+func TablePreviewSnapshot(selected []string, limit, step int) (columns, units []string, values map[string][]float64) {
+	tableHistory.mu.RLock()
+	defer tableHistory.mu.RUnlock()
+	columns = append([]string(nil), tableHistory.columns...)
+	units = append([]string(nil), tableHistory.units...)
+	values = make(map[string][]float64, len(selected))
+	step = max(step, 1)
+	limit = max(0, min(limit, 100000))
+	for _, name := range selected {
+		data, exists := tableHistory.data[name]
+		if !exists {
+			continue
+		}
+		count := 0
+		if len(data) > 0 {
+			count = (len(data)-1)/step + 1
+		}
+		start := max(0, count-limit) * step
+		result := make([]float64, 0, min(count, limit))
+		for i := start; i < len(data); i += step {
+			result = append(result, data[i])
+		}
+		values[name] = result
+	}
+	return
+}
+
 func TableHistorySnapshot() (columns, units []string, values map[string][]float64) {
 	tableHistory.mu.RLock()
 	defer tableHistory.mu.RUnlock()

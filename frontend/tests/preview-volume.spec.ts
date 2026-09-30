@@ -5,7 +5,8 @@ test('volume sampling exposes Z and preserves a cube at unequal preview sizes', 
 }) => {
 	const errors: string[] = [];
 	page.on('pageerror', (error) => errors.push(error.message));
-	await page.route('**/api/preview/*', async (route) => {
+	await page.routeWebSocket(/\/ws/,socket=>socket.close());
+ await page.route('**/api/preview/*', async (route) => {
 		const data = route.request().postDataJSON();
 		await page.evaluate(async (data) => {
 			const path = '/src/api/incoming/preview.ts';
@@ -90,9 +91,9 @@ test('volume sampling exposes Z and preserves a cube at unequal preview sizes', 
 		unsubscribe();
 		const arrowCount = display.mesh.count;
 		const target = display.controls.target.toArray();
-		const matrices = display.mesh.instanceMatrix.array;
-		const first = Array.from(matrices.slice(12, 15));
-		const last = Array.from(matrices.slice((arrowCount - 1) * 16 + 12, (arrowCount - 1) * 16 + 15));
+		const matrices = display.mesh.offsets.array;
+		const first = Array.from(matrices.slice(0, 3));
+		const last = Array.from(matrices.slice((arrowCount - 1) * 3, (arrowCount - 1) * 3 + 3));
 		setRenderMode('voxel');
 		return { arrowCount, voxelCount: display.mesh.count, target, first, last };
 	});

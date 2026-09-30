@@ -40,6 +40,7 @@ func toGPU(list []float32) *data.Slice {
 }
 
 func TestReduceSum(t *testing.T) {
+	bindTestContext(t)
 	initTest()
 	result := Sum(in1)
 	if result != 499500 {
@@ -48,6 +49,7 @@ func TestReduceSum(t *testing.T) {
 }
 
 func TestReduceDot(t *testing.T) {
+	bindTestContext(t)
 	initTest()
 
 	// test for 1 comp
@@ -72,6 +74,7 @@ func TestReduceDot(t *testing.T) {
 }
 
 func TestReduceMaxAbs(t *testing.T) {
+	bindTestContext(t)
 	result := MaxAbs(in1)
 	if result != 999 {
 		t.Error("got:", result)

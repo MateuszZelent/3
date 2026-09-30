@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"github.com/mumax/3/cuda"
 	"sort"
 	"sync"
 
@@ -87,20 +88,33 @@ func WebParameters(region int) []WebParameter {
 	return result
 }
 
+var cachedRegionBuffer *cuda.Bytes
+var cachedRegionRevision uint64
+var cachedRegionIndices []int
+
+// Called on the CUDA-owning engine thread. Buffer identity handles mesh resize.
 func ExistingRegionIndices() []int {
 	if regions.gpuCache == nil {
 		return []int{0}
 	}
-	found := map[byte]struct{}{0: {}}
+	if cachedRegionBuffer == regions.gpuCache && cachedRegionRevision == regions.gpuCache.Revision && cachedRegionIndices != nil {
+		return append([]int(nil), cachedRegionIndices...)
+	}
+	found := [NREGION]bool{}
+	found[0] = true
 	for _, region := range regions.HostList() {
-		found[region] = struct{}{}
+		found[region] = true
 	}
-	result := make([]int, 0, len(found))
-	for region := range found {
-		result = append(result, int(region))
+	result := make([]int, 0, NREGION)
+	for region, exists := range found {
+		if exists {
+			result = append(result, region)
+		}
 	}
-	sort.Ints(result)
-	return result
+	cachedRegionBuffer = regions.gpuCache
+	cachedRegionRevision = regions.gpuCache.Revision
+	cachedRegionIndices = result
+	return append([]int(nil), result...)
 }
 
 func TableAutoSavePeriod() float64 { return Table.autosave.period }

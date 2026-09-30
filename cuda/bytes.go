@@ -12,8 +12,9 @@ import (
 
 // 3D byte slice, used for region lookup.
 type Bytes struct {
-	Ptr unsafe.Pointer
-	Len int
+	Ptr      unsafe.Pointer
+	Len      int
+	Revision uint64
 }
 
 // Construct new byte slice with given length,
@@ -21,17 +22,19 @@ type Bytes struct {
 func NewBytes(Len int) *Bytes {
 	ptr := cu.MemAlloc(int64(Len))
 	cu.MemsetD8(cu.DevicePtr(ptr), 0, int64(Len))
-	return &Bytes{unsafe.Pointer(uintptr(ptr)), Len}
+	return &Bytes{Ptr: unsafe.Pointer(uintptr(ptr)), Len: Len}
 }
 
 // Upload src (host) to dst (gpu).
 func (dst *Bytes) Upload(src []byte) {
+	dst.Revision++
 	util.Argument(dst.Len == len(src))
 	MemCpyHtoD(dst.Ptr, unsafe.Pointer(&src[0]), int64(dst.Len))
 }
 
 // Copy on device: dst = src.
 func (dst *Bytes) Copy(src *Bytes) {
+	dst.Revision++
 	util.Argument(dst.Len == src.Len)
 	MemCpy(dst.Ptr, src.Ptr, int64(dst.Len))
 }
@@ -45,6 +48,7 @@ func (src *Bytes) Download(dst []byte) {
 // Set one element to value.
 // data.Index can be used to find the index for x,y,z.
 func (dst *Bytes) Set(index int, value byte) {
+	dst.Revision++
 	if index < 0 || index >= dst.Len {
 		log.Panic("Bytes.Set: index out of range:", index)
 	}

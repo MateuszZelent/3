@@ -61,6 +61,8 @@ func (s *FftState) Update() {
 }
 
 func (s *FftState) postFftComponent(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	type Request struct {
 		Component int `msgpack:"component"`
 	}
@@ -71,17 +73,21 @@ func (s *FftState) postFftComponent(c echo.Context) error {
 	}
 	engine.SetFftSpectrogramComponent(req.Component)
 	s.SpectrogramComponent = req.Component
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *FftState) postFftClear(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	engine.ClearFft()
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *FftState) postFftMaxFrequency(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	type Request struct {
 		MaxFreqGHz float64 `msgpack:"maxFreqGHz"`
 	}
@@ -97,6 +103,6 @@ func (s *FftState) postFftMaxFrequency(c echo.Context) error {
 	if err := engine.SetFftMaxFreqGHz(req.MaxFreqGHz); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": err.Error()})
 	}
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }

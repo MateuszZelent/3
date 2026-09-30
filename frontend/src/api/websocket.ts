@@ -34,6 +34,13 @@ type PreviewWire = Omit<Preview, 'vectorFieldValues' | 'vectorFieldPositions'> &
 
 export let connected = writable(false);
 export let connectionState = writable<ConnectionState>('disconnected');
+export const previewConnected = writable(false);
+export const previewError = writable('');
+let previewSocket: WebSocket | null = null;
+let previewVisible = true;
+let clientBudget = 262144;
+let lastSequence = 0;
+let pendingAck: { sequence: number; revision: number } | null = null;
 let previewRenderScheduled = false;
 let tableRenderScheduled = false;
 let cachedVectorPositions: Int32Array<ArrayBufferLike> = new Int32Array();
@@ -43,7 +50,8 @@ function typedArrayView<T extends Float32Array | Int32Array>(
 	bytes: Uint8Array,
 	ctor: { new (buffer: ArrayBufferLike, byteOffset: number, length: number): T }
 ): T {
-	const byteLength = bytes.byteLength - (bytes.byteLength % 4);
+	if (bytes.byteLength % 12 !== 0) throw new Error('Incomplete vector buffer');
+	const byteLength = bytes.byteLength;
 	if (bytes.byteOffset % 4 === 0) {
 		return new ctor(bytes.buffer, bytes.byteOffset, byteLength / 4);
 	}
@@ -73,6 +81,8 @@ function flattenLegacyPositions(values: LegacyVectorField) {
 
 function normalizePreview(msg: PreviewWire): Preview {
 	const revision = Number(msg.topologyRevision ?? 0);
+	let candidatePositions = cachedVectorPositions;
+	let candidateRevision = cachedTopologyRevision;
 	let values: Float32Array<ArrayBufferLike> = new Float32Array();
 	if (msg.vectorValuesBinary instanceof Uint8Array) {
 		values = typedArrayView(msg.vectorValuesBinary, Float32Array);
@@ -83,28 +93,45 @@ function normalizePreview(msg: PreviewWire): Preview {
 	}
 
 	if (msg.vectorPositionsBinary instanceof Uint8Array) {
-		cachedVectorPositions = typedArrayView(msg.vectorPositionsBinary, Int32Array);
-		cachedTopologyRevision = revision;
+		candidatePositions = typedArrayView(msg.vectorPositionsBinary, Int32Array);
+		candidateRevision = revision;
 	} else if (msg.vectorFieldPositions instanceof Int32Array) {
-		cachedVectorPositions = msg.vectorFieldPositions;
-		cachedTopologyRevision = revision;
+		candidatePositions = msg.vectorFieldPositions;
+		candidateRevision = revision;
 	} else if (Array.isArray(msg.vectorFieldPositions)) {
-		cachedVectorPositions = flattenLegacyPositions(msg.vectorFieldPositions);
-		cachedTopologyRevision = revision;
-	} else if (cachedTopologyRevision !== revision) {
-		cachedVectorPositions = new Int32Array();
-		cachedTopologyRevision = revision;
+		candidatePositions = flattenLegacyPositions(msg.vectorFieldPositions);
+		candidateRevision = revision;
+	} else if (candidateRevision !== revision) {
+		candidatePositions = new Int32Array();
+		candidateRevision = revision;
 	}
 
+	const declared = Number(msg.vectorCount ?? values.length / 3);
+	if (!Number.isSafeInteger(declared) || declared < 0 || declared > 1000000)
+		throw new Error('Invalid preview count');
+	if (
+		msg.type === '3D' &&
+		(values.length !== declared * 3 || candidatePositions.length !== declared * 3)
+	)
+		throw new Error('Missing preview topology or mismatched vector count');
 	const vectorCount = Math.min(
 		Number(msg.vectorCount ?? values.length / 3),
 		Math.floor(values.length / 3),
-		Math.floor(cachedVectorPositions.length / 3)
+		Math.floor(candidatePositions.length / 3)
 	);
-	const positions = vectorCount > 0 ? cachedVectorPositions : new Int32Array();
+	cachedVectorPositions = candidatePositions;
+	cachedTopologyRevision = candidateRevision;
+	const positions = vectorCount > 0 ? candidatePositions : new Int32Array();
 
+	const {
+		vectorValuesBinary: _values,
+		vectorPositionsBinary: _positions,
+		vectorFieldValues: _legacyValues,
+		vectorFieldPositions: _legacyPositions,
+		...metadata
+	} = msg;
 	return {
-		...msg,
+		...metadata,
 		vectorFieldValues: values,
 		vectorFieldPositions: positions,
 		vectorCount,
@@ -135,7 +162,16 @@ function schedulePreviewRender() {
 	previewRenderScheduled = true;
 	requestAnimationFrame(() => {
 		previewRenderScheduled = false;
-		void renderPreview();
+		if (!previewVisible || document.hidden) {
+			ackPreview();
+			return;
+		}
+		void renderPreview()
+			.then(ackPreview)
+			.catch((error) => {
+				previewError.set(String(error));
+				ackPreview();
+			});
 	});
 }
 
@@ -165,15 +201,33 @@ function connectWS(
 		ws.binaryType = 'arraybuffer';
 
 		ws.onopen = function () {
+			if (wsUrl.endsWith('/preview')) {
+				previewSocket = ws;
+				lastSequence = 0;
+				cachedTopologyRevision = -1;
+				cachedVectorPositions = new Int32Array();
+				ws?.send(
+					JSON.stringify({
+						protocol: 2,
+						maxPoints: clientBudget,
+						subscribe: previewVisible && !document.hidden
+					})
+				);
+			}
 			onOpen();
 		};
 
 		ws.onmessage = function (event) {
-			onMessage(event.data as ArrayBuffer);
-			ws?.send('ok');
+			try {
+				onMessage(event.data as ArrayBuffer);
+			} catch (error) {
+				previewError.set(String(error));
+				if (wsUrl.endsWith('/preview')) ws?.send(JSON.stringify({ resync: true }));
+			}
 		};
 
 		ws.onclose = function () {
+			if (wsUrl.endsWith('/preview')) previewSocket = null;
 			onClose();
 			console.debug(
 				'WebSocket closed. Attempting to reconnect in ' + retryInterval / 1000 + ' seconds...'
@@ -203,6 +257,7 @@ function connectWS(
 }
 
 export function initializeWebSocket() {
+	document.addEventListener('visibilitychange', () => setPreviewVisible(previewVisible));
 	connectWS(
 		'./ws',
 		() => {
@@ -217,8 +272,8 @@ export function initializeWebSocket() {
 	);
 	connectWS(
 		'./ws/preview',
-		() => undefined,
-		() => undefined,
+		() => previewConnected.set(true),
+		() => previewConnected.set(false),
 		parsePreviewMsgpack
 	);
 }
@@ -253,8 +308,7 @@ export function parseMsgpack(data: ArrayBuffer) {
 		scheduleTableRender();
 	}
 	if (msg.preview) {
-		previewState.set(normalizePreview(msg.preview as PreviewWire));
-		schedulePreviewRender();
+		acceptPreview(msg.preview as PreviewWire);
 	}
 	if (msg.metrics) {
 		metricsState.set(msg.metrics);
@@ -266,6 +320,36 @@ export function parseMsgpack(data: ArrayBuffer) {
 
 export function parsePreviewMsgpack(data: ArrayBuffer) {
 	const msg = decode(new Uint8Array(data)) as PreviewWire;
-	previewState.set(normalizePreview(msg));
+	acceptPreview(msg);
+}
+
+function acceptPreview(msg: PreviewWire) {
+	const sequence = Number(msg.sequence ?? 0);
+	if (sequence > 0 && sequence <= lastSequence) return;
+	const state = normalizePreview(msg);
+	if (sequence > 0) lastSequence = sequence;
+	previewState.set(state);
+	previewError.set('');
+	pendingAck = { sequence, revision: state.topologyRevision };
 	schedulePreviewRender();
+}
+function ackPreview() {
+	if (!pendingAck) return;
+	const ack = pendingAck;
+	pendingAck = null;
+	if (previewSocket?.readyState === WebSocket.OPEN)
+		previewSocket.send(JSON.stringify({ ack: ack.sequence, revision: ack.revision }));
+}
+export function setPreviewVisible(visible: boolean) {
+	previewVisible = visible;
+	if (previewSocket?.readyState === WebSocket.OPEN)
+		previewSocket.send(JSON.stringify({ subscribe: visible && !document.hidden }));
+	if (visible && !document.hidden) schedulePreviewRender();
+	else ackPreview();
+}
+
+export function setPreviewClientBudget(maxPoints: number) {
+	clientBudget = maxPoints;
+	if (previewSocket?.readyState === WebSocket.OPEN)
+		previewSocket.send(JSON.stringify({ protocol: 2, maxPoints, resync: true }));
 }

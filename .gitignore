@@ -32,3 +32,6 @@ node_modules/
 test/*.zarr
 test/hanadi.mx3
 *.orig
+AUDYT_WIZUALIZACJI_3D.md
+frontend/test-results/
+frontend/tests/

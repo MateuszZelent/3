@@ -7,6 +7,7 @@ import (
 )
 
 func TestSlice(t *testing.T) {
+	bindTestContext(t)
 	N0, N1, N2 := 2, 4, 8
 	m := [3]int{N0, N1, N2}
 	N := N0 * N1 * N2
@@ -41,6 +42,7 @@ func TestSlice(t *testing.T) {
 }
 
 func TestCpy(t *testing.T) {
+	bindTestContext(t)
 	N0, N1, N2 := 2, 4, 32
 	N := N0 * N1 * N2
 	mesh := [3]int{N0, N1, N2}
@@ -69,6 +71,7 @@ func TestCpy(t *testing.T) {
 }
 
 func TestSliceFree(t *testing.T) {
+	bindTestContext(t)
 	N0, N1, N2 := 128, 1024, 1024
 	m := [3]int{N0, N1, N2}
 	N := 17
@@ -83,6 +86,7 @@ func TestSliceFree(t *testing.T) {
 }
 
 func TestSliceHost(t *testing.T) {
+	bindTestContext(t)
 	N0, N1, N2 := 1, 10, 10
 	m := [3]int{N0, N1, N2}
 	a := NewSlice(3, m)

@@ -11,6 +11,9 @@ import (
 
 type TablePlotState struct {
 	ws               *WebSocketManager
+	previewColumns   []string
+	previewUnits     []string
+	previewData      map[string][]float64
 	AutoSaveInterval float64     `msgpack:"autoSaveInterval"`
 	Columns          []string    `msgpack:"columns"`
 	XColumn          string      `msgpack:"xColumn"`
@@ -49,7 +52,9 @@ func initTablePlotAPI(e *echo.Group, ws *WebSocketManager) *TablePlotState {
 func (t *TablePlotState) Update() {
 	t.CoreEnabled = engine.CoreTrackingEnabled
 	t.AutoSaveInterval = engine.TableAutoSavePeriod()
-	t.Columns = t.GetTableNames()
+	t.previewColumns, t.previewUnits, t.previewData = engine.TablePreviewSnapshot(
+		[]string{t.XColumn, t.YColumn, "t", "ext_coreposx", "ext_coreposy"}, t.MaxPoints, t.Step)
+	t.Columns = t.previewColumns
 	t.XColumnUnit = t.GetUnit(t.XColumn)
 	t.YColumnUnit = t.GetUnit(t.YColumn)
 	t.GetTablePlotData()
@@ -60,15 +65,10 @@ func (t *TablePlotState) Update() {
 func (t *TablePlotState) GetTablePlotData() {
 	xData := t.GetColumnData(t.XColumn)
 	yData := t.GetColumnData(t.YColumn)
-	data := make([][]float64, len(xData)) // [ [x1, y1], [x2, y2], ... ]
-	if len(xData) == 0 {
-		t.Data = data
-		return
-	}
-	if len(xData) > t.MaxPoints {
-		xData = xData[len(xData)-t.MaxPoints:]
-		yData = yData[len(yData)-t.MaxPoints:]
-	}
+	n := min(len(xData), len(yData), max(t.MaxPoints, 0))
+	xData = xData[len(xData)-n:]
+	yData = yData[len(yData)-n:]
+	data := make([][]float64, n)
 	for i := 0; i < len(xData); i++ {
 		data[i] = []float64{xData[i], yData[i]}
 	}
@@ -133,20 +133,13 @@ func (t *TablePlotState) GetCorePosData() {
 	t.CorePos = data
 }
 
-func (t *TablePlotState) GetColumnData(column string) []float64 {
-	_, _, data := engine.TableHistorySnapshot()
-	originalData := data[column]
-	originalLen := len(originalData)
-	newLen := (originalLen + 1) / t.Step
-	result := make([]float64, 0, newLen)
-	for i := 0; i < originalLen; i += t.Step {
-		result = append(result, originalData[i])
-	}
-	return result
-}
+func (t *TablePlotState) GetColumnData(column string) []float64 { return t.previewData[column] }
 
 func (t *TablePlotState) GetUnit(name string) string {
-	columns, units, _ := engine.TableHistorySnapshot()
+	columns, units := t.previewColumns, t.previewUnits
+	if columns == nil {
+		columns, units, _ = engine.TablePreviewSnapshot(nil, 0, 1)
+	}
 	for index, column := range columns {
 		if column == name {
 			return units[index]
@@ -156,7 +149,7 @@ func (t *TablePlotState) GetUnit(name string) string {
 }
 
 func (t *TablePlotState) ColumnExists(name string) bool {
-	columns, _, _ := engine.TableHistorySnapshot()
+	columns, _, _ := engine.TablePreviewSnapshot(nil, 0, 1)
 	for _, column := range columns {
 		if column == name {
 			return true
@@ -166,7 +159,7 @@ func (t *TablePlotState) ColumnExists(name string) bool {
 }
 
 func (t *TablePlotState) GetTableNames() []string {
-	columns, _, _ := engine.TableHistorySnapshot()
+	columns, _, _ := engine.TablePreviewSnapshot(nil, 0, 1)
 	if columns == nil {
 		return []string{}
 	}
@@ -174,6 +167,8 @@ func (t *TablePlotState) GetTableNames() []string {
 }
 
 func (t *TablePlotState) postTablePlotAutoSaveInterval(c echo.Context) error {
+	t.ws.stateMu.Lock()
+	defer t.ws.stateMu.Unlock()
 	type Request struct {
 		AutoSaveInterval string `msgpack:"autoSaveInterval"`
 	}
@@ -182,11 +177,13 @@ func (t *TablePlotState) postTablePlotAutoSaveInterval(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
 	engine.InjectAndWait(func() { engine.EvalTryRecover("TableAutoSave(" + req.AutoSaveInterval + ")") })
-	t.ws.broadcastEngineState()
+	t.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (t *TablePlotState) postTablePlotXColumn(c echo.Context) error {
+	t.ws.stateMu.Lock()
+	defer t.ws.stateMu.Unlock()
 	type Request struct {
 		XColumn string `msgpack:"XColumn"`
 	}
@@ -198,11 +195,13 @@ func (t *TablePlotState) postTablePlotXColumn(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Table column not found"})
 	}
 	t.XColumn = req.XColumn
-	t.ws.broadcastEngineState()
+	t.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (t *TablePlotState) postTablePlotYColumn(c echo.Context) error {
+	t.ws.stateMu.Lock()
+	defer t.ws.stateMu.Unlock()
 	type Request struct {
 		YColumn string `msgpack:"YColumn"`
 	}
@@ -214,11 +213,13 @@ func (t *TablePlotState) postTablePlotYColumn(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Table column not found"})
 	}
 	t.YColumn = req.YColumn
-	t.ws.broadcastEngineState()
+	t.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (t *TablePlotState) postTablePlotMaxPoints(c echo.Context) error {
+	t.ws.stateMu.Lock()
+	defer t.ws.stateMu.Unlock()
 	type Request struct {
 		MaxPoints int `msgpack:"maxPoints"`
 	}
@@ -227,13 +228,17 @@ func (t *TablePlotState) postTablePlotMaxPoints(c echo.Context) error {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	if req.MaxPoints < 1 || req.MaxPoints > 100000 {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "MaxPoints must be between 1 and 100000"})
+	}
 	t.MaxPoints = req.MaxPoints
-	t.ws.setPreviewRefresh(true)
-	t.ws.broadcastEngineState()
+	t.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (t *TablePlotState) postTablePlotStep(c echo.Context) error {
+	t.ws.stateMu.Lock()
+	defer t.ws.stateMu.Unlock()
 	type Request struct {
 		Step int `msgpack:"step"`
 	}
@@ -246,6 +251,6 @@ func (t *TablePlotState) postTablePlotStep(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Step must be at least 1"})
 	}
 	t.Step = req.Step
-	t.ws.broadcastEngineState()
+	t.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }

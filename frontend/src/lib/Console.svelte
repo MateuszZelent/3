@@ -12,17 +12,9 @@
 	let command = $state('');
 	let commandHistory = $state<string[]>([]);
 	let historyIndex = $state(-1);
-	let codeDiv: HTMLDivElement | null = null;
+	let codeDiv = $state<HTMLDivElement | null>(null);
 
 	const highlightedConsole = $derived(Prism.highlight($consoleState.hist, Prism.languages['go'], 'go'));
-
-	async function scrollDown() {
-		if (!codeDiv) {
-			return;
-		}
-		await tick();
-		codeDiv.scrollTop = codeDiv.scrollHeight;
-	}
 
 	function submitCommand() {
 		const next = command.trim();
@@ -62,8 +54,22 @@
 	}
 
 	$effect(() => {
-		$consoleState.hist;
-		scrollDown();
+		highlightedConsole;
+		const output = codeDiv;
+		if (!output) return;
+		let cancelled = false;
+		let frame: number | undefined;
+		// Wait for highlighted HTML to reach the DOM, then use its final layout.
+		tick().then(() => {
+			if (cancelled) return;
+			frame = requestAnimationFrame(() => {
+				output.scrollTop = output.scrollHeight;
+			});
+		});
+		return () => {
+			cancelled = true;
+			if (frame !== undefined) cancelAnimationFrame(frame);
+		};
 	});
 </script>
 

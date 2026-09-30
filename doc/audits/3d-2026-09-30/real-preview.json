@@ -1,0 +1,93 @@
+{
+  "frames": [
+    {
+      "sequence": 1,
+      "step": 10,
+      "revision": 1,
+      "count": 5928,
+      "sampling": 0,
+      "keyframe": true,
+      "bytes": 143163,
+      "captureMs": 27.164,
+      "processMs": 0.48
+    },
+    {
+      "sequence": 2,
+      "step": 10,
+      "revision": 33,
+      "count": 5928,
+      "sampling": 1,
+      "keyframe": true,
+      "bytes": 143163,
+      "captureMs": 3.606,
+      "processMs": 0.35
+    },
+    {
+      "sequence": 3,
+      "step": 10,
+      "revision": 65,
+      "count": 80000,
+      "sampling": 1,
+      "keyframe": true,
+      "bytes": 1920894,
+      "captureMs": 4.339,
+      "processMs": 2.695
+    },
+    {
+      "sequence": 6,
+      "step": 10,
+      "revision": 129,
+      "count": 131072,
+      "sampling": 1,
+      "keyframe": true,
+      "bytes": 3146626,
+      "captureMs": 7.639,
+      "processMs": 3.675
+    },
+    {
+      "sequence": 7,
+      "step": 10,
+      "revision": 161,
+      "count": 262144,
+      "sampling": 1,
+      "keyframe": true,
+      "bytes": 6292354,
+      "captureMs": 12.296,
+      "processMs": 9.843
+    },
+    {
+      "sequence": 8,
+      "step": 10,
+      "revision": 161,
+      "count": 262144,
+      "sampling": 1,
+      "keyframe": false,
+      "bytes": 3146599,
+      "captureMs": 4.157,
+      "processMs": 8.94
+    },
+    {
+      "sequence": 9,
+      "step": 10,
+      "revision": 162,
+      "count": 32768,
+      "sampling": 2,
+      "keyframe": true,
+      "bytes": 787326,
+      "captureMs": 2.826,
+      "processMs": 6.285
+    },
+    {
+      "sequence": 10,
+      "step": 10,
+      "revision": 162,
+      "count": 32768,
+      "sampling": 2,
+      "keyframe": true,
+      "bytes": 787326,
+      "captureMs": 3.826,
+      "processMs": 6.288
+    }
+  ],
+  "pauseVerified": true
+}

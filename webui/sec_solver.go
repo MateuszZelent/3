@@ -96,7 +96,7 @@ func (s SolverState) postSolverType(c echo.Context) error {
 		engine.EvalTryRecover(fmt.Sprint("SetSolver(", solver, ")"))
 	})
 
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, engine.SolverType())
 }
 
@@ -113,7 +113,7 @@ func (s SolverState) postSolverRun(c echo.Context) error {
 	}
 	engine.Break()
 	engine.InjectAndWait(func() { engine.EvalTryRecover("Run(" + req.Runtime + ")") })
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, "")
 }
 
@@ -129,27 +129,27 @@ func (s SolverState) postSolverSteps(c echo.Context) error {
 
 	engine.Break()
 	engine.InjectAndWait(func() { engine.EvalTryRecover("Steps(" + req.Steps + ")") })
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, "")
 }
 
 func (s SolverState) postSolverRelax(c echo.Context) error {
 	engine.Break()
 	engine.InjectAndWait(func() { engine.EvalTryRecover("Relax()") })
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, "")
 }
 
 func (s SolverState) postSolverMinimize(c echo.Context) error {
 	engine.Break()
 	engine.InjectAndWait(func() { engine.EvalTryRecover("Minimize()") })
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, "")
 }
 
 func (s SolverState) postSolverBreak(c echo.Context) error {
 	engine.Break()
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, "")
 }
 
@@ -164,7 +164,7 @@ func (s SolverState) postSolverFixDt(c echo.Context) error {
 	}
 
 	engine.InjectAndWait(func() { engine.EvalTryRecover("FixDt = " + strconv.FormatFloat(req.Fixdt, 'f', -1, 64)) })
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, "")
 }
 
@@ -179,7 +179,7 @@ func (s SolverState) postSolverMinDt(c echo.Context) error {
 	}
 
 	engine.InjectAndWait(func() { engine.EvalTryRecover("MinDt = " + strconv.FormatFloat(req.Mindt, 'f', -1, 64)) })
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, "")
 }
 
@@ -194,7 +194,7 @@ func (s SolverState) postSolverMaxDt(c echo.Context) error {
 	}
 
 	engine.InjectAndWait(func() { engine.EvalTryRecover("MaxDt = " + strconv.FormatFloat(req.Maxdt, 'f', -1, 64)) })
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, "")
 }
 
@@ -209,6 +209,6 @@ func (s SolverState) postSolverMaxErr(c echo.Context) error {
 	}
 
 	engine.InjectAndWait(func() { engine.EvalTryRecover("MaxErr = " + strconv.FormatFloat(req.Maxerr, 'f', -1, 64)) })
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, "")
 }

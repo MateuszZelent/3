@@ -5,6 +5,16 @@ export type VectorPositions = Int32Array;
 export type ScalarField = Array<Array<number>>;
 
 export interface Preview {
+	transportSampling?: number;
+	sequence?: number;
+	step?: number;
+	timestamp?: number;
+	normScale?: number;
+	fixedScale?: number;
+	invalidCount?: number;
+	captureMs?: number;
+	processMs?: number;
+	hardLimit?: number;
 	quantity: string;
 	unit: string;
 	component: string;

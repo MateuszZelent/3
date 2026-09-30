@@ -130,6 +130,7 @@
 	<div class="vc">
 		<div
 			class="vc-scene"
+ role="group" aria-label="Camera orientation"
 			style="transform: {cubeTransform}"
 			onpointerdown={onPointerDown}
 			onpointermove={onPointerMove}

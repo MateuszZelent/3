@@ -64,6 +64,8 @@ func (s *ParametersState) getFields() {
 }
 
 func (s *ParametersState) postSelectParameterRegion(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	type Request struct {
 		SelectedRegion int `msgpack:"selectedRegion"`
 	}
@@ -74,7 +76,6 @@ func (s *ParametersState) postSelectParameterRegion(c echo.Context) error {
 	}
 
 	s.SelectedRegion = req.SelectedRegion
-	s.ws.setPreviewRefresh(true)
-	s.ws.broadcastEngineState()
+	s.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }

@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"encoding/json"
 	"net/http"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ type WebSocketManager struct {
 	connections           *connectionManager
 	previewConnections    *connectionManager
 	lastStep              int
+	lastPreviewBroadcast  time.Time
 	lastMainBroadcast     time.Time
 	mainBroadcastInterval time.Duration
 	broadcastStop         chan struct{}
@@ -32,13 +34,30 @@ type connectionManager struct {
 	mu    sync.Mutex
 }
 
+type outboundFrame struct {
+	profiles map[int]outboundFrame
+	full     []byte
+	delta    []byte
+	revision uint64
+	sequence uint64
+}
+
 type managedConnection struct {
-	ws       *websocket.Conn
-	send     chan []byte
-	stop     chan struct{}
-	failed   chan struct{}
-	stopOnce sync.Once
-	failOnce sync.Once
+	ws           *websocket.Conn
+	send         chan outboundFrame
+	controlMu    sync.Mutex
+	budget       int
+	ackEnabled   bool
+	waiting      bool
+	subscribed   bool
+	ackRevision  uint64
+	sentRevision uint64
+	sentSequence uint64
+	ready        chan struct{}
+	stop         chan struct{}
+	failed       chan struct{}
+	stopOnce     sync.Once
+	failOnce     sync.Once
 }
 
 func newConnectionManager() *connectionManager {
@@ -65,8 +84,9 @@ func newWebSocketManager() *WebSocketManager {
 
 func (cm *connectionManager) add(ws *websocket.Conn) *managedConnection {
 	managed := &managedConnection{
-		ws:     ws,
-		send:   make(chan []byte, 1),
+		ws:         ws,
+		subscribed: true, ready: make(chan struct{}, 1),
+		send:   make(chan outboundFrame, 1),
 		stop:   make(chan struct{}),
 		failed: make(chan struct{}),
 	}
@@ -93,7 +113,9 @@ func (cm *connectionManager) count() int {
 	return len(cm.conns)
 }
 
-func (cm *connectionManager) broadcast(msg []byte) {
+func (cm *connectionManager) broadcast(msg []byte) { cm.broadcastFrame(outboundFrame{full: msg}) }
+
+func (cm *connectionManager) broadcastFrame(frame outboundFrame) {
 	cm.mu.Lock()
 	connections := make([]*managedConnection, 0, len(cm.conns))
 	for _, managed := range cm.conns {
@@ -108,7 +130,7 @@ func (cm *connectionManager) broadcast(msg []byte) {
 		default:
 		}
 		select {
-		case managed.send <- msg:
+		case managed.send <- frame:
 		default:
 			// Keep latency bounded: discard the stale queued frame and retain
 			// only the newest complete state for this client.
@@ -117,7 +139,7 @@ func (cm *connectionManager) broadcast(msg []byte) {
 			default:
 			}
 			select {
-			case managed.send <- msg:
+			case managed.send <- frame:
 			case <-managed.stop:
 			default:
 			}
@@ -130,7 +152,34 @@ func (managed *managedConnection) writeLoop() {
 		select {
 		case <-managed.stop:
 			return
-		case msg := <-managed.send:
+		case frame := <-managed.send:
+			if !managed.waitReady() {
+				return
+			}
+			// ACK can take seconds: drain any superseded frame before writing.
+			select {
+			case latest := <-managed.send:
+				frame = latest
+			default:
+			}
+			managed.controlMu.Lock()
+			if !managed.subscribed {
+				managed.controlMu.Unlock()
+				continue
+			}
+			if profile, exists := frame.profiles[managed.budget]; exists {
+				frame = profile
+			}
+			msg := frame.full
+			if managed.ackEnabled && frame.revision != 0 && managed.ackRevision == frame.revision && len(frame.delta) > 0 {
+				msg = frame.delta
+			}
+			if managed.ackEnabled && frame.sequence > 0 {
+				managed.waiting = true
+				managed.sentSequence = frame.sequence
+				managed.sentRevision = frame.revision
+			}
+			managed.controlMu.Unlock()
 			if err := managed.ws.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
 				log.Log.Warn("Could not set WebSocket write deadline: %v", err)
 			}
@@ -144,12 +193,99 @@ func (managed *managedConnection) writeLoop() {
 	}
 }
 
+// Credits bound in-flight preview frames; old clients retain full-frame fallback.
+func (managed *managedConnection) waitReady() bool {
+	for {
+		managed.controlMu.Lock()
+		waiting := managed.waiting && managed.ackEnabled
+		managed.controlMu.Unlock()
+		if !waiting {
+			return true
+		}
+		select {
+		case <-managed.ready:
+		case <-managed.stop:
+			return false
+		case <-time.After(15 * time.Second):
+			// A sleeping/stalled browser must reconnect and receive a complete keyframe.
+			managed.failOnce.Do(func() { close(managed.failed) })
+			managed.ws.Close()
+			return false
+		}
+	}
+}
+func (managed *managedConnection) control(data []byte) {
+	var request struct {
+		Budget    int    `json:"maxPoints"`
+		Protocol  int    `json:"protocol"`
+		Ack       uint64 `json:"ack"`
+		Revision  uint64 `json:"revision"`
+		Subscribe *bool  `json:"subscribe"`
+		Resync    bool   `json:"resync"`
+	}
+	if json.Unmarshal(data, &request) != nil {
+		return
+	} // legacy "ok"
+	managed.controlMu.Lock()
+	if request.Protocol == 2 {
+		managed.ackEnabled = true
+		if managed.budget == 0 {
+			managed.budget = 262144
+		}
+	}
+	if request.Budget >= 8 && request.Budget <= previewHardLimit {
+		managed.budget = 131072
+		if request.Budget >= 262144 {
+			managed.budget = 262144
+		}
+		if request.Budget >= previewHardLimit {
+			managed.budget = previewHardLimit
+		}
+		managed.ackRevision = 0
+		managed.waiting = false
+	}
+	if request.Subscribe != nil {
+		managed.subscribed = *request.Subscribe
+		if !managed.subscribed {
+			managed.waiting = false
+		}
+	}
+	if request.Resync {
+		managed.ackRevision = 0
+		managed.waiting = false
+	}
+	if request.Ack == managed.sentSequence && managed.sentSequence > 0 {
+		if request.Revision == managed.sentRevision {
+			managed.ackRevision = request.Revision
+		}
+		managed.waiting = false
+	}
+	managed.controlMu.Unlock()
+	select {
+	case managed.ready <- struct{}{}:
+	default:
+	}
+}
+func (cm *connectionManager) activeCount() int {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	count := 0
+	for _, managed := range cm.conns {
+		managed.controlMu.Lock()
+		if managed.subscribed && !managed.waiting {
+			count++
+		}
+		managed.controlMu.Unlock()
+	}
+	return count
+}
+
 func (wsManager *WebSocketManager) websocketEntrypoint(c echo.Context) error {
-	return wsManager.websocketEntrypointFor(c, wsManager.connections, "main", wsManager.broadcastEngineState)
+	return wsManager.websocketEntrypointFor(c, wsManager.connections, "main", nil)
 }
 
 func (wsManager *WebSocketManager) websocketPreviewEntrypoint(c echo.Context) error {
-	return wsManager.websocketEntrypointFor(c, wsManager.previewConnections, "preview", wsManager.broadcastPreviewState)
+	return wsManager.websocketEntrypointFor(c, wsManager.previewConnections, "preview", nil)
 }
 
 func (wsManager *WebSocketManager) websocketEntrypointFor(c echo.Context, cm *connectionManager, name string, onConnect func()) error {
@@ -167,23 +303,39 @@ func (wsManager *WebSocketManager) websocketEntrypointFor(c echo.Context, cm *co
 		}
 	}()
 
+	ws.SetReadLimit(4096)
 	managed := cm.add(ws)
 	defer cm.remove(ws)
 	if name == "main" {
 		engine.InteractiveClientConnected()
 		defer engine.InteractiveClientDisconnected()
 	}
-	wsManager.setPreviewRefresh(true)
-	onConnect()
+	if onConnect != nil {
+		onConnect()
+	} else {
+		wsManager.sendInitialState(managed, name)
+	}
 
 	// Channel to signal when to stop the goroutine
 	done := make(chan struct{})
 	go func() {
 		for {
-			_, _, err := ws.ReadMessage()
+			_, data, err := ws.ReadMessage()
 			if err != nil {
 				close(done)
 				return
+			}
+			if name == "preview" {
+				managed.control(data)
+				var req struct {
+					Subscribe *bool `json:"subscribe"`
+					Resync    bool  `json:"resync"`
+					Budget    int   `json:"maxPoints"`
+				}
+				if json.Unmarshal(data, &req) == nil && (req.Resync || req.Budget > 0 || (req.Subscribe != nil && *req.Subscribe)) {
+					wsManager.setPreviewRefresh(true)
+					wsManager.broadcastPreviewState()
+				}
 			}
 		}
 	}()
@@ -196,6 +348,41 @@ func (wsManager *WebSocketManager) websocketEntrypointFor(c echo.Context, cm *co
 		return nil
 	case <-managed.failed:
 		return nil
+	}
+}
+
+// Initial state is targeted: opening a second tab must not invalidate other clients.
+func (wsManager *WebSocketManager) sendInitialState(managed *managedConnection, name string) {
+	wsManager.stateMu.Lock()
+	defer wsManager.stateMu.Unlock()
+	if wsManager.engineState == nil {
+		return
+	}
+	var payload any
+	frame := outboundFrame{}
+	if name == "preview" {
+		preview := wsManager.engineState.Preview
+		if preview == nil {
+			return
+		}
+		if preview.Sequence == 0 {
+			preview.Refresh = true
+			preview.Update()
+		}
+		payload = preview
+		frame.sequence, frame.revision = preview.Sequence, preview.TopologyRevision
+	} else {
+		wsManager.engineState.UpdateWithoutPreview()
+		payload = wsManager.engineState.WithoutPreview()
+	}
+	message, err := msgpack.Marshal(payload)
+	if err != nil {
+		return
+	}
+	frame.full = message
+	select {
+	case managed.send <- frame:
+	case <-managed.stop:
 	}
 }
 
@@ -216,22 +403,83 @@ func (wsManager *WebSocketManager) broadcastEngineState() {
 func (wsManager *WebSocketManager) broadcastPreviewState() {
 	wsManager.stateMu.Lock()
 	defer wsManager.stateMu.Unlock()
+	wsManager.broadcastPreviewStateLocked()
+}
+func (wsManager *WebSocketManager) broadcastPreviewStateLocked() {
 	if wsManager.engineState == nil || wsManager.engineState.Preview == nil {
 		return
 	}
 	wsManager.engineState.Preview.Update()
-	msg, err := msgpack.Marshal(wsManager.engineState.Preview)
-	if err != nil {
-		log.Log.Err("Error marshaling preview message: %v", err)
-		return
+	frame := encodePreviewFrame(wsManager.engineState.Preview, 1)
+	frame.profiles = make(map[int]outboundFrame)
+	wsManager.previewConnections.mu.Lock()
+	budgets := make(map[int]bool)
+	for _, connection := range wsManager.previewConnections.conns {
+		connection.controlMu.Lock()
+		if connection.subscribed && connection.budget > 0 {
+			budgets[connection.budget] = true
+		}
+		connection.controlMu.Unlock()
 	}
-	wsManager.previewConnections.broadcast(msg)
+	wsManager.previewConnections.mu.Unlock()
+	for budget := range budgets {
+		preview := wsManager.engineState.Preview
+		if preview.Type != "3D" || preview.VectorCount <= budget {
+			continue
+		}
+		step := 2
+		var profile PreviewState
+		for {
+			profile = *preview
+			profile.VectorFieldValues = nil
+			profile.VectorFieldPositions = nil
+			for i, position := range preview.VectorFieldPositions {
+				z := position.Z / max(preview.AppliedLayerStride, 1)
+				if position.X%step == 0 && position.Y%step == 0 && (!preview.AllLayers || z%step == 0) {
+					profile.VectorFieldPositions = append(profile.VectorFieldPositions, position)
+					profile.VectorFieldValues = append(profile.VectorFieldValues, preview.VectorFieldValues[i])
+				}
+			}
+			if len(profile.VectorFieldValues) <= budget {
+				break
+			}
+			step *= 2
+		}
+		profile.VectorCount = len(profile.VectorFieldValues)
+		profile.VectorValuesBinary = packVectorValues(nil, profile.VectorFieldValues)
+		profile.VectorPositionsBinary = packVectorPositions(nil, profile.VectorFieldPositions)
+		profile.DataPointsCount = profile.VectorCount
+		frame.profiles[budget] = encodePreviewFrame(&profile, step)
+	}
+	wsManager.previewConnections.broadcastFrame(frame)
 	wsManager.engineState.Preview.Refresh = false
+	wsManager.lastPreviewBroadcast = time.Now()
+}
+
+// Share each negotiated sampling profile across clients; engine capture is done once.
+// Positions remain in the applied grid, preserving physical extents and source layers.
+func encodePreviewFrame(state *PreviewState, sampling int) outboundFrame {
+	preview := *state
+	preview.TransportSampling = sampling
+	preview.TopologyRevision = state.TopologyRevision*32 + uint64(sampling)
+	full, err := msgpack.Marshal(&preview)
+	if err != nil {
+		return outboundFrame{}
+	}
+	preview.VectorPositionsBinary = nil
+	delta, err := msgpack.Marshal(&preview)
+	if err != nil {
+		return outboundFrame{}
+	}
+	return outboundFrame{full: full, delta: delta, sequence: preview.Sequence, revision: preview.TopologyRevision}
 }
 
 func (wsManager *WebSocketManager) broadcastEngineStateWithoutPreview() {
 	wsManager.stateMu.Lock()
 	defer wsManager.stateMu.Unlock()
+	wsManager.broadcastEngineStateWithoutPreviewLocked()
+}
+func (wsManager *WebSocketManager) broadcastEngineStateWithoutPreviewLocked() {
 	if wsManager.engineState == nil {
 		return
 	}
@@ -251,6 +499,31 @@ func (wsManager *WebSocketManager) setPreviewRefresh(refresh bool) {
 		wsManager.engineState.Preview.Refresh = refresh
 	}
 }
+
+// Derived fields can invoke a full demagnetization convolution. Use a lower
+// preview cadence, never modify or replace the solver's exact field.
+func (wsManager *WebSocketManager) previewNeedsRefresh() bool {
+	wsManager.stateMu.Lock()
+	defer wsManager.stateMu.Unlock()
+	return wsManager.engineState != nil && wsManager.engineState.Preview != nil && wsManager.engineState.Preview.Refresh
+}
+
+func (wsManager *WebSocketManager) previewDue() bool {
+	wsManager.stateMu.Lock()
+	defer wsManager.stateMu.Unlock()
+	interval := time.Second
+	if wsManager.engineState != nil && wsManager.engineState.Preview != nil {
+		if wsManager.engineState.Preview.Refresh {
+			return true
+		}
+		quantity := wsManager.engineState.Preview.Quantity
+		if quantity != "m" && quantity != "geom" && quantity != "regions" {
+			interval = 5 * time.Second
+		}
+	}
+	return time.Since(wsManager.lastPreviewBroadcast) >= interval
+}
+
 func (wsManager *WebSocketManager) startBroadcastLoop() {
 	wsManager.broadcastStart.Do(func() {
 		go func() {
@@ -259,8 +532,8 @@ func (wsManager *WebSocketManager) startBroadcastLoop() {
 				case <-wsManager.broadcastStop:
 					return
 				default:
-					if engine.NSteps != wsManager.lastStep {
-						if wsManager.previewConnections.count() > 0 {
+					if engine.NSteps != wsManager.lastStep || wsManager.previewNeedsRefresh() {
+						if wsManager.previewConnections.activeCount() > 0 && wsManager.previewDue() {
 							wsManager.broadcastPreviewState()
 						}
 						if wsManager.connections.count() > 0 {

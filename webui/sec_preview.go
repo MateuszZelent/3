@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
@@ -14,7 +16,30 @@ import (
 	"github.com/mumax/3/log"
 )
 
+const previewHardLimit = 1000000
+
 type PreviewState struct {
+	previewHost           *cuda.PreviewHostBuffer
+	occupancyHost         *cuda.PreviewHostBuffer
+	pendingScalar         *data.Slice
+	pendingCPU            *data.Slice
+	pendingStride         int
+	pendingDepth          int
+	pendingOccupancy      *data.Slice
+	occupancyCPU          *data.Slice
+	occupancyGPU          *data.Slice
+	sparePositions        []Vector3i
+	cachedTopologyKey     string
+	TransportSampling     int     `msgpack:"transportSampling"`
+	Sequence              uint64  `msgpack:"sequence"`
+	Step                  int     `msgpack:"step"`
+	Timestamp             int64   `msgpack:"timestamp"`
+	NormScale             float64 `msgpack:"normScale"`
+	FixedScale            float64 `msgpack:"fixedScale"`
+	InvalidCount          int     `msgpack:"invalidCount"`
+	CaptureMs             float64 `msgpack:"captureMs"`
+	ProcessMs             float64 `msgpack:"processMs"`
+	HardLimit             int     `msgpack:"hardLimit"`
 	ws                    *WebSocketManager
 	globalQuantities      []string
 	layerMask             [][]float32
@@ -119,9 +144,13 @@ func packVectorPositions(dst []byte, positions []Vector3i) []byte {
 }
 
 func (s *PreviewState) setVectorPayload(values []Vector3f, positions []Vector3i) {
-	topologyChanged := !sameVectorPositions(s.VectorFieldPositions, positions)
+	key := fmt.Sprintf("%s/%d/%v/%d/%d/%d/%d/%t", s.Quantity, s.Layer, s.previewMeshSize, s.AppliedXChosenSize, s.AppliedYChosenSize, s.AppliedZChosenSize, s.AppliedLayerStride, s.AllLayers)
+	topologyChanged := key != s.cachedTopologyKey || !sameVectorPositions(s.VectorFieldPositions, positions)
+	s.cachedTopologyKey = key
 	s.VectorFieldValues = values
+	previousPositions := s.VectorFieldPositions
 	s.VectorFieldPositions = positions
+	s.sparePositions = previousPositions
 	s.VectorCount = len(values)
 	s.VectorValuesBinary = packVectorValues(s.VectorValuesBinary, values)
 
@@ -139,6 +168,10 @@ func (s *PreviewState) setVectorPayload(values []Vector3f, positions []Vector3i)
 }
 
 func (s *PreviewState) clearVectorPayload() {
+	if s.VectorCount > 0 {
+		s.TopologyRevision++
+	}
+	s.cachedTopologyKey = ""
 	s.VectorFieldValues = nil
 	s.VectorFieldPositions = nil
 	s.VectorValuesBinary = nil
@@ -153,7 +186,8 @@ func initPreviewAPI(e *echo.Group, ws *WebSocketManager) *PreviewState {
 		Component:            "3D",
 		Layer:                0,
 		AllLayers:            false,
-		MaxPoints:            131072,
+		MaxPoints:            262144,
+		HardLimit:            previewHardLimit,
 		Type:                 "3D",
 		VectorFieldValues:    nil,
 		VectorFieldPositions: nil,
@@ -175,6 +209,7 @@ func initPreviewAPI(e *echo.Group, ws *WebSocketManager) *PreviewState {
 	previewState.AppliedXChosenSize = previewState.XChosenSize
 	previewState.AppliedYChosenSize = previewState.YChosenSize
 	previewState.AppliedLayerStride = 1
+	e.POST("/api/preview/scale", previewState.postPreviewScale)
 	e.POST("/api/preview/component", previewState.postPreviewComponent)
 	e.POST("/api/preview/quantity", previewState.postPreviewQuantity)
 	e.POST("/api/preview/layer", previewState.postPreviewLayer)
@@ -217,10 +252,11 @@ func (s *PreviewState) previewBuffers(nComp int, size [3]int) (*data.Slice, *dat
 	if s.previewGPU != nil {
 		s.previewGPU.Free()
 	}
-	if s.previewCPU != nil {
-		s.previewCPU.Free()
+	if s.previewHost != nil {
+		s.previewHost.Free()
 	}
-	s.previewCPU = data.NewSlice(nComp, size)
+	s.previewHost = cuda.NewPreviewHostBuffer(nComp, size)
+	s.previewCPU = s.previewHost.Slice
 	s.previewGPU = cuda.NewSlice(nComp, size)
 	s.previewBufferNComp = nComp
 	s.previewBufferSize = size
@@ -228,12 +264,32 @@ func (s *PreviewState) previewBuffers(nComp int, size [3]int) (*data.Slice, *dat
 }
 
 func (s *PreviewState) Update() {
+	start := time.Now()
+	s.pendingScalar = nil
+	s.pendingCPU = nil
+	s.pendingOccupancy = nil
+
 	engine.InjectAndWait(func() {
 		if !s.addPossibleDownscaleSizes() {
 			return
 		}
+		s.Layer = min(max(s.Layer, 0), max(engine.MeshSnapshotSize()[2]-1, 0))
+		s.Step = engine.NSteps
 		s.UpdateQuantityBuffer()
 	})
+	s.CaptureMs = float64(time.Since(start).Microseconds()) / 1000
+	start = time.Now()
+	// The broadcaster holds stateMu through capture and processing. Reusable CPU
+	// buffers cannot be overwritten by another capture while processing them here.
+	if s.pendingCPU != nil {
+		s.processVectorSnapshot()
+	}
+	if s.pendingScalar != nil {
+		s.UpdateScalarField(s.pendingScalar.Scalars())
+	}
+	s.ProcessMs = float64(time.Since(start).Microseconds()) / 1000
+	s.Sequence++
+	s.Timestamp = time.Now().UnixMilli()
 }
 
 type previewSizing struct {
@@ -269,6 +325,7 @@ func (s *PreviewState) UpdateQuantityBuffer() {
 		componentCount = 3
 	}
 	quantity := s.getQuantity()
+	s.Unit = engine.UnitOf(quantity)
 	GPUIn, recycleInput := s.quantitySlice(quantity)
 	if recycleInput {
 		defer cuda.Recycle(GPUIn)
@@ -299,23 +356,20 @@ func (s *PreviewState) UpdateQuantityBuffer() {
 	CPUOut, GPUOut := s.previewBuffers(componentCount, [3]int{sizing.AppliedX, sizing.AppliedY, 1})
 
 	if s.Type == "3D" {
-		for c := 0; c < componentCount; c++ {
-			cuda.Resize(GPUOut.Comp(c), GPUIn.Comp(c), s.Layer)
-		}
-		data.Copy(CPUOut, GPUOut)
-		s.normalizeVectors(CPUOut)
-		s.UpdateVectorField(CPUOut.Vectors())
+		cuda.ResizePreview(GPUOut, GPUIn, s.Layer, 1)
+		s.previewHost.Copy(GPUOut)
+		s.captureVectorCPU(CPUOut, 1, 1)
 		return
 	}
 
 	s.ensureMask(sizing.AppliedX, sizing.AppliedY)
 	if quantity.NComp() > 1 {
-		cuda.Resize(GPUOut.Comp(0), GPUIn.Comp(s.getComponent()), s.Layer)
+		cuda.ResizePreview(GPUOut.Comp(0), GPUIn.Comp(s.getComponent()), s.Layer, 1)
 	} else {
-		cuda.Resize(GPUOut.Comp(0), GPUIn.Comp(0), s.Layer)
+		cuda.ResizePreview(GPUOut.Comp(0), GPUIn.Comp(0), s.Layer, 1)
 	}
-	data.Copy(CPUOut, GPUOut)
-	s.UpdateScalarField(CPUOut.Scalars())
+	s.previewHost.Copy(GPUOut)
+	s.pendingScalar = CPUOut
 }
 
 func (s *PreviewState) normalizeVectors(f *data.Slice) {
@@ -325,7 +379,7 @@ func (s *PreviewState) normalizeVectors(f *data.Slice) {
 		for j := range a[0][i] {
 			for k := range a[0][i][j] {
 				x, y, z := a[0][i][j][k], a[1][i][j][k], a[2][i][j][k]
-				normSquared := float64(x*x + y*y + z*z)
+				normSquared := float64(x)*float64(x) + float64(y)*float64(y) + float64(z)*float64(z)
 				if normSquared > maxnormSquared {
 					maxnormSquared = normSquared
 				}
@@ -393,7 +447,13 @@ func (s *PreviewState) resolvePreviewSizing(depthLayers int) previewSizing {
 		requestedZ = floorAllowedSize(zSizes, min(s.ZChosenSize, depthLayers))
 	}
 	requested := [3]int{requestedX, requestedY, requestedZ}
-	applied := resolvePreviewGrid(requested, [3][]int{s.XPossibleSizes, s.YPossibleSizes, zSizes}, maxInt(s.MaxPoints, 8), s.AutoScaleEnabled)
+	budget := min(maxInt(s.MaxPoints, 8), previewHardLimit)
+	enabled := s.AutoScaleEnabled
+	if !enabled {
+		budget = previewHardLimit
+		enabled = float64(requestedX)*float64(requestedY)*float64(requestedZ) > float64(previewHardLimit)
+	}
+	applied := resolvePreviewGrid(requested, [3][]int{s.XPossibleSizes, s.YPossibleSizes, zSizes}, budget, enabled)
 	return previewSizing{
 		RequestedX: requestedX, RequestedY: requestedY,
 		AppliedX: applied[0], AppliedY: applied[1],
@@ -422,7 +482,11 @@ func (s *PreviewState) applyResolvedSizing(sizing previewSizing) {
 		requestedShape = fmt.Sprintf("%s x %d", requestedShape, sizing.RequestedDepth)
 		appliedShape = fmt.Sprintf("%s x %d", appliedShape, sizing.AppliedDepth)
 	}
-	message := fmt.Sprintf("Preview auto-scaled from %s to %s to stay within %d points", requestedShape, appliedShape, maxInt(s.MaxPoints, 8))
+	limit := min(maxInt(s.MaxPoints, 8), previewHardLimit)
+	if !s.AutoScaleEnabled {
+		limit = previewHardLimit
+	}
+	message := fmt.Sprintf("Preview auto-scaled from %s to %s to stay within %d points", requestedShape, appliedShape, limit)
 	if sizing.LayerStride > 1 {
 		message = fmt.Sprintf("%s (sampling every %d layer)", message, sizing.LayerStride)
 	}
@@ -430,148 +494,118 @@ func (s *PreviewState) applyResolvedSizing(sizing previewSizing) {
 }
 
 func (s *PreviewState) updateAllLayers(GPUIn *data.Slice, componentCount int, layerStride int) {
-	nz := GPUIn.Size()[2]
-	xSize := maxInt(s.AppliedXChosenSize, 1)
-	ySize := maxInt(s.AppliedYChosenSize, 1)
-	stride := maxInt(layerStride, 1)
-	depth := ceilDiv(nz, stride)
-	CPUOut, GPUOut := s.previewBuffers(componentCount, [3]int{xSize, ySize, depth})
-
-	dstLayer := 0
-	for layer := stride / 2; layer < nz; layer += stride {
-		for c := 0; c < componentCount; c++ {
-			cuda.ResizeLayerTo(GPUOut.Comp(c), GPUIn.Comp(c), dstLayer, layer)
-		}
-		dstLayer++
-	}
-	data.Copy(CPUOut, GPUOut)
-
-	valArray := s.VectorFieldValues[:0]
-	if cap(valArray) < xSize*ySize*depth {
-		valArray = make([]Vector3f, 0, xSize*ySize*depth)
-	}
-	posArray := make([]Vector3i, 0, xSize*ySize*depth)
-	vf := CPUOut.Vectors()
-	for layerIndex := 0; layerIndex < depth; layerIndex++ {
-		sourceLayer := layerIndex*stride + stride/2
-		yLen := len(vf[0][layerIndex])
-		xLen := len(vf[0][layerIndex][0])
-		for posy := 0; posy < yLen; posy++ {
-			for posx := 0; posx < xLen; posx++ {
-				valx := vf[0][layerIndex][posy][posx]
-				valy := vf[1][layerIndex][posy][posx]
-				valz := vf[2][layerIndex][posy][posx]
-				if (valx == 0 && valy == 0 && valz == 0) || math.IsNaN(float64(valx)) {
-					continue
-				}
-				posArray = append(posArray, Vector3i{X: posx, Y: posy, Z: sourceLayer})
-				valArray = append(valArray, Vector3f{X: valx, Y: valy, Z: valz})
-			}
-		}
-	}
-
-	maxnormSquared := float64(0)
-	for _, v := range valArray {
-		normSquared := float64(v.X*v.X + v.Y*v.Y + v.Z*v.Z)
-		if normSquared > maxnormSquared {
-			maxnormSquared = normSquared
-		}
-	}
-	if maxnormSquared > 0 {
-		factor := float32(1 / math.Sqrt(maxnormSquared))
-		for i := range valArray {
-			valArray[i].X *= factor
-			valArray[i].Y *= factor
-			valArray[i].Z *= factor
-		}
-	}
-
-	s.setVectorPayload(valArray, posArray)
+	stride := max(layerStride, 1)
+	depth := ceilDiv(GPUIn.Size()[2], stride)
+	CPUOut, GPUOut := s.previewBuffers(componentCount, [3]int{s.AppliedXChosenSize, s.AppliedYChosenSize, depth})
+	cuda.ResizePreview(GPUOut, GPUIn, -1, stride)
+	s.previewHost.Copy(GPUOut)
+	s.captureVectorCPU(CPUOut, stride, depth)
 }
 
-func (s *PreviewState) updateAllLayersScalar(GPUIn *data.Slice) {
-	nz := GPUIn.Size()[2]
-	xSize := maxInt(s.AppliedXChosenSize, 1)
-	ySize := maxInt(s.AppliedYChosenSize, 1)
-
-	acc := make([][]float32, ySize)
-	for y := 0; y < ySize; y++ {
-		acc[y] = make([]float32, xSize)
+func (s *PreviewState) captureVectorCPU(cpu *data.Slice, stride, depth int) {
+	s.pendingCPU = cpu
+	s.pendingStride = stride
+	s.pendingDepth = depth
+	// Preserve occupied cells even if opposing vectors average to zero. Geometry
+	// is independent of vector magnitude; it is never inferred from a zero vector.
+	geom, recycle := engine.GeometrySlice()
+	if recycle {
+		defer cuda.Recycle(geom)
 	}
-	hasValue := make([][]bool, ySize)
-	for y := 0; y < ySize; y++ {
-		hasValue[y] = make([]bool, xSize)
-	}
-
-	CPUOut := data.NewSlice(1, [3]int{xSize, ySize, 1})
-	GPUOut := cuda.NewSlice(1, [3]int{xSize, ySize, 1})
-	defer GPUOut.Free()
-
-	compIdx := 0
-	if s.getQuantity().NComp() > 1 {
-		compIdx = s.getComponent()
-	}
-
-	for layer := 0; layer < nz; layer++ {
-		cuda.Resize(GPUOut, GPUIn.Comp(compIdx), layer)
-		data.Copy(CPUOut.Comp(0), GPUOut)
-		scalars := CPUOut.Scalars()
-
-		for posy := 0; posy < ySize; posy++ {
-			for posx := 0; posx < xSize; posx++ {
-				val := scalars[0][posy][posx]
-				if math.IsNaN(float64(val)) {
-					continue
-				}
-				if !hasValue[posy][posx] {
-					acc[posy][posx] = val
-					hasValue[posy][posx] = true
-				} else if math.Abs(float64(val)) > math.Abs(float64(acc[posy][posx])) {
-					acc[posy][posx] = val
-				}
-			}
+	size := cpu.Size()
+	if s.occupancyCPU == nil || s.occupancyCPU.Size() != size {
+		if s.occupancyGPU != nil {
+			s.occupancyGPU.Free()
 		}
+		if s.occupancyHost != nil {
+			s.occupancyHost.Free()
+		}
+		s.occupancyHost = cuda.NewPreviewHostBuffer(1, size)
+		s.occupancyCPU = s.occupancyHost.Slice
+		s.occupancyGPU = cuda.NewSlice(1, size)
 	}
+	layer := -1
+	if !s.AllLayers {
+		layer = s.Layer
+	}
+	cuda.ResizePreview(s.occupancyGPU, geom, layer, stride)
+	s.occupancyHost.Copy(s.occupancyGPU)
+	s.pendingOccupancy = s.occupancyCPU
+}
 
-	var min, max float32
-	minMaxSet := false
-	valArray := make([][3]float32, 0, xSize*ySize)
+func finiteVector(x, y, z float32) bool {
+	return !math.IsNaN(float64(x)) && !math.IsNaN(float64(y)) && !math.IsNaN(float64(z)) && !math.IsInf(float64(x), 0) && !math.IsInf(float64(y), 0) && !math.IsInf(float64(z), 0)
+}
 
-	for posx := 0; posx < xSize; posx++ {
-		for posy := 0; posy < ySize; posy++ {
-			if !hasValue[posy][posx] {
+func (s *PreviewState) processVectorSnapshot() {
+	cpu := s.pendingCPU
+	host := cpu.Host()
+	size := cpu.Size()
+	limit := cpu.Len()
+	occupancy := s.pendingOccupancy.Host()[0]
+	values := s.VectorFieldValues[:0]
+	if cap(values) < limit {
+		values = make([]Vector3f, 0, limit)
+	}
+	// Keep the previous list intact until topology comparison; double-buffer it.
+	positions := s.sparePositions[:0]
+	if cap(positions) < limit {
+		positions = make([]Vector3i, 0, limit)
+	}
+	s.InvalidCount = 0
+	maxNorm := 0.0
+	for i := 0; i < limit; i++ {
+		x, y, z := host[0][i], host[1][i], host[2][i]
+		if !finiteVector(x, y, z) {
+			s.InvalidCount++
+			continue
+		}
+		zero := x == 0 && y == 0 && z == 0
+		if zero && occupancy[i] <= 0 {
+			continue
+		}
+		norm := float64(x)*float64(x) + float64(y)*float64(y) + float64(z)*float64(z)
+		maxNorm = math.Max(maxNorm, norm)
+		sourceZ := 0
+		if s.AllLayers {
+			sourceZ = (i/(size[0]*size[1]))*s.pendingStride + s.pendingStride/2
+		}
+		positions = append(positions, Vector3i{X: i % size[0], Y: (i / size[0]) % size[1], Z: sourceZ})
+		values = append(values, Vector3f{x, y, z})
+	}
+	s.NormScale = math.Sqrt(maxNorm)
+	if s.FixedScale > 0 {
+		s.NormScale = s.FixedScale
+	}
+	if s.NormScale > 0 {
+		n := 0
+		for i, value := range values {
+			normalized := Vector3f{float32(float64(value.X) / s.NormScale), float32(float64(value.Y) / s.NormScale), float32(float64(value.Z) / s.NormScale)}
+			if !finiteVector(normalized.X, normalized.Y, normalized.Z) {
+				s.InvalidCount++
 				continue
 			}
-			val := acc[posy][posx]
-			if !minMaxSet {
-				min, max = val, val
-				minMaxSet = true
-			} else {
-				if val < min {
-					min = val
-				}
-				if val > max {
-					max = val
-				}
-			}
-			valArray = append(valArray, [3]float32{float32(posx), float32(posy), val})
+			values[n] = normalized
+			positions[n] = positions[i]
+			n++
 		}
+		values = values[:n]
+		positions = positions[:n]
 	}
+	s.setVectorPayload(values, positions)
+}
 
-	if len(valArray) == 0 {
-		s.Min = 0
-		s.Max = 0
-		s.ScalarField = nil
-		s.clearVectorPayload()
-		s.DataPointsCount = 0
-		return
+// Signed max-abs projection after area-weighted XY reduction. All Z layers
+// are reduced on the GPU, with one launch and one host transfer.
+func (s *PreviewState) updateAllLayersScalar(GPUIn *data.Slice) {
+	CPUOut, GPUOut := s.previewBuffers(1, [3]int{s.AppliedXChosenSize, s.AppliedYChosenSize, 1})
+	component := 0
+	if s.getQuantity().NComp() > 1 {
+		component = s.getComponent()
 	}
-
-	s.Min = min
-	s.Max = max
-	s.ScalarField = valArray
-	s.clearVectorPayload()
-	s.DataPointsCount = len(valArray)
+	cuda.ResizePreview(GPUOut, GPUIn.Comp(component), -2, 1)
+	s.previewHost.Copy(GPUOut)
+	s.pendingScalar = CPUOut
 }
 
 func (s *PreviewState) UpdateVectorField(vectorField [3][][][]float32) {
@@ -586,7 +620,7 @@ func (s *PreviewState) UpdateVectorField(vectorField [3][][][]float32) {
 			valx := vectorField[0][0][posy][posx]
 			valy := vectorField[1][0][posy][posx]
 			valz := vectorField[2][0][posy][posx]
-			if (valx == 0 && valy == 0 && valz == 0) || math.IsNaN(float64(valx)) {
+			if (valx == 0 && valy == 0 && valz == 0) || !finiteVector(valx, valy, valz) {
 				continue
 			}
 			posArray = append(posArray, Vector3i{X: posx, Y: posy, Z: 0})
@@ -602,13 +636,21 @@ func (s *PreviewState) UpdateScalarField(scalarField [][][]float32) {
 	min, max := float32(0), float32(0)
 	hasValue := false
 
-	valArray := make([][3]float32, 0, xLen*yLen)
+	valArray := s.ScalarField[:0]
+	if cap(valArray) < xLen*yLen {
+		valArray = make([][3]float32, 0, xLen*yLen)
+	}
+	s.InvalidCount = 0
 	for posx := 0; posx < xLen; posx++ {
 		for posy := 0; posy < yLen; posy++ {
-			if !contains(s.globalQuantities, s.Quantity) && s.layerMask != nil && s.layerMask[posy][posx] == 0 {
+			if !s.AllLayers && !contains(s.globalQuantities, s.Quantity) && s.layerMask != nil && s.layerMask[posy][posx] == 0 {
 				continue
 			}
 			val := scalarField[0][posy][posx]
+			if math.IsNaN(float64(val)) || math.IsInf(float64(val), 0) {
+				s.InvalidCount++
+				continue
+			}
 			if !hasValue {
 				min, max = val, val
 				hasValue = true
@@ -641,7 +683,7 @@ func (s *PreviewState) UpdateScalarField(scalarField [][][]float32) {
 }
 
 func (s *PreviewState) ensureMask(xSize, ySize int) {
-	if s.layerMask != nil && s.maskXSize == xSize && s.maskYSize == ySize && s.maskLayer == s.Layer {
+	if !s.Refresh && s.layerMask != nil && s.maskXSize == xSize && s.maskYSize == ySize && s.maskLayer == s.Layer {
 		return
 	}
 	s.updateMaskForSize(xSize, ySize)
@@ -673,7 +715,7 @@ func (s *PreviewState) updateMaskForSize(xSize, ySize int) {
 
 	GPUResized := cuda.NewSlice(1, [3]int{xSize, ySize, 1})
 	defer GPUResized.Free()
-	cuda.Resize(GPUResized, GPUFullsize.Comp(0), s.Layer)
+	cuda.ResizePreview(GPUResized, GPUFullsize.Comp(0), s.Layer, 1)
 
 	CPUOut := data.NewSlice(1, [3]int{xSize, ySize, 1})
 	defer CPUOut.Free()
@@ -753,8 +795,8 @@ func (s *PreviewState) addPossibleDownscaleSizes() bool {
 		return true
 	}
 
-	xPossibleSizes := possibleDownscaleSizes(meshSize[0])
-	yPossibleSizes := possibleDownscaleSizes(meshSize[1])
+	xPossibleSizes := possiblePreviewXYSizes(meshSize[0])
+	yPossibleSizes := possiblePreviewXYSizes(meshSize[1])
 	if len(xPossibleSizes) == 0 || len(yPossibleSizes) == 0 {
 		log.Log.Err("No possible sizes found for mesh %v", meshSize)
 		return false
@@ -814,6 +856,8 @@ func (s *PreviewState) validateComponent() {
 }
 
 func (s *PreviewState) postPreviewComponent(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	type Request struct {
 		Component string `msgpack:"component"`
 	}
@@ -822,15 +866,20 @@ func (s *PreviewState) postPreviewComponent(c echo.Context) error {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	if req.Component != "x" && req.Component != "y" && req.Component != "z" && req.Component != "3D" && req.Component != "None" {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid component"})
+	}
 	s.Component = req.Component
 	s.validateComponent()
 	s.updatePreviewType()
 	s.Refresh = true
-	s.ws.broadcastEngineState()
+	s.ws.broadcastPreviewStateLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *PreviewState) postPreviewQuantity(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	type Request struct {
 		Quantity string `msgpack:"quantity"`
 	}
@@ -847,11 +896,13 @@ func (s *PreviewState) postPreviewQuantity(c echo.Context) error {
 	s.validateComponent()
 	s.Refresh = true
 	s.updatePreviewType()
-	s.ws.broadcastEngineState()
+	s.ws.broadcastPreviewStateLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *PreviewState) postPreviewLayer(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	type Request struct {
 		Layer int `msgpack:"layer"`
 	}
@@ -861,14 +912,18 @@ func (s *PreviewState) postPreviewLayer(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
 
+	if req.Layer < 0 || req.Layer >= engine.MeshSnapshotSize()[2] {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Layer outside mesh"})
+	}
 	s.Layer = req.Layer
 	s.Refresh = true
-	engine.InjectAndWait(s.updateMask)
-	s.ws.broadcastEngineState()
+	s.ws.broadcastPreviewStateLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *PreviewState) postPreviewMaxPoints(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	type Request struct {
 		MaxPoints int `msgpack:"maxPoints"`
 	}
@@ -877,18 +932,19 @@ func (s *PreviewState) postPreviewMaxPoints(c echo.Context) error {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
-	if req.MaxPoints < 8 {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "MaxPoints must be at least 8"})
+	if req.MaxPoints < 8 || req.MaxPoints > previewHardLimit {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "MaxPoints must be between 8 and 1000000"})
 	}
 	s.MaxPoints = req.MaxPoints
 	s.Refresh = true
-	engine.InjectAndWait(s.updateMask)
-	s.ws.broadcastEngineState()
+	s.ws.broadcastPreviewStateLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *PreviewState) postPreviewRefresh(c echo.Context) error {
-	s.ws.broadcastEngineState()
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
+	s.ws.broadcastPreviewStateLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
@@ -902,6 +958,8 @@ func containsInt(arr []int, target int) bool {
 }
 
 func (s *PreviewState) postXChosenSize(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	type Request struct {
 		XChosenSize int `msgpack:"xChosenSize"`
 	}
@@ -915,12 +973,13 @@ func (s *PreviewState) postXChosenSize(c echo.Context) error {
 	}
 	s.XChosenSize = req.XChosenSize
 	s.Refresh = true
-	engine.InjectAndWait(s.updateMask)
-	s.ws.broadcastEngineState()
+	s.ws.broadcastPreviewStateLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *PreviewState) postYChosenSize(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	type Request struct {
 		YChosenSize int `msgpack:"yChosenSize"`
 	}
@@ -934,12 +993,13 @@ func (s *PreviewState) postYChosenSize(c echo.Context) error {
 	}
 	s.YChosenSize = req.YChosenSize
 	s.Refresh = true
-	engine.InjectAndWait(s.updateMask)
-	s.ws.broadcastEngineState()
+	s.ws.broadcastPreviewStateLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *PreviewState) postZChosenSize(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	var req struct {
 		ZChosenSize int `msgpack:"zChosenSize"`
 	}
@@ -948,11 +1008,13 @@ func (s *PreviewState) postZChosenSize(c echo.Context) error {
 	}
 	s.ZChosenSize = req.ZChosenSize
 	s.Refresh = true
-	s.ws.broadcastEngineState()
+	s.ws.broadcastPreviewStateLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *PreviewState) postAllLayers(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	type Request struct {
 		AllLayers bool `msgpack:"allLayers"`
 	}
@@ -963,11 +1025,13 @@ func (s *PreviewState) postAllLayers(c echo.Context) error {
 	}
 	s.AllLayers = req.AllLayers
 	s.Refresh = true
-	s.ws.broadcastEngineState()
+	s.ws.broadcastPreviewStateLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *PreviewState) postAutoScaleEnabled(c echo.Context) error {
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	type Request struct {
 		AutoScaleEnabled bool `msgpack:"autoScaleEnabled"`
 	}
@@ -978,6 +1042,45 @@ func (s *PreviewState) postAutoScaleEnabled(c echo.Context) error {
 	}
 	s.AutoScaleEnabled = req.AutoScaleEnabled
 	s.Refresh = true
-	s.ws.broadcastEngineState()
+	s.ws.broadcastPreviewStateLocked()
 	return c.JSON(http.StatusOK, nil)
+}
+
+func (s *PreviewState) postPreviewScale(c echo.Context) error {
+	var req struct {
+		Scale float64 `json:"scale"`
+	}
+	if err := c.Bind(&req); err != nil || req.Scale < 0 || math.IsNaN(req.Scale) || math.IsInf(req.Scale, 0) {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Scale must be finite and nonnegative (0 = adaptive)"})
+	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
+	s.FixedScale = req.Scale
+	s.Refresh = true
+	s.ws.broadcastPreviewStateLocked()
+	return c.JSON(http.StatusOK, nil)
+}
+
+// Include practical sizes even for prime dimensions; exact coverage is provided
+// by fractional-area resize rather than silently dropping edge cells.
+func possiblePreviewXYSizes(n int) []int {
+	if n < 1 {
+		return nil
+	}
+	found := map[int]bool{n: true}
+	for _, v := range possibleDownscaleSizes(n) {
+		found[v] = true
+	}
+	for v := 1; v <= min(n, 128); v++ {
+		found[v] = true
+	}
+	for v := 128; v < n; v *= 2 {
+		found[min(v, n)] = true
+	}
+	result := make([]int, 0, len(found))
+	for v := range found {
+		result = append(result, v)
+	}
+	sort.Ints(result)
+	return result
 }

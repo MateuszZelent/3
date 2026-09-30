@@ -315,3 +315,44 @@ describe('websocket parsing', () => {
 		expect(Array.from(get(previewState).vectorFieldPositions)).toEqual([4, 5, 6, 7, 8, 9]);
 	});
 });
+
+describe('preview validation and ordering', () => {
+	it('rejects truncated binary buffers instead of silently rendering fewer vectors', () => {
+		expect(() =>
+			parsePreviewMsgpack(
+				toArrayBuffer({
+					type: '3D',
+					vectorCount: 1,
+					topologyRevision: 91,
+					vectorValuesBinary: new Uint8Array(11),
+					vectorPositionsBinary: new Uint8Array(12)
+				})
+			)
+		).toThrow('Incomplete vector buffer');
+	});
+	it('rejects a values-only frame for an unknown topology', () => {
+		expect(() =>
+			parsePreviewMsgpack(
+				toArrayBuffer({
+					type: '3D',
+					vectorCount: 1,
+					topologyRevision: 92,
+					vectorValuesBinary: new Uint8Array(12)
+				})
+			)
+		).toThrow('Missing preview topology');
+	});
+	it('retains newer state when a stale main/preview message arrives', () => {
+		const frame = {
+			type: '3D',
+			vectorCount: 1,
+			topologyRevision: 93,
+			vectorValuesBinary: new Uint8Array(new Float32Array([1, 0, 0]).buffer),
+			vectorPositionsBinary: new Uint8Array(new Int32Array([0, 0, 0]).buffer)
+		};
+		parsePreviewMsgpack(toArrayBuffer({ ...frame, sequence: 100, step: 100 }));
+		parsePreviewMsgpack(toArrayBuffer({ ...frame, sequence: 99, step: 99 }));
+		expect(get(previewState).step).toBe(100);
+		expect(get(previewState)).not.toHaveProperty('vectorValuesBinary');
+	});
+});

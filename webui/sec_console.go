@@ -42,6 +42,7 @@ func (s ConsoleState) postConsoleCommand(c echo.Context) error {
 	}
 
 	engine.InjectAndWait(func() { engine.EvalTryRecover(req.Command) })
-	s.ws.broadcastEngineState() // Use the instance to call the method
+	s.ws.setPreviewRefresh(true)
+	s.ws.broadcastEngineStateWithoutPreview() // Use the instance to call the method
 	return c.JSON(http.StatusOK, "")
 }
