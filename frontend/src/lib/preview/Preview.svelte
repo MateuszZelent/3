@@ -212,7 +212,7 @@
 		if (mode === 'popout') {
 			popW = Math.min(popW, window.innerWidth - 32);
 			popH = Math.min(
-				Math.max(popH, is2D || get(renderMode) === 'volume' ? 760 : 540),
+				Math.max(popH, 760),
 				window.innerHeight - 32
 			);
 			popX = Math.max(16, Math.min(popX, window.innerWidth - popW - 16));
@@ -270,7 +270,7 @@
 			const dy = event.clientY - dragOffY;
 			popW = Math.max(Math.min(460, window.innerWidth - 32), popW + dx);
 			popH = Math.max(
-				Math.min(is2D || get(renderMode) === 'volume' ? 660 : 340, window.innerHeight - 32),
+				Math.min(660, window.innerHeight - 32),
 				popH + dy
 			);
 			dragOffX = event.clientX;
@@ -580,10 +580,16 @@
 						>
 					</div>
 				</div>{/if}
+            {#if !is2D}<div class="preview-field-controls">
+                <VolumeControls />
+                {#if $renderMode === 'voxel'}<details class="voxel-controls" open>
+                    <summary>Voxel material &amp; topography</summary>
+                    <Toolbar3D embedded />
+                </details>{/if}
+            </div>{/if}
 			<div id="container" class="preview-wrapper__canvas" aria-busy={!!$previewTransition}></div>
 			{#if !is2D}<div bind:clientHeight={volumeControlsHeight}>
 					{#if $previewState.region}<RegionWindowControls />{/if}
-					<VolumeControls />
 				</div>{/if}
 
 			{#if $previewState.type === '3D' && hasData}
@@ -853,9 +859,9 @@
 								transfer limit can sample the server preview. Display sampling and clipping can
 								further reduce visible points.{/if}
 						</p>
-						<details class="advanced-appearance">
-							<summary>Lighting, clipping &amp; material</summary><Toolbar3D embedded />
-						</details>
+                        {#if $renderMode !== 'voxel'}<details class="advanced-appearance">
+                            <summary>Lighting, clipping &amp; material</summary><Toolbar3D embedded />
+                        </details>{/if}
 					{/if}
 				</section>
 			</div>
@@ -1107,6 +1113,15 @@
 		color: var(--text-3);
 		white-space: nowrap;
 	}
+    .preview-field-controls {
+        flex-shrink: 0;
+        max-height: 45vh;
+        overflow-y: auto;
+        min-width: 0;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+    .voxel-controls { padding: 0.75rem 1rem; border-top: 1px solid var(--border-subtle); }
+    .voxel-controls > summary { cursor: pointer; font-size: 0.8rem; font-weight: 600; color: var(--text-1); }
 	.preview-wrapper__canvas {
 		width: 100%;
 		height: clamp(25rem, 46vw, 39rem);

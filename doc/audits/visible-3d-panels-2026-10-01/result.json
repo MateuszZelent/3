@@ -1,0 +1,20 @@
+{
+  "reports": [
+    {
+      "mode": "Arrows",
+      "vectorModes": 5,
+      "manual": true
+    },
+    {
+      "mode": "Voxel",
+      "vectorModes": 5,
+      "manual": true
+    },
+    {
+      "mode": "Volume",
+      "vectorModes": 5,
+      "manual": true
+    }
+  ],
+  "errors": []
+}

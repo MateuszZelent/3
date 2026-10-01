@@ -40,7 +40,7 @@
 	let viewportWidth = $state(1024);
 	let expanded = $state(true);
 	$effect(() => {
-		expanded = viewportWidth > 650;
+		expanded = !isVolume || viewportWidth > 650;
 	});
 	const field = $derived(colorMode !== 'geometry');
 	const scalar = $derived(field && colorMode !== 'orientation');
@@ -126,6 +126,9 @@
 				}}
 			/>{/if}
 	</div>
+    {#if $renderMode === 'glyph'}<div class="volume-controls__description">
+        Arrow direction always uses the complete XYZ vector. Color by selects only the color; it does not change arrow orientation.
+    </div>{/if}
 	{#if field}<div class="volume-controls__description">
 			{#if isVolume && $volumeProjection === 'average'}Arithmetic mean along {$volumeProjectionAxis.toUpperCase()},
 				projected onto the existing surface. All preview layers contribute, including zero values;

@@ -270,6 +270,8 @@
 						<button
 							class="action-btn"
 							class:action-btn--topo-active={$topoEnabled}
+                            aria-label="Voxel topography"
+                            aria-pressed={$topoEnabled}
 							onclick={() => setTopoEnabled(!$topoEnabled)}
 						>
 							{$topoEnabled ? '⛰ ON' : 'OFF'}
