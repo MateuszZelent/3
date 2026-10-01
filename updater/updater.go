@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const DefaultURL = "https://github.com/MateuszZelent/3/releases/latest/download/mumax3"
@@ -20,7 +21,7 @@ func Apply(downloadURL string) error {
 	if err != nil {
 		return err
 	}
-	return ApplyTo(downloadURL, executable, http.DefaultClient)
+	return ApplyTo(downloadURL, executable, &http.Client{Timeout: 15 * time.Minute})
 }
 
 func ApplyTo(downloadURL, executable string, client *http.Client) (retErr error) {

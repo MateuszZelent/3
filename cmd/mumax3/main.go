@@ -22,18 +22,19 @@ import (
 	"github.com/mumax/3/events"
 	"github.com/mumax/3/script"
 	mx3template "github.com/mumax/3/template"
-	"github.com/mumax/3/updater"
 	"github.com/mumax/3/util"
 	"github.com/mumax/3/webui"
 )
 
 var (
-	flag_failfast = flag.Bool("failfast", false, "If one simulation fails, stop entire batch immediately")
-	flag_maxGPUs  = flag.Int("max_gpus", 0, "Maximum number of GPUs used by a batch (0 uses all available GPUs)")
-	flag_test     = flag.Bool("test", false, "Cuda test (internal)")
-	flag_version  = flag.Bool("v", false, "Print version and exit")
-	flag_vet      = flag.Bool("vet", false, "Check input files for errors, but don't run them")
-	flag_update   = flag.Bool("update", false, "Update this binary from the latest GitHub release")
+	flag_failfast      = flag.Bool("failfast", false, "If one simulation fails, stop entire batch immediately")
+	flag_maxGPUs       = flag.Int("max_gpus", 0, "Maximum number of GPUs used by a batch (0 uses all available GPUs)")
+	flag_test          = flag.Bool("test", false, "Cuda test (internal)")
+	flag_version       = flag.Bool("v", false, "Print version and exit")
+	flag_vet           = flag.Bool("vet", false, "Check input files for errors, but don't run them")
+	flag_update        = flag.Bool("update", false, "Choose a GitHub release from a version/date list and update this binary")
+	flag_updateVersion = flag.String("update-version", "", "Install an exact release tag or latest without prompting")
+	flag_updateList    = flag.Bool("update-list", false, "List available release versions and publication dates without installing")
 	// more flags in engine/gofiles.go
 	commitHash   string
 	buildVersion = "development"
@@ -80,12 +81,13 @@ func main() {
 		printVersion()
 		return
 	}
-	if *flag_update {
-		fmt.Println("Updating mumax3 from", updater.DefaultURL)
-		if err := updater.Apply(updater.DefaultURL); err != nil {
+	if *flag_update || *flag_updateVersion != "" || *flag_updateList {
+		if *flag_updateList && *flag_updateVersion != "" {
+			log.Fatal("-update-list and -update-version cannot be combined")
+		}
+		if err := runUpdateCommand(); err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println("Update complete")
 		return
 	}
 	engine.FftEnabled = *engine.Flag_fft

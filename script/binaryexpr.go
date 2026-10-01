@@ -28,9 +28,9 @@ func (w *World) compileBinaryExpr(n *ast.BinaryExpr) Expr {
 	case token.GEQ:
 		return &geq{w.newComp(n)}
 	case token.EQL:
-		return &eql{w.newComp(n)}
+		return &eql{w.newEquality(n)}
 	case token.NEQ:
-		return &neq{w.newComp(n)}
+		return &neq{w.newEquality(n)}
 	case token.LAND:
 		return &and{w.newBoolOp(n)}
 	case token.LOR:
@@ -71,6 +71,16 @@ func (w *World) newComp(n *ast.BinaryExpr) comp {
 	return comp(w.newBinExpr(n))
 }
 
+// Equality also supports string selectors in simulation scripts.
+func (w *World) newEquality(n *ast.BinaryExpr) comp {
+	x := w.compileExpr(n.X)
+	y := w.compileExpr(n.Y)
+	if x.Type().Kind() == reflect.String || y.Type().Kind() == reflect.String {
+		return comp{x, typeConv(n.Pos(), y, x.Type())}
+	}
+	return comp{typeConv(n.Pos(), x, float64_t), typeConv(n.Pos(), y, float64_t)}
+}
+
 func (b *comp) Type() reflect.Type { return bool_t }
 func (b *comp) Child() []Expr      { return []Expr{b.x, b.y} }
 
@@ -85,8 +95,8 @@ func (b *lss) Eval() interface{} { return b.x.Eval().(float64) < b.y.Eval().(flo
 func (b *gtr) Eval() interface{} { return b.x.Eval().(float64) > b.y.Eval().(float64) }
 func (b *leq) Eval() interface{} { return b.x.Eval().(float64) <= b.y.Eval().(float64) }
 func (b *geq) Eval() interface{} { return b.x.Eval().(float64) >= b.y.Eval().(float64) }
-func (b *eql) Eval() interface{} { return b.x.Eval().(float64) == b.y.Eval().(float64) }
-func (b *neq) Eval() interface{} { return b.x.Eval().(float64) != b.y.Eval().(float64) }
+func (b *eql) Eval() interface{} { return b.x.Eval() == b.y.Eval() }
+func (b *neq) Eval() interface{} { return b.x.Eval() != b.y.Eval() }
 
 func (b *lss) Fix() Expr { return &lss{comp{x: b.x.Fix(), y: b.y.Fix()}} }
 func (b *gtr) Fix() Expr { return &gtr{comp{x: b.x.Fix(), y: b.y.Fix()}} }
