@@ -61,6 +61,7 @@
 	];
 
 	const renderModes: { key: Preview3DRenderMode; label: string }[] = [
+		{ key: 'volume', label: 'VOLUME' },
 		{ key: 'glyph', label: 'ARROWS' },
 		{ key: 'voxel', label: 'VOXEL' }
 	];
@@ -84,7 +85,7 @@
 		{ key: 'z', label: 'Z' }
 	];
 
-	$: isVisible = $p.nComp === 3 && $p.type === '3D';
+	$: isVisible = $p.type === '3D';
 </script>
 
 {#if isVisible}
@@ -105,6 +106,7 @@
 								<button
 									class="seg-btn"
 									class:active={$renderMode === key}
+									disabled={$p.nComp === 1 && key !== 'volume'}
 									onclick={() => setRenderMode(key)}
 								>
 									{label}
@@ -285,52 +287,53 @@
 
 				<div class="divider"></div>
 
-				<!-- Topography -->
-				<div class="control-group">
-					<div class="control-label">Topography</div>
-					<button
-						class="action-btn"
-						class:action-btn--topo-active={$topoEnabled}
-						onclick={() => setTopoEnabled(!$topoEnabled)}
-					>
-						{$topoEnabled ? '⛰ ON' : 'OFF'}
-					</button>
-				</div>
-
-				{#if $topoEnabled}
+				{#if $renderMode === 'voxel'}
+					<!-- Topography -->
 					<div class="control-group">
-						<div class="control-label">Displace by</div>
-						<div class="btn-group btn-group--wide">
-							{#each topoComponents as { key, label }}
-								<button
-									class="seg-btn"
-									class:active={$topoComponent === key}
-									onclick={() => setTopoComponent(key)}
-								>
-									m{label}
-								</button>
-							{/each}
-						</div>
+						<div class="control-label">Topography</div>
+						<button
+							class="action-btn"
+							class:action-btn--topo-active={$topoEnabled}
+							onclick={() => setTopoEnabled(!$topoEnabled)}
+						>
+							{$topoEnabled ? '⛰ ON' : 'OFF'}
+						</button>
 					</div>
 
-					<div class="control-group">
-						<div class="control-label">
-							Amplitude
-							<span class="control-value">{topoMulVal.toFixed(1)}×</span>
+					{#if $topoEnabled}
+						<div class="control-group">
+							<div class="control-label">Displace by</div>
+							<div class="btn-group btn-group--wide">
+								{#each topoComponents as { key, label }}
+									<button
+										class="seg-btn"
+										class:active={$topoComponent === key}
+										onclick={() => setTopoComponent(key)}
+									>
+										m{label}
+									</button>
+								{/each}
+							</div>
 						</div>
-						<input
-							aria-label="Topography amplitude"
-							type="range"
-							min="0.5"
-							max="50"
-							step="0.5"
-							value={topoMulVal}
-							oninput={(event) => setTopoMultiplier(parseFloat(event.currentTarget.value))}
-							class="slider"
-						/>
-					</div>
+
+						<div class="control-group">
+							<div class="control-label">
+								Amplitude
+								<span class="control-value">{topoMulVal.toFixed(1)}×</span>
+							</div>
+							<input
+								aria-label="Topography amplitude"
+								type="range"
+								min="0.5"
+								max="50"
+								step="0.5"
+								value={topoMulVal}
+								oninput={(event) => setTopoMultiplier(parseFloat(event.currentTarget.value))}
+								class="slider"
+							/>
+						</div>
+					{/if}
 				{/if}
-
 				<button class="action-btn" onclick={resetCamera}>Reset Camera</button>
 			</div>
 		{/if}

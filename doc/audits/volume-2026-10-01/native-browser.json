@@ -1,0 +1,24 @@
+{
+  "mesh": [
+    8,
+    8,
+    4
+  ],
+  "occupied": 240,
+  "globalField": {
+    "points": 256,
+    "occupied": 240
+  },
+  "scalar": {
+    "quantity": "geom",
+    "points": 240,
+    "nComp": 1
+  },
+  "mobileCanvas": {
+    "x": 1,
+    "y": 61.1875,
+    "width": 388,
+    "height": 575.515625
+  },
+  "errors": []
+}

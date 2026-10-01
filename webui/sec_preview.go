@@ -70,6 +70,7 @@ type PreviewState struct {
 	VectorFieldPositions  []Vector3i   `msgpack:"-"`
 	VectorValuesBinary    []byte       `msgpack:"vectorValuesBinary,omitempty"`
 	VectorPositionsBinary []byte       `msgpack:"vectorPositionsBinary,omitempty"`
+	VectorOccupancy       []byte       `msgpack:"vectorOccupancy,omitempty"`
 	VectorCount           int          `msgpack:"vectorCount"`
 	TopologyRevision      uint64       `msgpack:"topologyRevision"`
 	ScalarField           [][3]float32 `msgpack:"scalarField"`
@@ -156,6 +157,7 @@ func (s *PreviewState) setVectorPayload(values []Vector3f, positions []Vector3i)
 	topologyChanged := key != s.cachedTopologyKey || !sameVectorPositions(s.VectorFieldPositions, positions)
 	s.cachedTopologyKey = key
 	s.VectorFieldValues = values
+	s.VectorOccupancy = nil
 	previousPositions := s.VectorFieldPositions
 	s.VectorFieldPositions = positions
 	s.sparePositions = previousPositions
@@ -182,6 +184,7 @@ func (s *PreviewState) clearVectorPayload() {
 	s.cachedTopologyKey = ""
 	s.VectorFieldValues = nil
 	s.VectorFieldPositions = nil
+	s.VectorOccupancy = nil
 	s.VectorValuesBinary = nil
 	s.VectorPositionsBinary = nil
 	s.cachedPositionsBinary = nil
@@ -335,7 +338,7 @@ func (s *PreviewState) UpdateQuantityBuffer() {
 
 	componentCount := 1
 	if s.Type == "3D" {
-		componentCount = 3
+		componentCount = s.NComp
 	}
 	quantity := s.getQuantity()
 	s.Unit = engine.UnitOf(quantity)
@@ -555,10 +558,17 @@ func (s *PreviewState) processVectorSnapshot() {
 	if cap(positions) < limit {
 		positions = make([]Vector3i, 0, limit)
 	}
+	var occupied []byte
+	if occupancy != nil {
+		occupied = make([]byte, 0, limit)
+	}
 	s.InvalidCount = 0
 	maxNorm := 0.0
 	for i := 0; i < limit; i++ {
-		x, y, z := host[0][i], host[1][i], host[2][i]
+		x, y, z := host[0][i], float32(0), float32(0)
+		if len(host) == 3 {
+			y, z = host[1][i], host[2][i]
+		}
 		if !finiteVector(x, y, z) {
 			s.InvalidCount++
 			continue
@@ -575,6 +585,13 @@ func (s *PreviewState) processVectorSnapshot() {
 		}
 		positions = append(positions, Vector3i{X: i % size[0], Y: (i / size[0]) % size[1], Z: sourceZ})
 		values = append(values, Vector3f{x, y, z})
+		if occupancy != nil {
+			flag := byte(0)
+			if occupancy[i] > 0 {
+				flag = 1
+			}
+			occupied = append(occupied, flag)
+		}
 	}
 	s.NormScale = math.Sqrt(maxNorm)
 	if s.FixedScale > 0 {
@@ -590,12 +607,19 @@ func (s *PreviewState) processVectorSnapshot() {
 			}
 			values[n] = normalized
 			positions[n] = positions[i]
+			if occupied != nil {
+				occupied[n] = occupied[i]
+			}
 			n++
 		}
 		values = values[:n]
 		positions = positions[:n]
+		if occupied != nil {
+			occupied = occupied[:n]
+		}
 	}
 	s.setVectorPayload(values, positions)
+	s.VectorOccupancy = occupied
 }
 
 func (s *PreviewState) UpdateVectorField(vectorField [3][][][]float32) {
@@ -816,7 +840,7 @@ func (s *PreviewState) addPossibleDownscaleSizes() bool {
 
 func (s *PreviewState) updatePreviewType() {
 	var fieldType string
-	isVectorField := s.NComp == 3 && s.getComponent() == -1
+	isVectorField := (s.NComp == 3 || s.NComp == 1) && s.Component == "3D"
 	if isVectorField {
 		fieldType = "3D"
 	} else {
@@ -832,7 +856,9 @@ func (s *PreviewState) validateComponent() {
 	s.NComp = s.getQuantity().NComp()
 	switch s.NComp {
 	case 1:
-		s.Component = "None"
+		if s.Component != "3D" {
+			s.Component = "None"
+		}
 	case 3:
 		if s.Component == "None" {
 			s.Component = "3D"

@@ -1,18 +1,34 @@
 import { browser } from '$app/environment';
 import { previewState } from '$api/incoming/preview';
 import { meshState } from '$api/incoming/mesh';
+import { setPreviewClientBudget, previewClientBudget } from '$api/websocket';
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TrackballControls } from 'three/examples/jsm/controls/TrackballControls.js';
 import { get, writable } from 'svelte/store';
 import { disposePreview2D } from './preview2D';
 import { preview3DLayout } from './preview3DLayout';
+import { projectVolumeVectors, type ProjectionAxis } from './volumeProjection';
+import { getColorScale } from './fieldColorScale';
+import { postAllLayers } from '$api/outgoing/preview';
 import { VectorMesh } from './vectorInstances';
 import { THEME } from '$lib/theme/echarts-theme';
 
 export type QualityLevel = 'low' | 'high' | 'ultra';
-export type Preview3DRenderMode = 'glyph' | 'voxel';
+export type Preview3DRenderMode = 'glyph' | 'voxel' | 'volume';
 export type VoxelColorMode = 'orientation' | 'x' | 'y' | 'z';
+export type VolumeColorMode = 'geometry' | 'value' | VoxelColorMode;
+export const volumeColorMode = writable<VolumeColorMode>('geometry');
+export const volumeProjection = writable<'surface' | 'average'>('surface');
+export const volumeProjectionAxis = writable<ProjectionAxis>('z');
+export const volumeLighting = writable(false);
+export const volumeScaleMode = writable<'data' | 'manual'>('data');
+export const volumeManualRange = writable<[number, number]>([-1, 1]);
+export const volumeLegend = writable({ min: 0, max: 1, palette: ['#0a1220', '#f1f7bb'] });
+let projectedSource: Float32Array | null = null;
+let projectedPositions: Int32Array | null = null;
+let projectedKey = '';
+let projectedValues: Float32Array = new Float32Array();
 export type VoxelSampling = 1 | 2 | 4;
 export type TopoComponent = 'x' | 'y' | 'z';
 
@@ -30,6 +46,7 @@ interface ThreeDPreview {
 	blocks: Uint32Array[];
 	topologyKey: string;
 	lastValues: Float32Array | null;
+	lastOccupancy?: Uint8Array;
 	filterKey: string;
 	liveIndices: Uint32Array[];
 	meshCapacity: number;
@@ -203,7 +220,8 @@ function loadRenderMode(): Preview3DRenderMode {
 		return 'glyph';
 	}
 
-	return window.localStorage.getItem(STORAGE_KEYS.renderMode) === 'voxel' ? 'voxel' : 'glyph';
+	const stored = window.localStorage.getItem(STORAGE_KEYS.renderMode);
+	return stored === 'voxel' || stored === 'volume' ? stored : 'glyph';
 }
 
 function loadVoxelColorMode(): VoxelColorMode {
@@ -250,7 +268,7 @@ function persistSetting(key: string, value: string | number) {
 
 function has3DPreviewData() {
 	const state = get(previewState);
-	return state.type === '3D' && state.nComp === 3;
+	return state.type === '3D' && (state.nComp === 3 || state.nComp === 1);
 }
 
 function rebuildPreview3D() {
@@ -335,6 +353,11 @@ function createVoxelGeometry() {
 function createMaterial(mode: Preview3DRenderMode): THREE.Material {
 	const cfg = getConfig();
 
+	if (mode === 'volume') {
+		return get(volumeColorMode) === 'geometry' || get(volumeLighting)
+			? new THREE.MeshPhongMaterial({ shininess: 18, specular: new THREE.Color(0x24334c) })
+			: new THREE.MeshBasicMaterial({ toneMapped: false });
+	}
 	if (mode === 'voxel') {
 		if (cfg.useLighting) {
 			return new THREE.MeshPhongMaterial({
@@ -365,7 +388,7 @@ function createMaterial(mode: Preview3DRenderMode): THREE.Material {
 
 function createMesh(requiredCapacity = 1): VectorMesh {
 	const mode = get(renderMode);
-	const base = mode === 'voxel' ? createVoxelGeometry() : createArrowGeometry();
+	const base = mode !== 'glyph' ? createVoxelGeometry() : createArrowGeometry();
 	const mesh = new VectorMesh(
 		base,
 		createMaterial(mode),
@@ -434,9 +457,8 @@ function createScene() {
 	const scene = new THREE.Scene();
 	scene.background = new THREE.Color(THEME.bg);
 
-	if (!cfg.useLighting) {
-		return scene;
-	}
+	// Keep lights available when switching from unlit arrows to a solid volume.
+	// Basic materials ignore them, including the low-quality arrow renderer.
 
 	const brightnessValue = get(brightness);
 
@@ -530,7 +552,7 @@ function renderPreviewFrame() {
 		renderMs: performance.now() - start,
 		drawCalls: display.renderer.info.render.calls,
 		triangles: display.renderer.info.render.triangles,
-		lod: glyphSegments() < getConfig().segments
+		lod: get(renderMode) === 'glyph' && glyphSegments() < getConfig().segments
 	}));
 	cameraRevision.update((revision) => revision + 1);
 
@@ -566,8 +588,42 @@ function updateInstances(display: ThreeDPreview) {
 	const state = get(previewState),
 		layout = getLayout(),
 		mode = get(renderMode);
-	const positions = state.vectorFieldPositions,
-		values = state.vectorFieldValues;
+	if (mode === 'volume' && get(previewClientBudget) !== 1000000) setPreviewClientBudget(1000000);
+	const sourceDepth = get(meshState).Nz;
+	const positions = state.vectorFieldPositions;
+	let values = state.vectorFieldValues;
+	if (
+		mode === 'volume' &&
+		get(volumeColorMode) !== 'geometry' &&
+		get(volumeProjection) === 'average'
+	) {
+		const dimensions: [number, number, number] = [
+			getPreviewWidthCells(),
+			getPreviewHeightCells(),
+			state.allLayers
+				? Math.max(
+						state.appliedZChosenSize ||
+							Math.ceil(sourceDepth / Math.max(state.appliedLayerStride, 1)),
+						1
+					)
+				: 1
+		];
+		const key = `${get(volumeProjectionAxis)}/${dimensions.join('/')}/${state.appliedLayerStride}/${sourceDepth}`;
+		if (projectedSource !== values || projectedPositions !== positions || projectedKey !== key) {
+			projectedValues = projectVolumeVectors(
+				positions,
+				values,
+				dimensions,
+				Math.max(state.appliedLayerStride || 1, 1),
+				get(volumeProjectionAxis),
+				state.allLayers ? sourceDepth : 1
+			);
+			projectedSource = values;
+			projectedPositions = positions;
+			projectedKey = key;
+		}
+		values = projectedValues;
+	}
 	const count = Math.min(
 		state.vectorCount,
 		Math.floor(values.length / 3),
@@ -575,13 +631,15 @@ function updateInstances(display: ThreeDPreview) {
 		1000000
 	);
 	const step =
-		(mode === 'voxel' ? get(voxelSampling) : get(glyphSampling)) * (state.transportSampling || 1);
+		(mode === 'volume' ? 1 : mode === 'voxel' ? get(voxelSampling) : get(glyphSampling)) *
+		(state.transportSampling || 1);
 	const stride = Math.max(state.appliedLayerStride || 1, 1);
 	const width = getPreviewWidthCells(),
 		height = getPreviewHeightCells();
-	const depth = Math.max(state.appliedZChosenSize || Math.ceil(get(meshState).Nz / stride), 1);
+	const depth = Math.max(state.appliedZChosenSize || Math.ceil(sourceDepth / stride), 1);
 	const topologyKey = [
 		mode,
+		mode === 'volume' ? `${get(volumeColorMode) === 'geometry'}/${get(volumeLighting)}` : '',
 		get(qualityLevel),
 		state.topologyRevision,
 		count,
@@ -628,29 +686,71 @@ function updateInstances(display: ThreeDPreview) {
 		display.topologyKey = topologyKey;
 		display.rendererMode = mode;
 	}
-	const colorMode = get(voxelColorMode),
+	const colorMode = mode === 'volume' ? get(volumeColorMode) : get(voxelColorMode),
 		threshold = get(voxelThreshold),
 		axis = get(clipAxis),
 		lo = get(clipMin),
 		hi = get(clipMax);
 	const filterKey = [mode, colorMode, threshold, axis, lo, hi].join(':');
+	const physicalScale = state.normScale || 1;
+	let min = Infinity,
+		max = -Infinity;
+	if (mode === 'volume' && colorMode !== 'geometry' && colorMode !== 'orientation') {
+		const component = colorMode === 'value' ? 0 : ['x', 'y', 'z'].indexOf(colorMode);
+		for (let i = component; i < count * 3; i += 3) {
+			if (state.vectorOccupancy?.[Math.floor(i / 3)] === 0) continue;
+			const value = values[i] * physicalScale;
+			if (Number.isFinite(value)) {
+				min = Math.min(min, value);
+				max = Math.max(max, value);
+			}
+		}
+	}
+	if (!Number.isFinite(min)) {
+		min = 0;
+		max = 1;
+	}
+	if (get(volumeScaleMode) === 'manual') [min, max] = get(volumeManualRange);
+	const fieldScale = getColorScale(min, max);
+	if (get(volumeScaleMode) === 'manual') {
+		fieldScale.min = min;
+		fieldScale.max = max;
+	}
+	if (mode === 'volume') volumeLegend.set(fieldScale);
 	let visible = 0,
 		uploaded = 0;
 	const rebuild =
-		topologyChanged || display.lastValues !== values || display.filterKey !== filterKey;
+		topologyChanged ||
+		display.lastValues !== values ||
+		display.lastOccupancy !== state.vectorOccupancy ||
+		display.filterKey !== filterKey;
 	for (let block = 0; block < display.meshes.length; block++) {
 		const mesh = display.meshes[block];
-		const scale = Math.max(0.12, step * (1 - get(voxelGap)));
-		mesh.uniforms.previewMode.value = mode === 'voxel' ? 1 : 0;
+		const scale = mode === 'volume' ? 1 : Math.max(0.12, step * (1 - get(voxelGap)));
+		mesh.uniforms.previewFieldScale.value =
+			mode === 'volume' && colorMode !== 'orientation' && colorMode !== 'geometry' ? 1 : 0;
+		mesh.uniforms.previewRange.value.set(fieldScale.min, fieldScale.max);
+		mesh.uniforms.previewNorm.value = physicalScale;
+		mesh.uniforms.previewPaletteSize.value = fieldScale.palette.length;
+		for (let i = 0; i < 7; i++)
+			mesh.uniforms.previewColors.value[i]
+				.set(fieldScale.palette[Math.min(i, fieldScale.palette.length - 1)])
+				.convertLinearToSRGB();
+		mesh.uniforms.previewSolid.value = mode === 'volume' && colorMode === 'geometry' ? 1 : 0;
+		mesh.uniforms.previewMode.value = mode === 'volume' ? 2 : mode === 'voxel' ? 1 : 0;
 		mesh.uniforms.previewScale.value.set(
-			mode === 'voxel' ? scale * layout.stepX : layout.glyphScale,
-			mode === 'voxel'
+			mode !== 'glyph' ? scale * layout.stepX : layout.glyphScale,
+			mode !== 'glyph'
 				? scale * (state.allLayers ? layout.stepZ : layout.zCell)
 				: layout.glyphScale,
-			mode === 'voxel' ? scale * layout.stepY : layout.glyphScale
+			mode !== 'glyph' ? scale * layout.stepY : layout.glyphScale
 		);
 		mesh.uniforms.previewColorMode.value =
-			mode === 'voxel' ? ['orientation', 'x', 'y', 'z'].indexOf(colorMode) : 0;
+			mode !== 'glyph'
+				? colorMode === 'value'
+					? 1
+					: Math.max(0, ['orientation', 'x', 'y', 'z'].indexOf(colorMode))
+				: 0;
 		mesh.uniforms.previewTopo.value = mode === 'voxel' && get(topoEnabled) ? 1 : 0;
 		mesh.uniforms.previewTopoAxis.value = ['x', 'y', 'z'].indexOf(get(topoComponent));
 		mesh.uniforms.previewTopoScale.value = get(topoMultiplier) * layout.glyphScale;
@@ -677,6 +777,7 @@ function updateInstances(display: ThreeDPreview) {
 			maxY = -Infinity,
 			maxZ = -Infinity;
 		for (const i of display.blocks[block]) {
+			if (mode === 'volume' && state.vectorOccupancy?.[i] === 0) continue;
 			const o = i * 3,
 				vx = values[o],
 				vy = values[o + 1],
@@ -687,7 +788,9 @@ function updateInstances(display: ThreeDPreview) {
 				const metric =
 					colorMode === 'orientation'
 						? vx * vx + vy * vy + vz * vz
-						: Math.abs(componentValue(vx, vy, vz, colorMode));
+						: Math.abs(
+								componentValue(vx, vy, vz, colorMode as Exclude<VoxelColorMode, 'orientation'>)
+							);
 				if (metric < (colorMode === 'orientation' ? threshold * threshold : threshold)) continue;
 			}
 			if (axis !== 'none') {
@@ -714,9 +817,15 @@ function updateInstances(display: ThreeDPreview) {
 				previous[n] = i;
 			}
 			const x = (positions[o] + 0.5) * layout.stepX;
-			const y = state.allLayers
-				? (Math.floor(positions[o + 2] / stride) + 0.5) * layout.stepZ
-				: layout.zCell / 2;
+			const binZ = Math.floor(positions[o + 2] / stride),
+				binDepth = state.allLayers ? Math.min(stride, Math.max(sourceDepth - binZ * stride, 1)) : 1;
+			mesh.depths.array[n] = mode === 'volume' && state.allLayers ? binDepth / stride : 1;
+			const y =
+				mode === 'volume' && state.allLayers
+					? (binZ * stride + binDepth / 2) * layout.zCell
+					: state.allLayers
+						? (Math.floor(positions[o + 2] / stride) + 0.5) * layout.stepZ
+						: layout.zCell / 2;
 			const z = (positions[o + 1] + 0.5) * layout.stepY;
 			offsets[target] = x;
 			offsets[target + 1] = y;
@@ -745,9 +854,10 @@ function updateInstances(display: ThreeDPreview) {
 					: 0)
 		);
 		visible += n;
-		uploaded += n * (positionsChanged ? 24 : 12);
+		uploaded += n * (positionsChanged ? 28 : 16);
 	}
 	display.lastValues = values;
+	display.lastOccupancy = state.vectorOccupancy;
 	display.filterKey = filterKey;
 	visibleRenderCount.set(visible);
 	previewPerformance.update((p) => ({ ...p, uploadBytes: uploaded }));
@@ -865,6 +975,10 @@ export function preview3D() {
 }
 
 export function disposePreview3D() {
+	projectedSource = null;
+	projectedPositions = null;
+	projectedValues = new Float32Array();
+	projectedKey = '';
 	const container = document.getElementById('container');
 	const display = get(threeDPreview);
 	visibleRenderCount.set(0);
@@ -953,11 +1067,43 @@ export function setQuality(level: QualityLevel) {
 export function setRenderMode(mode: Preview3DRenderMode) {
 	persistSetting(STORAGE_KEYS.renderMode, mode);
 	renderMode.set(mode);
+	if (mode === 'volume') {
+		setPreviewClientBudget(1000000);
+		if (!get(previewState).allLayers && get(meshState).Nz > 1) postAllLayers(true);
+	}
 	const count = get(previewState).vectorCount;
 	if (get(threeDPreview)) {
 		replacePreviewMesh(count);
 		update();
 	}
+}
+
+export function setVolumeProjection(
+	mode: 'surface' | 'average',
+	axis: ProjectionAxis = get(volumeProjectionAxis)
+) {
+	volumeProjection.set(mode);
+	volumeProjectionAxis.set(axis);
+	if (mode === 'average' && !get(previewState).allLayers) postAllLayers(true);
+	scheduleInstanceUpdate();
+}
+export function setVolumeLighting(enabled: boolean) {
+	volumeLighting.set(enabled);
+	scheduleInstanceUpdate();
+}
+export function setVolumeScale(
+	mode: 'data' | 'manual',
+	min = get(volumeManualRange)[0],
+	max = get(volumeManualRange)[1]
+) {
+	if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) return;
+	volumeScaleMode.set(mode);
+	volumeManualRange.set([min, max]);
+	scheduleInstanceUpdate();
+}
+export function setVolumeColorMode(mode: VolumeColorMode) {
+	volumeColorMode.set(mode);
+	scheduleInstanceUpdate();
 }
 
 export function setVoxelOpaque(value: boolean) {

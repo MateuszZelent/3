@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -253,5 +254,48 @@ func TestPreviewNearHardLimitKeepsDepth(t *testing.T) {
 	sizing := state.resolvePreviewSizing(256)
 	if sizing.AppliedDepth != 256 || sizing.AppliedX != 62 || sizing.AppliedY != 62 || sizing.AppliedPoints != 984064 {
 		t.Fatalf("small safety reduction discarded half the layers: %+v", sizing)
+	}
+}
+
+func TestVolumeOccupancySurvivesGlobalFieldAndTransferSampling(t *testing.T) {
+	cpu := data.NewSlice(3, [3]int{4, 1, 1})
+	occupancy := data.NewSlice(1, [3]int{4, 1, 1})
+	for i := range cpu.Host()[0] {
+		cpu.Host()[0][i] = 1
+	}
+	occupancy.Host()[0][0] = 1
+	occupancy.Host()[0][3] = 1
+	state := &PreviewState{Type: "3D", pendingCPU: cpu, pendingOccupancy: occupancy, AppliedXChosenSize: 4, AppliedYChosenSize: 1}
+	state.processVectorSnapshot()
+	if !bytes.Equal(state.VectorOccupancy, []byte{1, 0, 0, 1}) {
+		t.Fatalf("global field lost geometry: %v", state.VectorOccupancy)
+	}
+	profile, sampling := previewTransportProfile(state, 2)
+	if sampling != 2 || !bytes.Equal(profile.VectorOccupancy, []byte{1, 0}) {
+		t.Fatalf("sampled occupancy mismatch: %v step %d", profile.VectorOccupancy, sampling)
+	}
+	state.pendingOccupancy = nil
+	state.processVectorSnapshot()
+	if state.VectorOccupancy != nil {
+		t.Fatal("full geometry retained stale mask")
+	}
+}
+
+func TestScalarVolumeSnapshotAndDimension(t *testing.T) {
+	cpu := data.NewSlice(1, [3]int{2, 1, 2})
+	copy(cpu.Host()[0], []float32{-2, 6, -4, 8})
+	state := &PreviewState{NComp: 1, Component: "3D", pendingCPU: cpu, pendingStride: 1, AllLayers: true}
+	state.updatePreviewType()
+	if state.Type != "3D" {
+		t.Fatal("scalar volume selected 2D")
+	}
+	state.processVectorSnapshot()
+	if state.VectorCount != 4 || state.NormScale != 8 || state.VectorFieldValues[0] != (Vector3f{X: -.25}) || state.VectorFieldValues[3] != (Vector3f{X: 1}) {
+		t.Fatalf("scalar volume lost physical data: %+v", state)
+	}
+	state.Component = "None"
+	state.updatePreviewType()
+	if state.Type != "2D" {
+		t.Fatal("scalar section selected 3D")
 	}
 }

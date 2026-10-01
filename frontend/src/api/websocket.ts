@@ -109,6 +109,13 @@ function normalizePreview(msg: PreviewWire): Preview {
 		candidateRevision = revision;
 	}
 
+	if (
+		msg.vectorOccupancy !== undefined &&
+		msg.vectorOccupancy !== null &&
+		(!(msg.vectorOccupancy instanceof Uint8Array) ||
+			msg.vectorOccupancy.length !== values.length / 3)
+	)
+		throw new Error('Invalid volume occupancy');
 	const declared = Number(msg.vectorCount ?? values.length / 3);
 	if (!Number.isSafeInteger(declared) || declared < 0 || declared > 1000000)
 		throw new Error('Invalid preview count');

@@ -9,6 +9,7 @@
 		resetCamera
 	} from '$lib/preview/preview3D';
 
+	let { axisBottom = 20 }: { axisBottom?: number } = $props();
 	let cubeTransform = $state('none');
 	let dragging = $state(false);
 	let dragStartX = 0;
@@ -130,7 +131,8 @@
 	<div class="vc">
 		<div
 			class="vc-scene"
- role="group" aria-label="Camera orientation"
+			role="group"
+			aria-label="Camera orientation"
 			style="transform: {cubeTransform}"
 			onpointerdown={onPointerDown}
 			onpointermove={onPointerMove}
@@ -157,7 +159,7 @@
 	</div>
 
 	<!-- Axis Gizmo: bottom-right -->
-	<div class="ag">
+	<div class="ag" style:bottom={`${axisBottom}px`}>
 		<div class="ag-scene" style="transform: {cubeTransform}">
 			<!-- X axis (red) — points along +X -->
 			<div class="ag-shaft ag-shaft--x" style="transform: rotateZ(-90deg) translateY(-18px)"></div>

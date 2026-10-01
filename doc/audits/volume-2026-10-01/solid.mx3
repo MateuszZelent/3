@@ -1,0 +1,14 @@
+SetGridSize(8,8,4)
+SetCellSize(5e-9,5e-9,5e-9)
+Msat=800e3
+Aex=13e-12
+B_ext=Vector(0,0,0.02)
+SetGeom(Cuboid(40e-9,40e-9,20e-9).Sub(Cuboid(10e-9,10e-9,20e-9)))
+m=Uniform(0,1,0)
+for z:=0;z<4;z++ {
+ for y:=0;y<8;y++ {
+  for x:=0;x<8;x++ {
+   m.SetCell(x,y,z,Vector(0,500,(z-1.5)*100))
+  }
+ }
+}

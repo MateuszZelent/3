@@ -32,6 +32,7 @@ export interface Preview {
 	type: string;
 	vectorFieldValues: VectorField;
 	vectorFieldPositions: VectorPositions;
+	vectorOccupancy?: Uint8Array;
 	vectorCount: number;
 	topologyRevision: number;
 	scalarField: ScalarField;

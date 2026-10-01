@@ -449,11 +449,15 @@ func previewTransportProfile(preview *PreviewState, budget int) (*PreviewState, 
 		profile = *preview
 		profile.VectorFieldValues = nil
 		profile.VectorFieldPositions = nil
+		profile.VectorOccupancy = nil
 		for i, position := range preview.VectorFieldPositions {
 			z := position.Z / max(preview.AppliedLayerStride, 1)
 			if position.X%step == 0 && position.Y%step == 0 && (!preview.AllLayers || z%step == 0) {
 				profile.VectorFieldPositions = append(profile.VectorFieldPositions, position)
 				profile.VectorFieldValues = append(profile.VectorFieldValues, preview.VectorFieldValues[i])
+				if len(preview.VectorOccupancy) == len(preview.VectorFieldPositions) {
+					profile.VectorOccupancy = append(profile.VectorOccupancy, preview.VectorOccupancy[i])
+				}
 			}
 		}
 		if len(profile.VectorFieldValues) <= budget {

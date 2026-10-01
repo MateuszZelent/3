@@ -1,3 +1,4 @@
+import { getColorScale } from './fieldColorScale';
 import { previewState } from '$api/incoming/preview';
 import { get, writable } from 'svelte/store';
 import { preview2DWindow, clampWindow, type WindowRange } from './preview2DWindow';
@@ -83,12 +84,6 @@ function syncWindowGeometry() {
 	if (chartInstance && !chartInstance.isDisposed()) resetPreview2DWindow();
 }
 
-type ColorScale = {
-	min: number;
-	max: number;
-	palette: string[];
-};
-
 type AxisMetrics = {
 	uName: string;
 	vName: string;
@@ -123,31 +118,6 @@ export function preview2D() {
 
 	// Keep updates incremental to avoid visible canvas resets/flicker.
 	updateData();
-}
-
-function getColorScale(min: number, max: number): ColorScale {
-	if (min < 0 && max > 0) {
-		const bound = Math.max(Math.abs(min), Math.abs(max));
-		return {
-			min: -bound,
-			max: bound,
-			palette: ['#15315f', '#2f6caa', '#90b9df', '#f4f1ed', '#efb09d', '#cf6256', '#7d1d34']
-		};
-	}
-
-	if (max <= 0) {
-		return {
-			min,
-			max,
-			palette: ['#f3f7fd', '#cfdef1', '#91b8dd', '#5688bd', '#285b93', '#14365f']
-		};
-	}
-
-	return {
-		min,
-		max,
-		palette: ['#0a1220', '#143d67', '#1c6d8f', '#24a0a4', '#8ed6ac', '#f1f7bb']
-	};
 }
 
 function formatMagnitude(value: number) {

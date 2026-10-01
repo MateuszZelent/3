@@ -26,6 +26,7 @@
 	} from '$api/outgoing/preview';
 	import Slider from '$components/Slider.svelte';
 	import SliceControl from './inputs/SliceControl.svelte';
+	import VolumeControls from './inputs/VolumeControls.svelte';
 	import PlaneWindowControls from './inputs/PlaneWindowControls.svelte';
 	import {
 		previewPlaneAxes,
@@ -50,6 +51,8 @@
 		preview3D,
 		qualityLevel,
 		renderMode,
+		volumeProjection,
+		volumeColorMode,
 		resetCamera,
 		setQuality,
 		setRenderMode,
@@ -70,6 +73,11 @@
 	let previewNow = $state(Date.now());
 	let viewMode = $state<ViewportMode>('inline');
 	let viewportWidth = $state(1024);
+	let volumeControlsHeight = $state(0);
+	let sectionExpanded = $state(true);
+	$effect(() => {
+		sectionExpanded = viewportWidth > 650;
+	});
 	let previewWrapper: HTMLDivElement;
 	let previewStudio: HTMLDivElement;
 	let visibilityObserver: IntersectionObserver | null = null;
@@ -126,6 +134,7 @@
 	});
 	const componentOptions = ['x', 'y', 'z'].map((value) => ({ value, label: value.toUpperCase() }));
 	function setDimension(mode: string) {
+		if (mode === '3D' && $previewState.nComp === 1) setRenderMode('volume');
 		postComponent(mode === '3D' ? '3D' : lastComponent);
 	}
 	function setSlice(index: number) {
@@ -159,9 +168,10 @@
 	);
 
 	const renderOptions = $derived(
-		(['glyph', 'voxel'] as Preview3DRenderMode[]).map((mode) => ({
+		(['volume', 'glyph', 'voxel'] as Preview3DRenderMode[]).map((mode) => ({
 			value: mode,
-			label: mode === 'glyph' ? 'Arrows' : 'Voxel'
+			disabled: $previewState.nComp === 1 && mode !== 'volume',
+			label: mode === 'volume' ? 'Volume' : mode === 'glyph' ? 'Arrows' : 'Voxel'
 		}))
 	);
 
@@ -188,7 +198,10 @@
 
 		if (mode === 'popout') {
 			popW = Math.min(popW, window.innerWidth - 32);
-			popH = Math.min(Math.max(popH, is2D ? 720 : 540), window.innerHeight - 32);
+			popH = Math.min(
+				Math.max(popH, is2D || get(renderMode) === 'volume' ? 760 : 540),
+				window.innerHeight - 32
+			);
 			popX = Math.max(16, Math.min(popX, window.innerWidth - popW - 16));
 			popY = Math.max(16, Math.min(popY, window.innerHeight - popH - 16));
 		}
@@ -243,7 +256,10 @@
 			const dx = event.clientX - dragOffX;
 			const dy = event.clientY - dragOffY;
 			popW = Math.max(Math.min(460, window.innerWidth - 32), popW + dx);
-			popH = Math.max(Math.min(is2D ? 660 : 340, window.innerHeight - 32), popH + dy);
+			popH = Math.max(
+				Math.min(is2D || get(renderMode) === 'volume' ? 660 : 340, window.innerHeight - 32),
+				popH + dy
+			);
 			dragOffX = event.clientX;
 			dragOffY = event.clientY;
 		}
@@ -265,6 +281,7 @@
 	async function renderCurrentPreview() {
 		const state = get(previewState);
 		if (state.type === '3D') {
+			if (state.nComp === 1 && get(renderMode) !== 'volume') setRenderMode('volume');
 			await preview3D();
 			return;
 		}
@@ -349,7 +366,7 @@
 				label="View"
 				value={is2D ? '2D' : '3D'}
 				options={[
-					{ value: '3D', label: '3D volume', disabled: $previewState.nComp === 1 },
+					{ value: '3D', label: '3D volume' },
 					{ value: '2D', label: '2D section' }
 				]}
 				onchange={setDimension}
@@ -403,7 +420,14 @@
 					label="Reduction"
 					value={$previewState.allLayers ? 'average' : 'single'}
 					options={[
-						{ value: 'single', label: 'Single layer' },
+						{
+							value: 'single',
+							label: 'Single layer',
+							disabled:
+								$renderMode === 'volume' &&
+								$volumeProjection === 'average' &&
+								$volumeColorMode !== 'geometry'
+						},
 						{ value: 'average', label: 'Average' }
 					]}
 					onchange={(value) => postSection({ mode: value as 'single' | 'average' })}
@@ -480,7 +504,7 @@
 					>{/if}
 			</div>
 			{#if viewMode !== 'inline' && is2D}
-				<details class="floating-section" open={viewportWidth > 650}>
+				<details class="floating-section" bind:open={sectionExpanded}>
 					<summary>Section · {plane.toUpperCase()} · {sectionCaption}</summary>
 					<div class="floating-section-controls">
 						<SegmentedControl
@@ -506,7 +530,9 @@
 					</div>
 				</details>
 			{/if}
-			{#if !is2D}<ViewCube />{/if}
+			{#if !is2D}<ViewCube
+					axisBottom={$renderMode === 'volume' ? volumeControlsHeight + 20 : 20}
+				/>{/if}
 
 			{#if !$connected || !hasData}
 				<div class="preview-wrapper__empty">
@@ -530,17 +556,28 @@
 
 			{#if is2D}<PlaneWindowControls />{/if}
 			<div id="container" class="preview-wrapper__canvas"></div>
+			{#if !is2D && $renderMode === 'volume'}<div bind:clientHeight={volumeControlsHeight}>
+					<VolumeControls />
+				</div>{/if}
 
-			{#if $previewState.type === '3D' && $previewState.nComp === 3 && hasData}
+			{#if $previewState.type === '3D' && hasData}
 				<div class="preview-wrapper__stats">
-					{$renderMode === 'voxel' ? 'Voxels' : 'Arrows'}: {$visibleRenderCount.toLocaleString()}
+					{$renderMode === 'volume'
+						? 'Volume cells'
+						: $renderMode === 'voxel'
+							? 'Voxels'
+							: 'Arrows'}: {$visibleRenderCount.toLocaleString()}
 					· received {$previewState.vectorCount.toLocaleString()} / {(
 						$previewState.serverVectorCount ?? $previewState.vectorCount
 					).toLocaleString()} server points · grid {$previewState.appliedXChosenSize}
 					× {$previewState.appliedYChosenSize} × {$previewState.allLayers
 						? $previewState.appliedZChosenSize
 						: 1}
-					· display sampling {$renderMode === 'voxel' ? $voxelSampling : $glyphSampling}×
+					· display sampling {$renderMode === 'volume'
+						? 1
+						: $renderMode === 'voxel'
+							? $voxelSampling
+							: $glyphSampling}×
 					{#if $clipAxis !== 'none'}
 						· section {$clipAxis.toUpperCase()}{/if}
 					· {$previewPerformance.updateMs.toFixed(1)} ms update
@@ -708,9 +745,11 @@
 								? $preview2DAutoscale
 									? 'Autoscale'
 									: 'Physical scale'
-								: $renderMode === 'voxel'
-									? 'Voxel'
-									: 'Arrows'}
+								: $renderMode === 'volume'
+									? 'Volume'
+									: $renderMode === 'voxel'
+										? 'Voxel'
+										: 'Arrows'}
 							tone="info"
 						/>
 					</div>
@@ -747,7 +786,10 @@
 							<SelectField
 								label="Transfer limit"
 								value={$previewClientBudget}
-								options={transferOptions}
+								options={transferOptions.map((option) => ({
+									...option,
+									disabled: $renderMode === 'volume' && option.value !== '1000000'
+								}))}
 								onchange={(value) => setPreviewClientBudget(Number(value))}
 							/><TextField
 								label="Field scale"
@@ -761,8 +803,10 @@
 							/>
 						</div>
 						<p class="settings-hint">
-							The transfer limit can sample the server preview. Display sampling and clipping can
-							further reduce visible points.
+							{#if $renderMode === 'volume'}Volume uses the full applied preview to preserve a
+								continuous body. Adjust preview resolution to change geometry detail.{:else}The
+								transfer limit can sample the server preview. Display sampling and clipping can
+								further reduce visible points.{/if}
 						</p>
 						<details class="advanced-appearance">
 							<summary>Lighting, clipping &amp; material</summary><Toolbar3D embedded />
@@ -1252,7 +1296,7 @@
 			gap: 0.85rem;
 		}
 		.volume-strip {
-			grid-template-columns: 1fr 1fr;
+			grid-template-columns: minmax(0, 1fr);
 		}
 		.volume-strip :global(.ui-button) {
 			grid-column: 1/-1;

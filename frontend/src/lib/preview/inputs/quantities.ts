@@ -1,5 +1,5 @@
 export const quantities: { [category: string]: string[] } = {
-	Common: ['m', 'torque', 'regions', 'Msat', 'Aex', 'alpha', 'SpongeAlpha'],
+	Common: ['m', 'geom', 'torque', 'regions', 'Msat', 'Aex', 'alpha', 'SpongeAlpha'],
 
 	'Magnetic Fields': [
 		'B_anis',
