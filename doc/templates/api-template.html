@@ -600,6 +600,21 @@ tableAdd(E_custom)  // Add a column with the energy related to the custom field
 
 
 <div id="math" class="api-section" >
+<p><code>int(x)</code> converts a finite number to an integer by truncating toward zero:
+<code>int(3.8)</code> is <code>3</code> and <code>int(-3.8)</code> is <code>-3</code>.
+Before truncation, values within four representable float64 steps of the nearest
+integer are snapped to that integer to correct small floating point errors.
+This tolerance is an extension to the usual Go, Python and C++ conversion behavior.
+Use <code>round(x)</code> to round to the nearest integer instead.
+NaN, infinity and truncated results outside the platform's signed int range cause an error.
+Implicit conversions to int still reject fractional values.</p>
+<pre>Tx := 500e-9
+dx := 1e-9
+nCellX := int(Tx / dx) // 500 cells, with floating point error correction
+SetGridSize(nCellX, nCellX, nCellX)</pre>
+<p>Values farther than four float64 steps from an integer are still truncated:
+<code>int(499.999999)</code> returns 499.
+Use <code>int(round(Tx / dx))</code> when nearest-integer sizing is intended for all ratios.</p>
 
 	<h1> Math </h1>
 
@@ -695,4 +710,3 @@ tableAdd(E_custom)  // Add a column with the energy related to the custom field
 
 
 </body>
-

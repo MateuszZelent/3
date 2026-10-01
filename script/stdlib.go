@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strconv"
 	"time"
 )
 
@@ -15,6 +16,7 @@ func (w *World) LoadStdlib() {
 	w.declare("false", boolLit(false))
 
 	// math
+	w.Func("int", intCast, "Snaps values within four float64 steps of an integer to that integer, otherwise truncates toward zero; rejects NaN, infinity and results outside the int range.")
 	w.Func("abs", math.Abs)
 	w.Func("acos", math.Acos)
 	w.Func("acosh", math.Acosh)
@@ -84,6 +86,31 @@ func (w *World) LoadStdlib() {
 }
 
 var rng = rand.New(rand.NewSource(0))
+
+// intCast is an explicit conversion; implicit conversions still use safe_int.
+func intCast(x float64) int {
+	if math.IsNaN(x) || math.IsInf(x, 0) {
+		panic(fmt.Errorf("int(%v): expected a finite number", x))
+	}
+	// Correct small floating point errors in expressions such as 500e-9 / 1e-9.
+	// Walking representable values avoids a tolerance that grows to whole units
+	// for large numbers or applies an arbitrary absolute threshold near zero.
+	nearest := math.Round(x)
+	probe := x
+	for step := 0; step < 4 && probe != nearest; step++ {
+		probe = math.Nextafter(probe, nearest)
+	}
+	if probe == nearest {
+		x = nearest
+	}
+	truncated := math.Trunc(x)
+	// Use an exclusive upper bound: float64(maxInt) rounds up on 64-bit hosts.
+	limit := math.Ldexp(1, strconv.IntSize-1)
+	if truncated < -limit || truncated >= limit {
+		panic(fmt.Errorf("int(%v): result outside %d-bit int range", x, strconv.IntSize))
+	}
+	return int(truncated)
+}
 
 // script does not know int64
 func intseed(seed int)      { rng.Seed(int64(seed)) }
