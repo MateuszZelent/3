@@ -5,6 +5,10 @@
 	import Toggle from '$lib/ui/Toggle.svelte';
 	import {
 		volumeColorMode,
+		voxelColorMode,
+		renderMode,
+		setVoxelColorMode,
+		type VoxelColorMode,
 		volumeProjection,
 		volumeProjectionAxis,
 		volumeLighting,
@@ -18,22 +22,28 @@
 		type VolumeColorMode
 	} from '../preview3D';
 	import type { ProjectionAxis } from '../volumeProjection';
+	const isVolume = $derived($renderMode === 'volume');
+	const colorMode = $derived(isVolume ? $volumeColorMode : $voxelColorMode);
+	function setColorMode(value: string) {
+		if (isVolume) setVolumeColorMode(value as VolumeColorMode);
+		else setVoxelColorMode(value as VoxelColorMode);
+	}
 	$effect(() => {
 		if (
 			$previewState.nComp === 1 &&
-			$volumeColorMode !== 'geometry' &&
-			$volumeColorMode !== 'value'
+			colorMode !== 'geometry' &&
+			colorMode !== 'value'
 		)
-			setVolumeColorMode('value');
-		if ($previewState.nComp === 3 && $volumeColorMode === 'value') setVolumeColorMode('x');
+			setColorMode('value');
+		if ($previewState.nComp === 3 && colorMode === 'value') setColorMode('x');
 	});
 	let viewportWidth = $state(1024);
 	let expanded = $state(true);
 	$effect(() => {
 		expanded = viewportWidth > 650;
 	});
-	const field = $derived($volumeColorMode !== 'geometry');
-	const scalar = $derived(field && $volumeColorMode !== 'orientation');
+	const field = $derived(colorMode !== 'geometry');
+	const scalar = $derived(field && colorMode !== 'orientation');
 	const gradient = $derived(`linear-gradient(90deg, ${$volumeLegend.palette.join(',')})`);
 	let min = $state('-1'),
 		max = $state('1');
@@ -50,35 +60,36 @@
 	<summary class="volume-controls__heading">
 		<span class="volume-controls__icon" aria-hidden="true">▧</span>
 		<div>
-			<strong>Volume surface</strong><span
-				>Continuous geometry · {$previewState.quantity || 'Field'}</span
+			<strong>{isVolume ? "Volume surface" : $renderMode === "glyph" ? "Arrow colors" : "Voxel colors"}</strong><span
+				>Field coloring · {$previewState.quantity || 'Field'}</span
 			>
 		</div>
 		<span class="volume-controls__badge"
-			>{$volumeProjection === 'average' && field
+			>{isVolume && $volumeProjection === 'average' && field
 				? `Mean · ${$volumeProjectionAxis.toUpperCase()}`
-				: 'Surface'}</span
+				: isVolume ? 'Surface' : 'Local'}</span
 		>
 	</summary>
 	<div class="volume-controls__grid">
 		<SelectField
 			label="Color by"
-			value={$volumeColorMode}
+			value={colorMode}
 			options={$previewState.nComp === 1
 				? [
-						{ value: 'geometry', label: 'Solid · geometry' },
+						...(isVolume ? [{ value: 'geometry', label: 'Solid · geometry' }] : []),
 						{ value: 'value', label: 'Field value' }
 					]
 				: [
-						{ value: 'geometry', label: 'Solid · geometry' },
+						...(isVolume ? [{ value: 'geometry', label: 'Solid · geometry' }] : []),
+						{ value: 'magnitude', label: 'Vector magnitude' },
 						{ value: 'x', label: 'X component' },
 						{ value: 'y', label: 'Y component' },
 						{ value: 'z', label: 'Z component' },
 						{ value: 'orientation', label: 'Vector orientation' }
 					]}
-			onchange={(value) => setVolumeColorMode(value as VolumeColorMode)}
+			onchange={setColorMode}
 		/>
-		<SegmentedControl
+		{#if isVolume}<SegmentedControl
 			label="Field on surface"
 			value={$volumeProjection}
 			options={[
@@ -87,13 +98,14 @@
 			]}
 			onchange={(value) => setVolumeProjection(value as 'surface' | 'average')}
 		/>
-		{#if $volumeProjection === 'average'}
+		{#if isVolume && $volumeProjection === 'average'}
 			<SegmentedControl
 				label="Average along"
 				value={$volumeProjectionAxis}
 				options={['x', 'y', 'z'].map((value) => ({ value, label: value.toUpperCase() }))}
 				onchange={(value) => setVolumeProjection('average', value as ProjectionAxis)}
 			/>
+		{/if}
 		{/if}
 		{#if scalar}<SegmentedControl
 				label="Color range"
@@ -115,10 +127,9 @@
 			/>{/if}
 	</div>
 	{#if field}<div class="volume-controls__description">
-			{#if $volumeProjection === 'average'}Arithmetic mean along {$volumeProjectionAxis.toUpperCase()},
+			{#if isVolume && $volumeProjection === 'average'}Arithmetic mean along {$volumeProjectionAxis.toUpperCase()},
 				projected onto the existing surface. All preview layers contribute, including zero values;
-				empty cells contribute zero.{:else}Local field values on the outer boundary and cavity
-				walls. Clipping exposes values inside the body.{/if}
+				empty cells contribute zero.{:else}Local field values on {isVolume ? "the outer boundary and cavity walls" : "each displayed cell"}. Clipping exposes values inside the body.{/if}
 		</div>{:else}<div class="volume-controls__description">
 			Solid, opaque cells reveal geometry and cavities. Choose a field component to apply the 2D
 			color map.
@@ -127,7 +138,7 @@
 		{#if $volumeScaleMode === 'manual'}<div class="volume-controls__range">
 				<label
 					>Minimum<input
-						aria-label="Volume color minimum"
+						aria-label="3D color minimum"
 						type="number"
 						step="any"
 						bind:value={min}
@@ -135,7 +146,7 @@
 					/></label
 				><label
 					>Maximum<input
-						aria-label="Volume color maximum"
+						aria-label="3D color maximum"
 						type="number"
 						step="any"
 						bind:value={max}
@@ -145,14 +156,14 @@
 			</div>{/if}
 		<div class="volume-controls__legend">
 			<span>{$volumeLegend.min.toPrecision(4)}</span>
-			<div style:background={gradient} aria-label="Volume color legend"></div>
+			<div style:background={gradient} aria-label="3D color legend"></div>
 			<span>{$volumeLegend.max.toPrecision(4)}</span><strong
-				>{$previewState.quantity} · {$volumeColorMode.toUpperCase()}
+				>{$previewState.quantity} · {colorMode.toUpperCase()}
 				{$previewState.unit ? `(${$previewState.unit})` : ''}</strong
 			>
 		</div>
 	{/if}
-	<div class="volume-controls__footer">
+	{#if isVolume}<div class="volume-controls__footer">
 		{#if field}<Toggle
 				label="Surface lighting"
 				checked={$volumeLighting}
@@ -164,8 +175,8 @@
 					: 'Unlit colors match the 2D palette.'
 				: 'Solid geometry uses lighting to reveal its shape.'}</span
 		>
-	</div>
-	{#if !$previewState.allLayers && $volumeProjection === 'average' && field}<div
+	</div>{/if}
+	{#if !$previewState.allLayers && isVolume && $volumeProjection === 'average' && field}<div
 			class="volume-controls__notice"
 		>
 			Waiting for all layers to compute the thickness average.

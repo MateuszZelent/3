@@ -65,7 +65,7 @@ export class VectorMesh extends THREE.Mesh<THREE.InstancedBufferGeometry, THREE.
 				.replace('#include <begin_vertex>', `vec3 transformed = previewTransform(position);`)
 				.replace('#include <color_vertex>', `#include <color_vertex>\nvColor = previewPalette();`);
 		};
-		material.customProgramCacheKey = () => 'preview-vector-v2';
+		material.customProgramCacheKey = () => 'preview-vector-v3';
 	}
 	get count() {
 		return this.geometry.instanceCount;
@@ -154,7 +154,7 @@ vec3 previewSRGB(vec3 c) {
 vec3 previewPalette() {
  if(previewSolid>0.5) return previewSRGB(vec3(0.55,0.78,0.75));
  if(previewFieldScale>0.5) {
-  float value=previewVector[int(previewColorMode)-1]*previewNorm;
+  float value=(previewColorMode>3.5?length(previewVector):previewVector[int(previewColorMode)-1])*previewNorm;
   float span=previewRange.y-previewRange.x;
   float t=span>0.0?clamp((value-previewRange.x)/span,0.0,1.0):0.5;
   float p=t*float(previewPaletteSize-1);int i=min(int(floor(p)),previewPaletteSize-2);

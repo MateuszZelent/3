@@ -18,7 +18,6 @@
 		setBrightness,
 		setQuality,
 		setRenderMode,
-		setVoxelColorMode,
 		setVoxelGap,
 		setVoxelOpacity,
 		setVoxelSampling,
@@ -26,7 +25,6 @@
 		setTopoEnabled,
 		setTopoComponent,
 		setTopoMultiplier,
-		voxelColorMode,
 		voxelGap,
 		voxelOpacity,
 		voxelSampling,
@@ -36,7 +34,6 @@
 		topoMultiplier,
 		type Preview3DRenderMode,
 		type QualityLevel,
-		type VoxelColorMode,
 		type VoxelSampling,
 		type TopoComponent
 	} from '$lib/preview/preview3D';
@@ -64,13 +61,6 @@
 		{ key: 'volume', label: 'VOLUME' },
 		{ key: 'glyph', label: 'ARROWS' },
 		{ key: 'voxel', label: 'VOXEL' }
-	];
-
-	const colorModes: { key: VoxelColorMode; label: string }[] = [
-		{ key: 'orientation', label: 'ORI' },
-		{ key: 'x', label: 'X' },
-		{ key: 'y', label: 'Y' },
-		{ key: 'z', label: 'Z' }
 	];
 
 	const samplingModes: { key: VoxelSampling; label: string }[] = [
@@ -203,20 +193,6 @@
 				{/if}
 				{#if $renderMode === 'voxel'}
 					<Toggle label="Opaque voxels (fast)" checked={$voxelOpaque} onchange={setVoxelOpaque} />
-					<div class="control-group">
-						<div class="control-label">Color by</div>
-						<div class="btn-group">
-							{#each colorModes as { key, label }}
-								<button
-									class="seg-btn"
-									class:active={$voxelColorMode === key}
-									onclick={() => setVoxelColorMode(key)}
-								>
-									{label}
-								</button>
-							{/each}
-						</div>
-					</div>
 
 					<div class="control-group">
 						<div class="control-label">

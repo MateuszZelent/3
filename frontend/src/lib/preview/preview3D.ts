@@ -16,7 +16,7 @@ import { THEME } from '$lib/theme/echarts-theme';
 
 export type QualityLevel = 'low' | 'high' | 'ultra';
 export type Preview3DRenderMode = 'glyph' | 'voxel' | 'volume';
-export type VoxelColorMode = 'orientation' | 'x' | 'y' | 'z';
+export type VoxelColorMode = 'orientation' | 'magnitude' | 'value' | 'x' | 'y' | 'z';
 export type VolumeColorMode = 'geometry' | 'value' | VoxelColorMode;
 export const volumeColorMode = writable<VolumeColorMode>('geometry');
 export const volumeProjection = writable<'surface' | 'average'>('surface');
@@ -246,7 +246,13 @@ function loadVoxelColorMode(): VoxelColorMode {
 	}
 
 	const stored = window.localStorage.getItem(STORAGE_KEYS.voxelColorMode);
-	if (stored === 'x' || stored === 'y' || stored === 'z') {
+	if (
+		stored === 'x' ||
+		stored === 'y' ||
+		stored === 'z' ||
+		stored === 'magnitude' ||
+		stored === 'value'
+	) {
 		return stored;
 	}
 
@@ -326,6 +332,9 @@ function componentValue(
 	mode: Exclude<VoxelColorMode, 'orientation'>
 ) {
 	switch (mode) {
+		case 'magnitude':
+			return Math.hypot(x, y, z);
+		case 'value':
 		case 'x':
 			return x;
 		case 'y':
@@ -728,11 +737,12 @@ function updateInstances(display: ThreeDPreview) {
 	const physicalScale = state.normScale || 1;
 	let min = Infinity,
 		max = -Infinity;
-	if (mode === 'volume' && colorMode !== 'geometry' && colorMode !== 'orientation') {
-		const component = colorMode === 'value' ? 0 : ['x', 'y', 'z'].indexOf(colorMode);
-		for (let i = component; i < count * 3; i += 3) {
-			if (state.vectorOccupancy?.[Math.floor(i / 3)] === 0) continue;
-			const value = values[i] * physicalScale;
+	if (colorMode !== 'geometry' && colorMode !== 'orientation') {
+		for (let i = 0; i < count; i++) {
+			if (state.vectorOccupancy?.[i] === 0) continue;
+			const value =
+				componentValue(values[i * 3], values[i * 3 + 1], values[i * 3 + 2], colorMode) *
+				physicalScale;
 			if (Number.isFinite(value)) {
 				min = Math.min(min, value);
 				max = Math.max(max, value);
@@ -749,7 +759,7 @@ function updateInstances(display: ThreeDPreview) {
 		fieldScale.min = min;
 		fieldScale.max = max;
 	}
-	if (mode === 'volume') volumeLegend.set(fieldScale);
+	volumeLegend.set(fieldScale);
 	let visible = 0,
 		uploaded = 0;
 	const rebuild =
@@ -761,7 +771,7 @@ function updateInstances(display: ThreeDPreview) {
 		const mesh = display.meshes[block];
 		const scale = mode === 'volume' ? 1 : Math.max(0.12, step * (1 - get(voxelGap)));
 		mesh.uniforms.previewFieldScale.value =
-			mode === 'volume' && colorMode !== 'orientation' && colorMode !== 'geometry' ? 1 : 0;
+			colorMode !== 'orientation' && colorMode !== 'geometry' ? 1 : 0;
 		mesh.uniforms.previewRange.value.set(fieldScale.min, fieldScale.max);
 		mesh.uniforms.previewNorm.value = physicalScale;
 		mesh.uniforms.previewPaletteSize.value = fieldScale.palette.length;
@@ -779,11 +789,11 @@ function updateInstances(display: ThreeDPreview) {
 			mode !== 'glyph' ? scale * layout.stepY : layout.glyphScale
 		);
 		mesh.uniforms.previewColorMode.value =
-			mode !== 'glyph'
-				? colorMode === 'value'
+			colorMode === 'magnitude'
+				? 4
+				: colorMode === 'value'
 					? 1
-					: Math.max(0, ['orientation', 'x', 'y', 'z'].indexOf(colorMode))
-				: 0;
+					: Math.max(0, ['orientation', 'x', 'y', 'z'].indexOf(colorMode));
 		mesh.uniforms.previewTopo.value = mode === 'voxel' && get(topoEnabled) ? 1 : 0;
 		mesh.uniforms.previewTopoAxis.value = ['x', 'y', 'z'].indexOf(get(topoComponent));
 		mesh.uniforms.previewTopoScale.value = get(topoMultiplier) * layout.glyphScale;
@@ -818,13 +828,8 @@ function updateInstances(display: ThreeDPreview) {
 			if (!Number.isFinite(vx) || !Number.isFinite(vy) || !Number.isFinite(vz)) continue;
 			if (mode === 'glyph' && vx === 0 && vy === 0 && vz === 0) continue;
 			if (mode === 'voxel') {
-				const metric =
-					colorMode === 'orientation'
-						? vx * vx + vy * vy + vz * vz
-						: Math.abs(
-								componentValue(vx, vy, vz, colorMode as Exclude<VoxelColorMode, 'orientation'>)
-							);
-				if (metric < (colorMode === 'orientation' ? threshold * threshold : threshold)) continue;
+				// Changing color must not hide cells with a zero selected component.
+				if (vx * vx + vy * vy + vz * vz < threshold * threshold) continue;
 			}
 			if (axis !== 'none') {
 				const coordinate =
@@ -1184,7 +1189,7 @@ export function setVoxelThreshold(value: number) {
 export function setVoxelColorMode(mode: VoxelColorMode) {
 	persistSetting(STORAGE_KEYS.voxelColorMode, mode);
 	voxelColorMode.set(mode);
-	if (get(renderMode) === 'voxel') {
+	if (get(renderMode) !== 'volume') {
 		scheduleInstanceUpdate();
 	}
 }

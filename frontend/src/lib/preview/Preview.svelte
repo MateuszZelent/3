@@ -583,7 +583,7 @@
 			<div id="container" class="preview-wrapper__canvas" aria-busy={!!$previewTransition}></div>
 			{#if !is2D}<div bind:clientHeight={volumeControlsHeight}>
 					{#if $previewState.region}<RegionWindowControls />{/if}
-					{#if $renderMode === 'volume'}<VolumeControls />{/if}
+					<VolumeControls />
 				</div>{/if}
 
 			{#if $previewState.type === '3D' && hasData}
