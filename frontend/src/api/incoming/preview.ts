@@ -1,3 +1,4 @@
+import type { PreviewRegion } from '$lib/preview/preview3DRegion';
 import { writable } from 'svelte/store';
 
 export type VectorField = Float32Array;
@@ -5,6 +6,8 @@ export type VectorPositions = Int32Array;
 export type ScalarField = Array<Array<number>>;
 
 export interface Preview {
+	region?: PreviewRegion;
+	regionActive?: boolean;
 	transportSampling?: number;
 	serverVectorCount?: number;
 	sequence?: number;

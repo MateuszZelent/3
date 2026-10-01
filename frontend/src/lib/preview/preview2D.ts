@@ -93,13 +93,31 @@ type AxisMetrics = {
 	ySampleCount: number;
 };
 
-export function preview2D() {
+const renderWaiters = new Set<() => void>();
+function waitForChart() {
+	return new Promise<void>((resolve) => {
+		if (!chartInstance || chartInstance.isDisposed()) {
+			resolve();
+			return;
+		}
+		const chart = chartInstance;
+		const finished = () => {
+			chart.off('finished', finished);
+			renderWaiters.delete(finished);
+			resolve();
+		};
+		renderWaiters.add(finished);
+		chart.on('finished', finished);
+	});
+}
+
+export function preview2D(): Promise<void> {
 	const state = get(previewState);
 	syncWindowGeometry();
 	if (!state.scalarField || state.scalarField.length === 0) {
 		disposePreview2D();
 		disposePreview3D();
-		return;
+		return Promise.resolve();
 	}
 
 	// Dispose 3D renderer if it was active
@@ -107,17 +125,18 @@ export function preview2D() {
 
 	const container = document.getElementById('container');
 	if (!container) {
-		return;
+		return Promise.resolve();
 	}
 
 	// Create chart instance only when truly needed (first time or after explicit dispose)
 	if (chartInstance === undefined || chartInstance.isDisposed()) {
-		init();
-		return;
+		return init();
 	}
 
 	// Keep updates incremental to avoid visible canvas resets/flicker.
+	const completion = waitForChart();
 	updateData();
+	return completion;
 }
 
 function formatMagnitude(value: number) {
@@ -308,8 +327,8 @@ function updateData() {
 				{
 					name: ps.quantity,
 					animation: false,
-					progressive: 0,
-					progressiveThreshold: Number.MAX_SAFE_INTEGER,
+					progressive: ps.scalarField.length > 16384 ? 4096 : 0,
+					progressiveThreshold: 16384,
 					data: ps.scalarField
 				}
 			],
@@ -319,10 +338,10 @@ function updateData() {
 	);
 }
 
-function init() {
+function init(): Promise<void> {
 	const chartDom = document.getElementById('container');
 	if (!chartDom) {
-		return;
+		return Promise.resolve();
 	}
 	// Reuse existing instance if possible — avoids canvas teardown/flicker.
 	if (!chartInstance || chartInstance.isDisposed()) {
@@ -332,6 +351,7 @@ function init() {
 			useDirtyRect: true
 		});
 	}
+	const completion = waitForChart();
 	setFullOptions();
 	chartInstance.on('datazoom', syncChartWindow);
 	chartInstance.on('restore', () => {
@@ -339,6 +359,7 @@ function init() {
 		chartInstance?.setOption({ grid: planeGrid() });
 	});
 	resizeECharts();
+	return completion;
 }
 
 /** Replace all chart options on the existing instance (no canvas destruction). */
@@ -495,9 +516,10 @@ function setFullOptions() {
 					type: 'heatmap',
 					selectedMode: false,
 					emphasis: { disabled: true },
-					// Disable progressive chunks to avoid visible left-to-right repainting on each refresh.
-					progressive: 0,
-					progressiveThreshold: Number.MAX_SAFE_INTEGER,
+					// Large planes render in bounded chunks; stream ACK waits for finished.
+					// Small planes retain atomic updates without progressive repainting.
+					progressive: ps.scalarField.length > 16384 ? 4096 : 0,
+					progressiveThreshold: 16384,
 					animation: false,
 					data: ps.scalarField
 				}
@@ -541,11 +563,12 @@ function setFullOptions() {
 			animation: false,
 			animationDurationUpdate: 0
 		},
-		{ notMerge: true }
+		{ notMerge: true, lazyUpdate: true }
 	);
 }
 
 export function disposePreview2D() {
+	for (const finish of [...renderWaiters]) finish();
 	if (chartInstance && !chartInstance.isDisposed()) {
 		chartInstance.dispose();
 	}

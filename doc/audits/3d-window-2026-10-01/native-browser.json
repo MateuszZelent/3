@@ -1,0 +1,99 @@
+{
+  "fullGrid": [
+    100,
+    8,
+    4
+  ],
+  "nativeWindow": {
+    "enabled": true,
+    "start": [
+      2040,
+      0,
+      0
+    ],
+    "end": [
+      2072,
+      8,
+      4
+    ],
+    "mode": "native",
+    "samples": [
+      4096,
+      8,
+      4
+    ],
+    "maxPoints": 1000000,
+    "requestId": "3y8y18ety6e-2"
+  },
+  "nativeGrid": [
+    32,
+    8,
+    4
+  ],
+  "nativeOccupied": 992,
+  "panWindow": {
+    "enabled": true,
+    "start": [
+      2050,
+      0,
+      0
+    ],
+    "end": [
+      2082,
+      8,
+      4
+    ],
+    "mode": "native",
+    "samples": [
+      4096,
+      8,
+      4
+    ],
+    "maxPoints": 1000000,
+    "requestId": "3y8y18ety6e-3"
+  },
+  "customGrid": [
+    7,
+    8,
+    3
+  ],
+  "xyzWindow": {
+    "enabled": true,
+    "start": [
+      2050,
+      1,
+      1
+    ],
+    "end": [
+      2082,
+      7,
+      3
+    ],
+    "mode": "custom",
+    "samples": [
+      7,
+      8,
+      3
+    ],
+    "maxPoints": 1000000,
+    "requestId": "3y8y18ety6e-10"
+  },
+  "alpha": {
+    "quantity": "alpha",
+    "scale": 0.020000001415610313,
+    "points": 84,
+    "colorBy": "value"
+  },
+  "restoredGrid": [
+    100,
+    8,
+    4
+  ],
+  "mobileCanvas": {
+    "x": 34,
+    "y": 820.15625,
+    "width": 322,
+    "height": 513.25
+  },
+  "errors": []
+}

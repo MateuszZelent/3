@@ -55,3 +55,13 @@ describe('volume surface projection', () => {
 		]);
 	});
 });
+
+it('keeps uniform Float32 fields from expanding rounding noise across the palette', () => {
+	const scale = getColorScale(0.01999999955, 0.02000000142);
+	expect(scale.min).toBeLessThan(0.0195);
+	expect(scale.max).toBeGreaterThan(0.0205);
+	const a = (0.01999999955 - scale.min) / (scale.max - scale.min);
+	const b = (0.02000000142 - scale.min) / (scale.max - scale.min);
+	expect(Math.abs(a - b)).toBeLessThan(1e-5);
+	expect(getColorScale(0, 0)).toMatchObject({ min: -1e-12, max: 1e-12 });
+});

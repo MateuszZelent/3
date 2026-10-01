@@ -19,6 +19,9 @@ import (
 const previewHardLimit = 1000000
 
 type PreviewState struct {
+	Region                PreviewRegion `msgpack:"region"`
+	regionFullAllLayers   bool
+	RegionActive          bool `msgpack:"regionActive"`
 	previewHost           *cuda.PreviewHostBuffer
 	occupancyHost         *cuda.PreviewHostBuffer
 	pendingScalar         *data.Slice
@@ -154,6 +157,7 @@ func packVectorPositions(dst []byte, positions []Vector3i) []byte {
 
 func (s *PreviewState) setVectorPayload(values []Vector3f, positions []Vector3i) {
 	key := fmt.Sprintf("%s/%d/%v/%d/%d/%d/%d/%t", s.Quantity, s.Layer, s.previewMeshSize, s.AppliedXChosenSize, s.AppliedYChosenSize, s.AppliedZChosenSize, s.AppliedLayerStride, s.AllLayers)
+	key += fmt.Sprintf("/%t/%v/%v", s.RegionActive, s.Region.Start, s.Region.End)
 	topologyChanged := key != s.cachedTopologyKey || !sameVectorPositions(s.VectorFieldPositions, positions)
 	s.cachedTopologyKey = key
 	s.VectorFieldValues = values
@@ -221,6 +225,7 @@ func initPreviewAPI(e *echo.Group, ws *WebSocketManager) *PreviewState {
 	previewState.AppliedXChosenSize = previewState.XChosenSize
 	previewState.AppliedYChosenSize = previewState.YChosenSize
 	previewState.AppliedLayerStride = 1
+	e.POST("/api/preview/region", previewState.postPreviewRegion)
 	e.POST("/api/preview/section", previewState.postPreviewSection)
 	e.POST("/api/preview/planeResolution", previewState.postPlaneResolution)
 	e.POST("/api/preview/fullResolution", previewState.postFullResolution)
@@ -347,11 +352,16 @@ func (s *PreviewState) UpdateQuantityBuffer() {
 		defer cuda.Recycle(GPUIn)
 	}
 
+	s.RegionActive = s.Type == "3D" && s.Region.Enabled
 	if s.Type == "2D" {
 		s.updatePlaneScalar(GPUIn)
 		return
 	}
 
+	if s.RegionActive {
+		s.updateRegion(GPUIn, componentCount)
+		return
+	}
 	depthLayers := 1
 	if s.AllLayers && s.Type == "3D" {
 		depthLayers = maxInt(GPUIn.Size()[2], 1)
@@ -531,7 +541,11 @@ func (s *PreviewState) captureVectorCPU(cpu *data.Slice, stride, depth int) {
 	if !s.AllLayers {
 		layer = s.Layer
 	}
-	cuda.ResizePreview(s.occupancyGPU, geom, layer, stride)
+	if s.RegionActive {
+		cuda.ResizePreviewRegion(s.occupancyGPU, geom, s.Region.Start, s.Region.size())
+	} else {
+		cuda.ResizePreview(s.occupancyGPU, geom, layer, stride)
+	}
 	s.occupancyHost.Copy(s.occupancyGPU)
 	s.pendingOccupancy = s.occupancyCPU
 }
@@ -801,6 +815,13 @@ func (s *PreviewState) addPossibleDownscaleSizes() bool {
 		return true
 	}
 
+	if s.Region.Mode != "" {
+		s.Region.clamp(meshSize)
+		if !s.Region.Enabled {
+			s.Region.Start = [3]int{}
+			s.Region.End = meshSize
+		}
+	}
 	xPossibleSizes := possiblePreviewXYSizes(meshSize[0])
 	yPossibleSizes := possiblePreviewXYSizes(meshSize[1])
 	if len(xPossibleSizes) == 0 || len(yPossibleSizes) == 0 {

@@ -1,5 +1,10 @@
 <script lang="ts">
 	import {
+		previewTransition,
+		previewTransitionError,
+		requestPreviewTransition
+	} from '$api/previewTransition';
+	import {
 		connected,
 		previewConnected,
 		previewError,
@@ -19,7 +24,6 @@
 		postComponent,
 		postAutoScaleEnabled,
 		postLayer,
-		postQuantity,
 		postXChosenSize,
 		postZChosenSize,
 		postYChosenSize
@@ -27,6 +31,7 @@
 	import Slider from '$components/Slider.svelte';
 	import SliceControl from './inputs/SliceControl.svelte';
 	import VolumeControls from './inputs/VolumeControls.svelte';
+	import RegionWindowControls from './inputs/RegionWindowControls.svelte';
 	import PlaneWindowControls from './inputs/PlaneWindowControls.svelte';
 	import {
 		previewPlaneAxes,
@@ -135,7 +140,15 @@
 	const componentOptions = ['x', 'y', 'z'].map((value) => ({ value, label: value.toUpperCase() }));
 	function setDimension(mode: string) {
 		if (mode === '3D' && $previewState.nComp === 1) setRenderMode('volume');
-		postComponent(mode === '3D' ? '3D' : lastComponent);
+		void requestPreviewTransition(
+			'component',
+			{ component: mode === '3D' ? '3D' : lastComponent },
+			`Switching to ${mode === '3D' ? '3D volume' : '2D section'}`,
+			{ type: mode }
+		);
+	}
+	function changeQuantity(quantity: string) {
+		void requestPreviewTransition('quantity', { quantity }, `Loading ${quantity}`, { quantity });
 	}
 	function setSlice(index: number) {
 		if (Number.isInteger(index) && index >= 0 && index < sliceCount)
@@ -358,16 +371,17 @@
 		<div class="studio-source">
 			<SelectField
 				label="Quantity"
-				value={$previewState.quantity}
+				value={$previewTransition?.quantity || $previewState.quantity}
+				disabled={!!$previewTransition}
 				options={quantityOptions}
-				onchange={postQuantity}
+				onchange={changeQuantity}
 			/>
 			<SegmentedControl
 				label="View"
 				value={is2D ? '2D' : '3D'}
 				options={[
-					{ value: '3D', label: '3D volume' },
-					{ value: '2D', label: '2D section' }
+					{ value: '3D', label: '3D volume', disabled: !!$previewTransition },
+					{ value: '2D', label: '2D section', disabled: !!$previewTransition }
 				]}
 				onchange={setDimension}
 			/>
@@ -450,7 +464,7 @@
 					label="Show"
 					value={$previewState.allLayers ? 'all' : 'single'}
 					options={[
-						{ value: 'single', label: 'Single layer' },
+						{ value: 'single', label: 'Single layer', disabled: $previewState.regionActive },
 						{ value: 'all', label: 'All layers', disabled: $meshState.Nz < 2 }
 					]}
 					onchange={(mode) => postAllLayers(mode === 'all')}
@@ -530,9 +544,7 @@
 					</div>
 				</details>
 			{/if}
-			{#if !is2D}<ViewCube
-					axisBottom={$renderMode === 'volume' ? volumeControlsHeight + 20 : 20}
-				/>{/if}
+			{#if !is2D}<ViewCube axisBottom={volumeControlsHeight + 20} />{/if}
 
 			{#if !$connected || !hasData}
 				<div class="preview-wrapper__empty">
@@ -555,9 +567,23 @@
 			{/if}
 
 			{#if is2D}<PlaneWindowControls />{/if}
-			<div id="container" class="preview-wrapper__canvas"></div>
-			{#if !is2D && $renderMode === 'volume'}<div bind:clientHeight={volumeControlsHeight}>
-					<VolumeControls />
+			{#if $previewTransition}<div class="preview-transition" role="status" aria-live="polite">
+					<span class="preview-transition__spinner" aria-hidden="true"></span>
+					<div>
+						<strong>{$previewTransition.label}</strong><span
+							>{$previewTransition.phase === 'backend'
+								? 'Waiting for the backend to prepare field data…'
+								: 'Rendering the new view…'} · {Math.max(
+								0,
+								(previewNow - $previewTransition.startedAt) / 1000
+							).toFixed(0)} s</span
+						>
+					</div>
+				</div>{/if}
+			<div id="container" class="preview-wrapper__canvas" aria-busy={!!$previewTransition}></div>
+			{#if !is2D}<div bind:clientHeight={volumeControlsHeight}>
+					{#if $previewState.region}<RegionWindowControls />{/if}
+					{#if $renderMode === 'volume'}<VolumeControls />{/if}
 				</div>{/if}
 
 			{#if $previewState.type === '3D' && hasData}
@@ -575,9 +601,11 @@
 						: 1}
 					· display sampling {$renderMode === 'volume'
 						? 1
-						: $renderMode === 'voxel'
-							? $voxelSampling
-							: $glyphSampling}×
+						: $previewState.regionActive && $previewState.region?.mode === 'native'
+							? 1
+							: $renderMode === 'voxel'
+								? $voxelSampling
+								: $glyphSampling}×
 					{#if $clipAxis !== 'none'}
 						· section {$clipAxis.toUpperCase()}{/if}
 					· {$previewPerformance.updateMs.toFixed(1)} ms update
@@ -614,6 +642,9 @@
 			{/if}
 		</div>
 
+		{#if $previewTransitionError}<p class="studio-alert" role="alert">
+				{$previewTransitionError}
+			</p>{/if}
 		{#if $previewError}<p class="studio-alert" role="alert">{$previewError}</p>{/if}
 		{#if $connected && !$previewConnected}<p class="studio-alert" role="status">
 				Preview stream disconnected; the displayed field may be stale.
@@ -621,7 +652,13 @@
 		{#if $previewState.autoDownscaled && $previewState.autoDownscaleMessage}
 			<div class="preview-notice">
 				<StatusBadge
-					label={$previewState.autoScaleEnabled ? 'Auto-scaled' : 'Safety limit'}
+					label={$previewState.regionActive
+						? $previewState.region?.mode === 'native'
+							? 'Safety limit'
+							: 'Window budget'
+						: $previewState.autoScaleEnabled
+							? 'Auto-scaled'
+							: 'Safety limit'}
 					tone="warn"
 				/>
 				<p>{$previewState.autoDownscaleMessage}</p>
@@ -640,99 +677,107 @@
 			>
 			<div class="settings-grid">
 				<section class="settings-card" aria-label="Preview resolution">
-					<div class="settings-card__heading">
-						<div>
-							<span class="settings-card__eyebrow">Sampling</span>
-							<h3>{is2D ? 'Plane resolution' : 'Volume resolution'}</h3>
+					{#if !is2D && $previewState.regionActive}
+						<h3>Local window resolution</h3>
+						<p class="settings-hint">
+							Set Native cells or Custom resolution in Render window below the viewport. Full-domain
+							resolution settings are retained.
+						</p>
+					{:else}
+						<div class="settings-card__heading">
+							<div>
+								<span class="settings-card__eyebrow">Sampling</span>
+								<h3>{is2D ? 'Plane resolution' : 'Volume resolution'}</h3>
+							</div>
+							<Button
+								size="sm"
+								variant="outline"
+								onclick={postFullResolution}
+								disabled={!$previewState.xPossibleSizes.length}>Full mesh resolution</Button
+							>
 						</div>
-						<Button
-							size="sm"
-							variant="outline"
-							onclick={postFullResolution}
-							disabled={!$previewState.xPossibleSizes.length}>Full mesh resolution</Button
-						>
-					</div>
-					<div class="resolution-sliders">
-						{#if is2D}
-							<Slider
-								label={`${axes.u.toUpperCase()} data points`}
-								value={planeUSize}
-								values={$previewState.planeUPossibleSizes || $previewState.xPossibleSizes}
-								onChangeFunction={(uSize) => postPlaneResolution({ uSize })}
+						<div class="resolution-sliders">
+							{#if is2D}
+								<Slider
+									label={`${axes.u.toUpperCase()} data points`}
+									value={planeUSize}
+									values={$previewState.planeUPossibleSizes || $previewState.xPossibleSizes}
+									onChangeFunction={(uSize) => postPlaneResolution({ uSize })}
+								/>
+								<Slider
+									label={`${axes.v.toUpperCase()} data points`}
+									value={planeVSize}
+									values={$previewState.planeVPossibleSizes || $previewState.yPossibleSizes}
+									onChangeFunction={(vSize) => postPlaneResolution({ vSize })}
+								/>
+							{:else}
+								<Slider
+									label="X data points"
+									value={$previewState.xChosenSize}
+									values={$previewState.xPossibleSizes}
+									onChangeFunction={postXChosenSize}
+								/>
+								<Slider
+									label="Y data points"
+									value={$previewState.yChosenSize}
+									values={$previewState.yPossibleSizes}
+									onChangeFunction={postYChosenSize}
+								/>
+								{#if $previewState.allLayers}<Slider
+										label="Z data points"
+										value={$previewState.zChosenSize || $meshState.Nz}
+										values={zSizes}
+										onChangeFunction={postZChosenSize}
+										isDisabled={!zSamplingSupported}
+									/>{:else if $meshState.Nz > 1}<Slider
+										label="Z layer"
+										value={$previewState.layer}
+										values={Array.from({ length: $meshState.Nz }, (_, i) => i)}
+										onChangeFunction={postLayer}
+									/>{/if}
+							{/if}
+						</div>
+						<div class="resolution-summary">
+							<span
+								>Requested <strong
+									>{is2D
+										? `${planeUSize} × ${planeVSize}`
+										: `${$previewState.xChosenSize} × ${$previewState.yChosenSize} × ${$previewState.allLayers ? $previewState.zChosenSize : 1}`}</strong
+								></span
+							><span
+								>Applied <strong
+									>{is2D
+										? `${appliedU} × ${appliedV}`
+										: `${$previewState.appliedXChosenSize} × ${$previewState.appliedYChosenSize} × ${$previewState.allLayers ? $previewState.appliedZChosenSize : 1}`}</strong
+								></span
+							>
+						</div>
+						<div class="budget-controls">
+							<Toggle
+								label="Auto-adjust resolution"
+								checked={$previewState.autoScaleEnabled}
+								onchange={postAutoScaleEnabled}
+							/><SelectField
+								label="Auto-adjust budget"
+								value={$previewState.maxPoints}
+								options={budgetOptions}
+								disabled={!$previewState.autoScaleEnabled}
+								onchange={(value) => postMaxPoints(Number(value))}
 							/>
-							<Slider
-								label={`${axes.v.toUpperCase()} data points`}
-								value={planeVSize}
-								values={$previewState.planeVPossibleSizes || $previewState.yPossibleSizes}
-								onChangeFunction={(vSize) => postPlaneResolution({ vSize })}
-							/>
-						{:else}
-							<Slider
-								label="X data points"
-								value={$previewState.xChosenSize}
-								values={$previewState.xPossibleSizes}
-								onChangeFunction={postXChosenSize}
-							/>
-							<Slider
-								label="Y data points"
-								value={$previewState.yChosenSize}
-								values={$previewState.yPossibleSizes}
-								onChangeFunction={postYChosenSize}
-							/>
-							{#if $previewState.allLayers}<Slider
-									label="Z data points"
-									value={$previewState.zChosenSize || $meshState.Nz}
-									values={zSizes}
-									onChangeFunction={postZChosenSize}
-									isDisabled={!zSamplingSupported}
-								/>{:else if $meshState.Nz > 1}<Slider
-									label="Z layer"
-									value={$previewState.layer}
-									values={Array.from({ length: $meshState.Nz }, (_, i) => i)}
-									onChangeFunction={postLayer}
-								/>{/if}
-						{/if}
-					</div>
-					<div class="resolution-summary">
-						<span
-							>Requested <strong
-								>{is2D
-									? `${planeUSize} × ${planeVSize}`
-									: `${$previewState.xChosenSize} × ${$previewState.yChosenSize} × ${$previewState.allLayers ? $previewState.zChosenSize : 1}`}</strong
-							></span
-						><span
-							>Applied <strong
-								>{is2D
-									? `${appliedU} × ${appliedV}`
-									: `${$previewState.appliedXChosenSize} × ${$previewState.appliedYChosenSize} × ${$previewState.allLayers ? $previewState.appliedZChosenSize : 1}`}</strong
-							></span
-						>
-					</div>
-					<div class="budget-controls">
-						<Toggle
-							label="Auto-adjust resolution"
-							checked={$previewState.autoScaleEnabled}
-							onchange={postAutoScaleEnabled}
-						/><SelectField
-							label="Auto-adjust budget"
-							value={$previewState.maxPoints}
-							options={budgetOptions}
-							disabled={!$previewState.autoScaleEnabled}
-							onchange={(value) => postMaxPoints(Number(value))}
-						/>
-					</div>
-					{#if !is2D && $previewState.allLayers && !zSamplingSupported}<p
-							class="settings-hint"
-							role="status"
-						>
-							Z resolution is unavailable in this running simulation. Restart it with the updated
-							application to enable this control.
-						</p>{/if}
-					<p class="settings-hint">
-						Area averages preserve coverage within each pixel.{#if !is2D}{' '}
-							Z uses sampled layers.{/if} Budgets cap the requested grid.{#if !$previewState.autoScaleEnabled}{' '}
-							Safety limit: 1,000,000 points.{/if}
-					</p>
+						</div>
+						{#if !is2D && $previewState.allLayers && !zSamplingSupported}<p
+								class="settings-hint"
+								role="status"
+							>
+								Z resolution is unavailable in this running simulation. Restart it with the updated
+								application to enable this control.
+							</p>{/if}
+						<p class="settings-hint">
+							Area averages preserve coverage within each pixel.{#if !is2D}{' '}
+								Z uses sampled layers.{/if} Budgets cap the requested grid.{#if !$previewState.autoScaleEnabled}{' '}
+								Safety limit: 1,000,000 points.{/if}
+						</p>
+					{/if}
 				</section>
 				<section class="settings-card" aria-label="Preview appearance">
 					<div class="settings-card__heading">
@@ -819,6 +864,53 @@
 </Panel>
 
 <style>
+	.preview-transition {
+		position: absolute;
+		z-index: 8;
+		top: 64px;
+		left: 16px;
+		right: 16px;
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
+		padding: 1rem;
+		border: 1px solid var(--border-subtle);
+		border-radius: 12px;
+		background: var(--surface-1);
+		box-shadow: 0 8px 24px #0005;
+		pointer-events: none;
+	}
+	.preview-transition div {
+		display: grid;
+		gap: 0.3rem;
+	}
+	.preview-transition strong {
+		font-size: 0.8rem;
+	}
+	.preview-transition span {
+		font-size: 0.7rem;
+		color: var(--text-2);
+	}
+	.preview-transition__spinner {
+		width: 20px;
+		height: 20px;
+		flex: none;
+		border: 2px solid var(--border-subtle);
+		border-top-color: var(--accent);
+		border-radius: 50%;
+		animation: preview-spin 0.8s linear infinite;
+	}
+	@keyframes preview-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.preview-transition__spinner {
+			animation: none;
+		}
+	}
+
 	.preview-studio {
 		display: flex;
 		flex-direction: column;

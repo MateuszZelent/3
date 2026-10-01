@@ -1,6 +1,16 @@
 export type ColorScale = { min: number; max: number; palette: string[] };
 
 export function getColorScale(min: number, max: number): ColorScale {
+	// CUDA preview averaging uses Float32. Do not stretch a few rounding ULPs
+	// of a constant field into the entire palette (e.g. uniform alpha).
+	const magnitude = Math.max(Math.abs(min), Math.abs(max));
+	if (Number.isFinite(min) && Number.isFinite(max) && max - min <= magnitude * 1e-6) {
+		const center = (min + max) / 2;
+		const padding = magnitude > 0 ? magnitude * 0.05 : 1e-12;
+		min = center - padding;
+		max = center + padding;
+	}
+
 	if (min < 0 && max > 0) {
 		const bound = Math.max(Math.abs(min), Math.abs(max));
 		return {

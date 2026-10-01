@@ -99,10 +99,26 @@ const STORAGE_KEYS = {
 const _tempVec = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
 
+// Local coordinates avoid precision loss for a small window far from the origin.
+// Source bounds remain available in the window controls in physical units.
+function getRenderMesh() {
+	const mesh = get(meshState),
+		p = get(previewState),
+		r = p.region;
+	if (!p.regionActive || !r) return mesh;
+	const nz = Math.max(p.appliedZChosenSize, 1);
+	return {
+		...mesh,
+		Nx: r.end[0] - r.start[0],
+		Ny: r.end[1] - r.start[1],
+		Nz: nz,
+		dz: ((r.end[2] - r.start[2]) * mesh.dz) / nz
+	};
+}
 function getLayout() {
 	const preview = get(previewState);
 	return preview3DLayout(
-		get(meshState),
+		getRenderMesh(),
 		getPreviewWidthCells(),
 		getPreviewHeightCells(),
 		preview.appliedLayerStride || 1,
@@ -584,12 +600,26 @@ function isSampledPosition(x: number, y: number, z: number, step: number, allLay
 	return true;
 }
 
+let lastVolumeQuantity: string | undefined;
 function updateInstances(display: ThreeDPreview) {
 	const state = get(previewState),
 		layout = getLayout(),
 		mode = get(renderMode);
-	if (mode === 'volume' && get(previewClientBudget) !== 1000000) setPreviewClientBudget(1000000);
-	const sourceDepth = get(meshState).Nz;
+	if (
+		mode === 'volume' &&
+		state.quantity !== lastVolumeQuantity &&
+		(lastVolumeQuantity !== undefined || (state.quantity !== 'm' && state.quantity !== 'geom'))
+	) {
+		const previous = get(volumeColorMode);
+		volumeColorMode.set(
+			state.nComp === 1 ? 'value' : previous === 'geometry' || previous === 'value' ? 'x' : previous
+		);
+		volumeScaleMode.set('data');
+	}
+	lastVolumeQuantity = state.quantity;
+	if ((mode === 'volume' || state.regionActive) && get(previewClientBudget) !== 1000000)
+		setPreviewClientBudget(1000000);
+	const sourceDepth = getRenderMesh().Nz;
 	const positions = state.vectorFieldPositions;
 	let values = state.vectorFieldValues;
 	if (
@@ -631,8 +661,11 @@ function updateInstances(display: ThreeDPreview) {
 		1000000
 	);
 	const step =
-		(mode === 'volume' ? 1 : mode === 'voxel' ? get(voxelSampling) : get(glyphSampling)) *
-		(state.transportSampling || 1);
+		(mode === 'volume' || (state.regionActive && state.region?.mode === 'native')
+			? 1
+			: mode === 'voxel'
+				? get(voxelSampling)
+				: get(glyphSampling)) * (state.transportSampling || 1);
 	const stride = Math.max(state.appliedLayerStride || 1, 1);
 	const width = getPreviewWidthCells(),
 		height = getPreviewHeightCells();
@@ -967,7 +1000,8 @@ export function preview3D() {
 		const shapeKey = getPreviewShapeKey();
 		if (shapeKey !== display.shapeKey) {
 			display.shapeKey = shapeKey;
-			resetCamera();
+			if (get(previewState).regionActive) fitPreviewRegion();
+			else resetCamera();
 		}
 	}
 
@@ -1186,6 +1220,21 @@ export function setTopoMultiplier(value: number) {
 	if (get(renderMode) === 'voxel' && get(topoEnabled)) {
 		scheduleInstanceUpdate();
 	}
+}
+
+export function fitPreviewRegion() {
+	const display = get(threeDPreview);
+	if (!display) return;
+	const { centerX, centerY, centerZ, xSize, ySize, depthCells } = getWorldExtents();
+	const vertical = THREE.MathUtils.degToRad(display.camera.fov) / 2;
+	const horizontal = Math.atan(Math.tan(vertical) * display.camera.aspect);
+	const orbitDistance =
+		(Math.hypot(xSize, ySize, depthCells) / 2 / Math.sin(Math.min(vertical, horizontal))) * 1.1;
+	const direction = display.camera.position.clone().sub(display.controls.target).normalize();
+	display.controls.target.set(centerX, centerY, centerZ);
+	display.camera.position.copy(display.controls.target).addScaledVector(direction, orbitDistance);
+	display.controls.update();
+	requestPreview3DRender();
 }
 
 export function resetCamera() {

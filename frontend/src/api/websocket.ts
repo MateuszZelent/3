@@ -1,3 +1,4 @@
+import { markPreviewRendering, finishPreviewTransition } from './previewTransition';
 import { decode } from '@msgpack/msgpack';
 
 import { type Preview, previewState } from './incoming/preview';
@@ -43,6 +44,8 @@ export const previewClientBudget = writable(1000000);
 let lastSequence = 0;
 let pendingAck: { sequence: number; revision: number } | null = null;
 let previewRenderScheduled = false;
+let previewRendering = false;
+let previewRenderAgain = false;
 let tableRenderScheduled = false;
 let cachedVectorPositions: Int32Array<ArrayBufferLike> = new Int32Array();
 let cachedTopologyRevision = -1;
@@ -151,7 +154,8 @@ function normalizePreview(msg: PreviewWire): Preview {
 
 async function renderPreview() {
 	if (get(previewState).type === '3D') {
-		const { preview3D } = await import('$lib/preview/preview3D');
+		const { preview3D, setRenderMode, renderMode } = await import('$lib/preview/preview3D');
+		if (get(previewState).nComp === 1 && get(renderMode) !== 'volume') setRenderMode('volume');
 		await preview3D();
 		return;
 	}
@@ -166,6 +170,10 @@ async function renderTablePlot() {
 }
 
 function schedulePreviewRender() {
+	if (previewRendering) {
+		previewRenderAgain = true;
+		return;
+	}
 	if (previewRenderScheduled) {
 		return;
 	}
@@ -176,11 +184,25 @@ function schedulePreviewRender() {
 			ackPreview();
 			return;
 		}
+		previewRendering = true;
+		const rendered = get(previewState);
+		const ack = pendingAck;
+		markPreviewRendering(rendered);
 		void renderPreview()
-			.then(ackPreview)
+			.then(() => {
+				finishPreviewTransition(rendered);
+				if (pendingAck === ack) ackPreview();
+			})
 			.catch((error) => {
 				previewError.set(String(error));
-				ackPreview();
+				if (pendingAck === ack) ackPreview();
+			})
+			.finally(() => {
+				previewRendering = false;
+				if (previewRenderAgain) {
+					previewRenderAgain = false;
+					schedulePreviewRender();
+				}
 			});
 	});
 }
