@@ -1,5 +1,6 @@
 import { previewState } from '$api/incoming/preview';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
+import { preview2DWindow, clampWindow, type WindowRange } from './preview2DWindow';
 import { meshState } from '$api/incoming/mesh';
 import { disposePreview3D } from './preview3D';
 import {
@@ -18,6 +19,70 @@ import {
 let chartInstance: ECharts | undefined;
 let resizeObserver: ResizeObserver | null = null;
 
+const AUTOSCALE_KEY = 'mumax:preview2d-autoscale';
+function loadAutoscale() {
+	try {
+		return typeof localStorage === 'undefined' || localStorage.getItem(AUTOSCALE_KEY) !== 'false';
+	} catch {
+		return true;
+	}
+}
+export const preview2DAutoscale = writable(loadAutoscale());
+let windowGeometry = '';
+export function setPreview2DAutoscale(enabled: boolean) {
+	preview2DAutoscale.set(enabled);
+	try {
+		localStorage.setItem(AUTOSCALE_KEY, String(enabled));
+	} catch {
+		/* Storage can be unavailable. */
+	}
+	if (chartInstance && !chartInstance.isDisposed()) chartInstance.setOption({ grid: planeGrid() });
+}
+export function setPreview2DWindow(axis: 'u' | 'v', range: WindowRange) {
+	const metrics = getAxisMetrics();
+	const normalized = clampWindow(
+		range,
+		1 / (axis === 'u' ? metrics.xSampleCount : metrics.ySampleCount)
+	);
+	preview2DWindow.update((current) => ({ ...current, [axis]: normalized }));
+	if (chartInstance && !chartInstance.isDisposed())
+		chartInstance.dispatchAction({
+			type: 'dataZoom',
+			dataZoomId: `window-${axis}`,
+			start: normalized[0] * 100,
+			end: normalized[1] * 100
+		});
+}
+export function resetPreview2DWindow() {
+	setPreview2DWindow('u', [0, 1]);
+	setPreview2DWindow('v', [0, 1]);
+}
+function syncChartWindow() {
+	if (!chartInstance || chartInstance.isDisposed()) return;
+	const zoom = (chartInstance.getOption().dataZoom || []) as Array<{
+		id: string;
+		start: number;
+		end: number;
+	}>;
+	const current = get(preview2DWindow);
+	const next = { ...current };
+	for (const axis of ['u', 'v'] as const) {
+		const item = zoom.find((item) => item.id === `window-${axis}`);
+		if (item) next[axis] = [item.start / 100, item.end / 100];
+	}
+	preview2DWindow.set(next);
+	chartInstance.setOption({ grid: planeGrid() });
+}
+function syncWindowGeometry() {
+	const mesh = get(meshState),
+		state = get(previewState);
+	const key = `${state.plane || 'xy'}/${mesh.Nx}/${mesh.Ny}/${mesh.Nz}/${mesh.dx}/${mesh.dy}/${mesh.dz}`;
+	if (key === windowGeometry) return;
+	windowGeometry = key;
+	preview2DWindow.set({ u: [0, 1], v: [0, 1] });
+	if (chartInstance && !chartInstance.isDisposed()) resetPreview2DWindow();
+}
+
 type ColorScale = {
 	min: number;
 	max: number;
@@ -35,6 +100,7 @@ type AxisMetrics = {
 
 export function preview2D() {
 	const state = get(previewState);
+	syncWindowGeometry();
 	if (!state.scalarField || state.scalarField.length === 0) {
 		disposePreview2D();
 		disposePreview3D();
@@ -297,6 +363,11 @@ function init() {
 		});
 	}
 	setFullOptions();
+	chartInstance.on('datazoom', syncChartWindow);
+	chartInstance.on('restore', () => {
+		preview2DWindow.set({ u: [0, 1], v: [0, 1] });
+		chartInstance?.setOption({ grid: planeGrid() });
+	});
 	resizeECharts();
 }
 
@@ -436,6 +507,18 @@ function setFullOptions() {
 				}
 			},
 			visualMap: [visualMap],
+			dataZoom: ['u', 'v'].map((axis, index) => ({
+				id: `window-${axis}`,
+				type: 'inside',
+				...(index === 0 ? { xAxisIndex: 0 } : { yAxisIndex: 0 }),
+				filterMode: 'filter',
+				start: get(preview2DWindow)[axis as 'u' | 'v'][0] * 100,
+				end: get(preview2DWindow)[axis as 'u' | 'v'][1] * 100,
+				zoomOnMouseWheel: 'ctrl',
+				moveOnMouseWheel: false,
+				moveOnMouseMove: true,
+				preventDefaultMouseMove: true
+			})),
 			series: [
 				{
 					name: ps.quantity,
@@ -549,12 +632,17 @@ function planeGrid() {
 	const { xExtentNm, yExtentNm } = getAxisMetrics();
 	const width = chartInstance?.getWidth() || 400;
 	const height = chartInstance?.getHeight() || 400;
-	const fitted = fitPreviewPlane(
-		Math.max(width - 94, 1),
-		Math.max(height - 152, 1),
-		xExtentNm,
-		yExtentNm
-	);
+	const availableWidth = Math.max(width - 94, 1),
+		availableHeight = Math.max(height - 152, 1);
+	const window = get(preview2DWindow);
+	const fitted = get(preview2DAutoscale)
+		? { width: availableWidth, height: availableHeight, left: 0, top: 0 }
+		: fitPreviewPlane(
+				availableWidth,
+				availableHeight,
+				xExtentNm * (window.u[1] - window.u[0]),
+				yExtentNm * (window.v[1] - window.v[0])
+			);
 	return {
 		containLabel: false,
 		left: 62 + fitted.left,

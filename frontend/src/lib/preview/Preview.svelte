@@ -26,6 +26,7 @@
 	} from '$api/outgoing/preview';
 	import Slider from '$components/Slider.svelte';
 	import SliceControl from './inputs/SliceControl.svelte';
+	import PlaneWindowControls from './inputs/PlaneWindowControls.svelte';
 	import {
 		previewPlaneAxes,
 		previewSampleCoordinateNm,
@@ -44,7 +45,7 @@
 	import type { ViewportMode } from '$lib/ui/types';
 	import { get } from 'svelte/store';
 	import { onDestroy, onMount } from 'svelte';
-	import { preview2D, resizeECharts, disposePreview2D } from './preview2D';
+	import { preview2D, resizeECharts, disposePreview2D, preview2DAutoscale } from './preview2D';
 	import {
 		preview3D,
 		qualityLevel,
@@ -68,6 +69,7 @@
 
 	let previewNow = $state(Date.now());
 	let viewMode = $state<ViewportMode>('inline');
+	let viewportWidth = $state(1024);
 	let previewWrapper: HTMLDivElement;
 	let previewStudio: HTMLDivElement;
 	let visibilityObserver: IntersectionObserver | null = null;
@@ -75,7 +77,7 @@
 	let popX = $state(60);
 	let popY = $state(60);
 	let popW = $state(760);
-	let popH = $state(540);
+	let popH = $state(760);
 	let dragging = $state(false);
 	let resizing = $state(false);
 	let dragOffX = $state(0);
@@ -184,6 +186,12 @@
 			previewWrapper.requestFullscreen().catch(() => undefined);
 		}
 
+		if (mode === 'popout') {
+			popW = Math.min(popW, window.innerWidth - 32);
+			popH = Math.min(Math.max(popH, is2D ? 720 : 540), window.innerHeight - 32);
+			popX = Math.max(16, Math.min(popX, window.innerWidth - popW - 16));
+			popY = Math.max(16, Math.min(popY, window.innerHeight - popH - 16));
+		}
 		viewMode = mode;
 		setPreferredPreviewMode(mode);
 		scheduleResize();
@@ -234,8 +242,8 @@
 		} else if (resizing) {
 			const dx = event.clientX - dragOffX;
 			const dy = event.clientY - dragOffY;
-			popW = Math.max(460, popW + dx);
-			popH = Math.max(340, popH + dy);
+			popW = Math.max(Math.min(460, window.innerWidth - 32), popW + dx);
+			popH = Math.max(Math.min(is2D ? 660 : 340, window.innerHeight - 32), popH + dy);
 			dragOffX = event.clientX;
 			dragOffY = event.clientY;
 		}
@@ -295,6 +303,8 @@
 		window.removeEventListener('amumax:preview-mode', onPreviewModeRequest as EventListener);
 	});
 </script>
+
+<svelte:window bind:innerWidth={viewportWidth} />
 
 <Panel
 	title="Field studio"
@@ -470,28 +480,31 @@
 					>{/if}
 			</div>
 			{#if viewMode !== 'inline' && is2D}
-				<div class="floating-section-controls">
-					<SegmentedControl
-						value={plane}
-						options={['xy', 'yz', 'xz'].map((value) => ({ value, label: value.toUpperCase() }))}
-						onchange={(value) => postSection({ plane: value as PreviewPlane })}
-					/>
-					<SegmentedControl
-						value={$previewState.allLayers ? 'average' : 'single'}
-						options={[
-							{ value: 'single', label: 'Single layer' },
-							{ value: 'average', label: 'Average' }
-						]}
-						onchange={(value) => postSection({ mode: value as 'single' | 'average' })}
-					/>
-					{#if !$previewState.allLayers}<SliceControl
-							axis={axes.normal}
-							count={sliceCount}
-							cellSize={cellSizes[axes.normal]}
-							value={sliceIndex}
-							onchange={setSlice}
-						/>{/if}
-				</div>
+				<details class="floating-section" open={viewportWidth > 650}>
+					<summary>Section · {plane.toUpperCase()} · {sectionCaption}</summary>
+					<div class="floating-section-controls">
+						<SegmentedControl
+							value={plane}
+							options={['xy', 'yz', 'xz'].map((value) => ({ value, label: value.toUpperCase() }))}
+							onchange={(value) => postSection({ plane: value as PreviewPlane })}
+						/>
+						<SegmentedControl
+							value={$previewState.allLayers ? 'average' : 'single'}
+							options={[
+								{ value: 'single', label: 'Single layer' },
+								{ value: 'average', label: 'Average' }
+							]}
+							onchange={(value) => postSection({ mode: value as 'single' | 'average' })}
+						/>
+						{#if !$previewState.allLayers}<SliceControl
+								axis={axes.normal}
+								count={sliceCount}
+								cellSize={cellSizes[axes.normal]}
+								value={sliceIndex}
+								onchange={setSlice}
+							/>{/if}
+					</div>
+				</details>
 			{/if}
 			{#if !is2D}<ViewCube />{/if}
 
@@ -515,6 +528,7 @@
 				</div>
 			{/if}
 
+			{#if is2D}<PlaneWindowControls />{/if}
 			<div id="container" class="preview-wrapper__canvas"></div>
 
 			{#if $previewState.type === '3D' && $previewState.nComp === 3 && hasData}
@@ -690,7 +704,13 @@
 							<h3>{is2D ? 'Calibrated heatmap' : '3D appearance'}</h3>
 						</div>
 						<StatusBadge
-							label={is2D ? 'Physical scale' : $renderMode === 'voxel' ? 'Voxel' : 'Arrows'}
+							label={is2D
+								? $preview2DAutoscale
+									? 'Autoscale'
+									: 'Physical scale'
+								: $renderMode === 'voxel'
+									? 'Voxel'
+									: 'Arrows'}
 							tone="info"
 						/>
 					</div>
@@ -698,15 +718,15 @@
 						<div class="heatmap-swatch" aria-hidden="true"></div>
 						<div class="heatmap-features">
 							<div>
-								<strong>True proportions</strong><span
-									>Both axes use nanometres from the lower mesh edge and preserve the physical
-									aspect ratio.</span
+								<strong>Flexible viewport</strong><span
+									>Autoscale fills the window for long, narrow samples. Switch it off to preserve
+									physical proportions. Axis coordinates remain in nanometres.</span
 								>
 							</div>
 							<div>
 								<strong>Signed values</strong><span
 									>A diverging scale shows positive and negative fields. The legend follows the
-									visible data range.</span
+									current section’s data range.</span
 								>
 							</div>
 							<div>
@@ -1183,6 +1203,13 @@
 		height: 1.2rem;
 		cursor: nwse-resize;
 		background: linear-gradient(135deg, transparent 55%, rgba(107, 167, 255, 0.45) 55%);
+	}
+	.floating-section > summary {
+		padding: 0.65rem 1rem;
+		font-size: 0.75rem;
+		color: var(--text-2);
+		cursor: pointer;
+		border-bottom: 1px solid var(--border-subtle);
 	}
 	.floating-section-controls {
 		display: flex;

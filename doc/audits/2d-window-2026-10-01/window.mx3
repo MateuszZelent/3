@@ -1,0 +1,5 @@
+SetGridSize(4096,8,2)
+SetCellSize(2e-9,10e-9,20e-9)
+Msat=800e3
+Aex=13e-12
+m=Uniform(1,0,0)
