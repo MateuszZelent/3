@@ -473,8 +473,103 @@ function createControls(camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRe
 	controls.rotateSpeed = 1;
 	controls.target.set(centerX, centerY, centerZ);
 	controls.update();
+	installCameraRoll(camera, renderer.domElement, controls);
 
 	return controls;
+}
+
+function installCameraRoll(
+	camera: THREE.PerspectiveCamera,
+	canvas: HTMLCanvasElement,
+	controls: TrackballControls
+) {
+	let rolling = false;
+	let pointerId = 0;
+	let lastX = 0;
+	let previousFlags = { enabled: true, noRotate: false, noPan: false, noZoom: false };
+	const axis = new THREE.Vector3();
+	canvas.title = 'Left drag: orbit; right drag: pan; left + right drag horizontally: roll; wheel: zoom';
+
+	function endRoll(event?: MouseEvent) {
+		if (!rolling) return;
+		rolling = false;
+		if (canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+		Object.assign(controls, previousFlags);
+		controls.dispatchEvent({ type: 'end' });
+		// Restart the remaining single-button gesture at the current position.
+		if (event && (event.buttons & 3) !== 0) {
+			canvas.dispatchEvent(new PointerEvent('pointerdown', {
+				pointerId, pointerType: 'mouse', button: event.buttons & 1 ? 0 : 2,
+				buttons: event.buttons, clientX: event.clientX, clientY: event.clientY
+			}));
+		}
+	}
+
+	function onPointerMove(event: PointerEvent) {
+		if (!rolling || event.pointerType !== 'mouse') return;
+		if ((event.buttons & 3) !== 3) {
+			endRoll(event);
+			return;
+		}
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		const angle = (event.clientX - lastX) * 2 * Math.PI / Math.max(canvas.clientWidth, 1);
+		lastX = event.clientX;
+		camera.getWorldDirection(axis);
+		camera.up.applyAxisAngle(axis, angle).normalize();
+		camera.lookAt(controls.target);
+		controls.dispatchEvent({ type: 'change' });
+	}
+
+	function onPointerDown(event: PointerEvent) {
+		if (event.pointerType === 'mouse') pointerId = event.pointerId;
+	}
+
+	function onMouseDown(event: MouseEvent) {
+		if (rolling || !controls.enabled || (event.buttons & 3) !== 3) return;
+		// End TrackballControls' existing orbit/pan gesture before starting roll.
+		controls.update();
+		canvas.dispatchEvent(new PointerEvent('pointerup', { pointerId, pointerType: 'mouse' }));
+		previousFlags = {
+			enabled: controls.enabled, noRotate: controls.noRotate,
+			noPan: controls.noPan, noZoom: controls.noZoom
+		};
+		rolling = true;
+		lastX = event.clientX;
+		controls.enabled = false;
+		controls.noRotate = controls.noPan = controls.noZoom = true;
+		canvas.setPointerCapture(pointerId);
+		controls.dispatchEvent({ type: 'start' });
+		event.preventDefault();
+	}
+
+	function onMouseUp(event: MouseEvent) {
+		if ((event.buttons & 3) !== 3) endRoll(event);
+	}
+	function cancelRoll() { endRoll(); }
+	function onLostPointerCapture() {
+		if (!canvas.hasPointerCapture(pointerId)) cancelRoll();
+	}
+
+	canvas.addEventListener('pointerdown', onPointerDown, true);
+	canvas.addEventListener('mousedown', onMouseDown, true);
+	canvas.addEventListener('pointermove', onPointerMove, true);
+	canvas.addEventListener('pointercancel', cancelRoll);
+	canvas.addEventListener('lostpointercapture', onLostPointerCapture);
+	window.addEventListener('mouseup', onMouseUp);
+	window.addEventListener('blur', cancelRoll);
+	const dispose = controls.dispose.bind(controls);
+	controls.dispose = () => {
+		cancelRoll();
+		canvas.removeEventListener('pointerdown', onPointerDown, true);
+		canvas.removeEventListener('mousedown', onMouseDown, true);
+		canvas.removeEventListener('pointermove', onPointerMove, true);
+		canvas.removeEventListener('pointercancel', cancelRoll);
+		canvas.removeEventListener('lostpointercapture', onLostPointerCapture);
+		window.removeEventListener('mouseup', onMouseUp);
+		window.removeEventListener('blur', cancelRoll);
+		dispose();
+	};
 }
 
 function createScene() {
