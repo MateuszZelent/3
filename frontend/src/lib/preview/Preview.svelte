@@ -9,6 +9,8 @@
 		previewConnected,
 		previewError,
 		setPreviewVisible,
+		setPreviewSurface,
+		requestPreviewRender,
 		previewClientBudget,
 		setPreviewClientBudget
 	} from '$api/websocket';
@@ -51,9 +53,8 @@
 	import type { ViewportMode } from '$lib/ui/types';
 	import { get } from 'svelte/store';
 	import { onDestroy, onMount } from 'svelte';
-	import { preview2D, resizeECharts, disposePreview2D, preview2DAutoscale } from './preview2D';
+	import { resizeECharts, disposePreview2D, preview2DAutoscale } from './preview2D';
 	import {
-		preview3D,
 		qualityLevel,
 		renderMode,
 		volumeProjection,
@@ -85,6 +86,8 @@
 	let previewWrapper: HTMLDivElement;
 	let previewStudio: HTMLDivElement;
 	let visibilityObserver: IntersectionObserver | null = null;
+	let surfaceObserver: ResizeObserver | null = null;
+	let previewCanvas: HTMLDivElement;
 
 	let popX = $state(60);
 	let popY = $state(60);
@@ -290,17 +293,6 @@
 		setMode(customEvent.detail);
 	}
 
-	async function renderCurrentPreview() {
-		const state = get(previewState);
-		if (state.type === '3D') {
-			if (state.nComp === 1 && get(renderMode) !== 'volume') setRenderMode('volume');
-			await preview3D();
-			return;
-		}
-
-		await preview2D();
-	}
-
 	onMount(() => {
 		const ageTimer = setInterval(() => {
 			previewNow = Date.now();
@@ -316,13 +308,17 @@
 		document.addEventListener('mousemove', onMouseMove);
 		document.addEventListener('mouseup', onMouseUp);
 		window.addEventListener('amumax:preview-mode', onPreviewModeRequest as EventListener);
+		setPreviewSurface(previewCanvas);
+		surfaceObserver = new ResizeObserver(requestPreviewRender);
+		surfaceObserver.observe(previewCanvas);
 		scheduleResize();
-		void renderCurrentPreview();
 		return () => clearInterval(ageTimer);
 	});
 
 	onDestroy(() => {
 		visibilityObserver?.disconnect();
+		surfaceObserver?.disconnect();
+		setPreviewSurface(null);
 		setPreviewVisible(false);
 		disposePreview3D();
 		disposePreview2D();
@@ -587,7 +583,7 @@
                     <Toolbar3D embedded />
                 </details>{/if}
             </div>{/if}
-			<div id="container" class="preview-wrapper__canvas" aria-busy={!!$previewTransition}></div>
+			<div id="container" bind:this={previewCanvas} class="preview-wrapper__canvas" aria-busy={!!$previewTransition}></div>
 
 
 			{#if $previewState.type === '3D' && hasData}

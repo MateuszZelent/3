@@ -54,9 +54,7 @@ func Close() {
 	closeStructuredOutput()
 	LogUsedRefs()
 	Table.flush()
-	if logfile != nil {
-		logfile.Close()
-	}
+	closeLog()
 	if bibfile != nil {
 		bibfile.Close()
 	}

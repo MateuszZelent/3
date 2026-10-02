@@ -28,7 +28,11 @@ func EvalTryRecover(code string) {
 	Eval(code)
 }
 
-func LogHistory() string { return hist }
+func LogHistory() string {
+	logMu.Lock()
+	defer logMu.Unlock()
+	return hist
+}
 
 func IsPaused() bool { return pause }
 

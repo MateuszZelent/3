@@ -6,11 +6,14 @@ import (
 	"github.com/mumax/3/util"
 	"io"
 	"os"
+	"sync"
 )
 
 var (
-	hist    string         // console history for GUI
-	logfile io.WriteCloser // saves history of input commands +  output
+	logMu     sync.Mutex
+	logClosed bool
+	hist      string         // console history for GUI
+	logfile   io.WriteCloser // saves history of input commands +  output
 )
 
 // Special error that is not fatal when paniced on and called from GUI
@@ -26,6 +29,8 @@ func CheckRecoverable(err error) {
 }
 
 func LogIn(msg ...interface{}) {
+	logMu.Lock()
+	defer logMu.Unlock()
 	str := sprint(msg...)
 	log2GUI(str)
 	log2File(str)
@@ -33,6 +38,8 @@ func LogIn(msg ...interface{}) {
 }
 
 func LogOut(msg ...interface{}) {
+	logMu.Lock()
+	defer logMu.Unlock()
 	str := "//" + sprint(msg...)
 	log2GUI(str)
 	log2File(str)
@@ -40,6 +47,8 @@ func LogOut(msg ...interface{}) {
 }
 
 func LogErr(msg ...interface{}) {
+	logMu.Lock()
+	defer logMu.Unlock()
 	str := "//" + sprint(msg...)
 	log2GUI(str)
 	log2File(str)
@@ -53,6 +62,8 @@ func log2File(msg string) {
 }
 
 func initLog() {
+	logMu.Lock()
+	defer logMu.Unlock()
 	if logfile != nil {
 		panic("log already inited")
 	}
@@ -83,4 +94,28 @@ func sprint(msg ...interface{}) string {
 	str := fmt.Sprintln(msg...)
 	str = str[:len(str)-1] // strip newline
 	return str
+}
+
+// LogReleaseNotice safely accepts the one-off background update notice, including
+// before initLog. Close excludes late notifications without waiting for HTTP.
+func LogReleaseNotice(msg string) {
+	logMu.Lock()
+	defer logMu.Unlock()
+	if logClosed {
+		return
+	}
+	str := "//" + msg
+	log2GUI(str)
+	log2File(str)
+	fmt.Println(str)
+}
+
+func closeLog() {
+	logMu.Lock()
+	defer logMu.Unlock()
+	logClosed = true
+	if logfile != nil {
+		logfile.Close()
+		logfile = nil
+	}
 }

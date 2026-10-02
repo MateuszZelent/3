@@ -43,6 +43,7 @@ let previewVisible = true;
 export const previewClientBudget = writable(1000000);
 let lastSequence = 0;
 let pendingAck: { sequence: number; revision: number } | null = null;
+let previewSurface: HTMLElement | null = null;
 let previewRenderScheduled = false;
 let previewRendering = false;
 let previewRenderAgain = false;
@@ -152,16 +153,39 @@ function normalizePreview(msg: PreviewWire): Preview {
 	} as Preview;
 }
 
+function previewCanRender() {
+	const mesh = get(meshState);
+	return (
+		!!previewSurface?.isConnected &&
+		previewSurface.clientWidth > 0 &&
+		previewSurface.clientHeight > 0 &&
+		[mesh.Nx, mesh.Ny, mesh.Nz, mesh.dx, mesh.dy, mesh.dz].every((n) => Number.isFinite(n) && n > 0)
+	);
+}
+
+// A frame may arrive before the lazy visualization component or mesh metadata.
+// Retain it in the store and render when both dependencies become available.
+export function setPreviewSurface(surface: HTMLElement | null) {
+	previewSurface = surface;
+	schedulePreviewRender();
+}
+export function requestPreviewRender() {
+	schedulePreviewRender();
+}
+
 async function renderPreview() {
 	if (get(previewState).type === '3D') {
 		const { preview3D, setRenderMode, renderMode } = await import('$lib/preview/preview3D');
+		if (!previewCanRender() || get(previewState).type !== '3D') return false;
 		if (get(previewState).nComp === 1 && get(renderMode) !== 'volume') setRenderMode('volume');
 		await preview3D();
-		return;
+		return true;
 	}
 
 	const { preview2D } = await import('$lib/preview/preview2D');
+	if (!previewCanRender() || get(previewState).type !== '2D') return false;
 	await preview2D();
+	return true;
 }
 
 async function renderTablePlot() {
@@ -180,7 +204,7 @@ function schedulePreviewRender() {
 	previewRenderScheduled = true;
 	requestAnimationFrame(() => {
 		previewRenderScheduled = false;
-		if (!previewVisible || document.hidden) {
+		if (!previewVisible || document.hidden || !previewCanRender()) {
 			ackPreview();
 			return;
 		}
@@ -189,8 +213,8 @@ function schedulePreviewRender() {
 		const ack = pendingAck;
 		markPreviewRendering(rendered);
 		void renderPreview()
-			.then(() => {
-				finishPreviewTransition(rendered);
+			.then((didRender) => {
+				if (didRender) finishPreviewTransition(rendered);
 				if (pendingAck === ack) ackPreview();
 			})
 			.catch((error) => {
@@ -320,7 +344,12 @@ export function parseMsgpack(data: ArrayBuffer) {
 		headerState.set(msg.header);
 	}
 	if (msg.mesh) {
+		const previous = get(meshState);
+		const geometryChanged = (['Nx', 'Ny', 'Nz', 'dx', 'dy', 'dz'] as const).some(
+			(key) => previous[key] !== msg.mesh![key]
+		);
 		meshState.set(msg.mesh);
+		if (geometryChanged) schedulePreviewRender();
 	}
 	if (msg.parameters) {
 		parametersState.set(msg.parameters);

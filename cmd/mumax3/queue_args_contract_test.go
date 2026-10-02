@@ -12,6 +12,7 @@ func TestChildArgsCanonicalizesSchedulerAssignments(t *testing.T) {
 		"webui-addr":       ":4000",
 		"http":             ":4001",
 		"debug":            "true",
+		"check-updates":    "false",
 		"t":                "proxy.example:35369",
 		"max_gpus":         "8",
 		"failfast":         "true",
@@ -27,7 +28,7 @@ func TestChildArgsCanonicalizesSchedulerAssignments(t *testing.T) {
 	if strings.Contains(joined, "-gpu=7") || strings.Contains(joined, "-gpu=8") || strings.Contains(joined, "-http=:4000") || strings.Contains(joined, "-http=:4001") {
 		t.Fatalf("scheduler values were overridden: %v", args)
 	}
-	if !strings.Contains(joined, "-debug=true") || !strings.Contains(joined, "-tunnel=proxy.example:35371") {
+	if !strings.Contains(joined, "-check-updates=false") || !strings.Contains(joined, "-debug=true") || !strings.Contains(joined, "-tunnel=proxy.example:35371") {
 		t.Fatalf("ordinary flags were not passed canonically: %v", args)
 	}
 	for _, arg := range args {

@@ -1,0 +1,60 @@
+{
+  "reports": [
+    {
+      "mode": "volume",
+      "phase": "first-load",
+      "frames": 2,
+      "canvas": true,
+      "stable": true
+    },
+    {
+      "mode": "volume",
+      "phase": "reload",
+      "frames": 4,
+      "canvas": true,
+      "stable": true
+    },
+    {
+      "mode": "glyph",
+      "phase": "first-load",
+      "frames": 2,
+      "canvas": true,
+      "stable": true
+    },
+    {
+      "mode": "glyph",
+      "phase": "reload",
+      "frames": 4,
+      "canvas": true,
+      "stable": true
+    },
+    {
+      "mode": "voxel",
+      "phase": "first-load",
+      "frames": 2,
+      "canvas": true,
+      "stable": true
+    },
+    {
+      "mode": "voxel",
+      "phase": "reload",
+      "frames": 4,
+      "canvas": true,
+      "stable": true
+    },
+    {
+      "mode": "2D",
+      "phase": "first-load",
+      "frames": 2,
+      "canvas": true,
+      "stable": true
+    },
+    {
+      "mode": "2D",
+      "phase": "reload",
+      "frames": 4,
+      "canvas": true,
+      "stable": true
+    }
+  ]
+}

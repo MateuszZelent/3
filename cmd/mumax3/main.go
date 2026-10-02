@@ -22,6 +22,7 @@ import (
 	"github.com/mumax/3/events"
 	"github.com/mumax/3/script"
 	mx3template "github.com/mumax/3/template"
+	"github.com/mumax/3/updater"
 	"github.com/mumax/3/util"
 	"github.com/mumax/3/webui"
 )
@@ -51,6 +52,8 @@ func init() {
 		flag.PrintDefaults()
 	}
 }
+
+var flag_checkUpdates = flag.Bool("check-updates", true, "Check for newer releases in the background (cached; never blocks the solver)")
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "template" {
@@ -103,6 +106,11 @@ func main() {
 		engine.StorageFormat = engine.StorageFormatHDF5
 	default:
 		log.Fatalf("invalid -storage-format %q (want ovf, zarr, or h5)", *engine.Flag_storage)
+	}
+
+	if *flag_checkUpdates && !*flag_test && !*flag_vet && (flag.NArg() > 0 || *engine.Flag_interactive) {
+		cancelNotice := updater.StartReleaseNotice(buildVersion, engine.LogReleaseNotice)
+		defer cancelNotice()
 	}
 
 	// The parent of a queued batch is a scheduler, not a simulation worker.

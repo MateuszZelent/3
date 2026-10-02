@@ -427,7 +427,7 @@ func (g *guistate) prepareOnUpdate() {
 		}
 
 		Inject <- (func() { // sends to run loop to be executed in between time steps
-			g.Set("console", hist)
+			g.Set("console", LogHistory())
 
 			// mesh
 			g.Set("nx", lazy_gridsize[X])
