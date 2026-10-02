@@ -290,7 +290,14 @@ func (s *PreviewState) Update() {
 	s.pendingCPU = nil
 	s.pendingOccupancy = nil
 
+	captureRequested := false
 	engine.InjectAndWait(func() {
+		// The solver may have been busy when this capture was queued. Recheck
+		// demand on its CUDA-owning thread before evaluating any quantity.
+		if s.ws != nil && s.ws.previewConnections.activeCount() == 0 {
+			return
+		}
+		captureRequested = true
 		if !s.addPossibleDownscaleSizes() {
 			return
 		}
@@ -299,6 +306,9 @@ func (s *PreviewState) Update() {
 		s.Step = engine.NSteps
 		s.UpdateQuantityBuffer()
 	})
+	if !captureRequested {
+		return
+	}
 	s.CaptureMs = float64(time.Since(start).Microseconds()) / 1000
 	start = time.Now()
 	// The broadcaster holds stateMu through capture and processing. Reusable CPU

@@ -1,0 +1,8 @@
+{
+  "metricsInvocationsBeforeFirstClient": 0,
+  "metricsInvocationsAfterConnection": 1,
+  "browserCasesPassed": 8,
+  "binarySha256": "9e77ededcbca54f4f27dbb4358b18c786fcdfc938d3b3d088874efe088c4159b",
+  "source": "local modifications after cc8d801e; not the published release",
+  "cudaProfilerUsed": false
+}

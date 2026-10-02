@@ -24,13 +24,15 @@ type WebSocketManager struct {
 	mainBroadcastInterval time.Duration
 	broadcastStop         chan struct{}
 	broadcastStart        sync.Once
+	activity              chan struct{}
 	engineState           *EngineState
 	stateMu               sync.Mutex
 }
 
 type connectionManager struct {
-	conns map[*websocket.Conn]*managedConnection
-	mu    sync.Mutex
+	conns    map[*websocket.Conn]*managedConnection
+	mu       sync.Mutex
+	onChange func()
 }
 
 type outboundFrame struct {
@@ -67,7 +69,8 @@ func newConnectionManager() *connectionManager {
 }
 
 func newWebSocketManager() *WebSocketManager {
-	return &WebSocketManager{
+	manager := &WebSocketManager{
+		activity: make(chan struct{}, 1),
 		upgrader: websocket.Upgrader{
 			EnableCompression: true,
 			CheckOrigin: func(r *http.Request) bool {
@@ -78,6 +81,16 @@ func newWebSocketManager() *WebSocketManager {
 		previewConnections:    newConnectionManager(),
 		mainBroadcastInterval: 5 * time.Second,
 		broadcastStop:         make(chan struct{}),
+	}
+	manager.connections.onChange = manager.notifyActivity
+	manager.previewConnections.onChange = manager.notifyActivity
+	return manager
+}
+
+func (wsManager *WebSocketManager) notifyActivity() {
+	select {
+	case wsManager.activity <- struct{}{}:
+	default:
 	}
 }
 
@@ -92,6 +105,9 @@ func (cm *connectionManager) add(ws *websocket.Conn) *managedConnection {
 	cm.mu.Lock()
 	cm.conns[ws] = managed
 	cm.mu.Unlock()
+	if cm.onChange != nil {
+		cm.onChange()
+	}
 	go managed.writeLoop()
 	return managed
 }
@@ -101,6 +117,9 @@ func (cm *connectionManager) remove(ws *websocket.Conn) {
 	managed := cm.conns[ws]
 	delete(cm.conns, ws)
 	cm.mu.Unlock()
+	if cm.onChange != nil {
+		cm.onChange()
+	}
 	if managed != nil {
 		managed.stopOnce.Do(func() { close(managed.stop) })
 	}
@@ -390,30 +409,19 @@ func (wsManager *WebSocketManager) sendInitialState(managed *managedConnection, 
 	}
 }
 
-func (wsManager *WebSocketManager) broadcastEngineState() {
-	wsManager.stateMu.Lock()
-	defer wsManager.stateMu.Unlock()
-	wsManager.engineState.Update()
-	msg, err := msgpack.Marshal(wsManager.engineState)
-	if err != nil {
-		log.Log.Err("Error marshaling combined message: %v", err)
-		return
-	}
-	wsManager.connections.broadcast(msg)
-	// Reset the refresh flag
-	wsManager.engineState.Preview.Refresh = false
-}
-
 func (wsManager *WebSocketManager) broadcastPreviewState() {
 	wsManager.stateMu.Lock()
 	defer wsManager.stateMu.Unlock()
 	wsManager.broadcastPreviewStateLocked()
 }
 func (wsManager *WebSocketManager) broadcastPreviewStateLocked() {
-	if wsManager.engineState == nil || wsManager.engineState.Preview == nil {
+	if wsManager.previewConnections.activeCount() == 0 || wsManager.engineState == nil || wsManager.engineState.Preview == nil {
 		return
 	}
 	wsManager.engineState.Preview.Update()
+	if wsManager.previewConnections.activeCount() == 0 {
+		return
+	}
 	frame := encodePreviewFrame(wsManager.engineState.Preview, 1)
 	frame.profiles = make(map[int]outboundFrame)
 	wsManager.previewConnections.mu.Lock()
@@ -500,10 +508,13 @@ func (wsManager *WebSocketManager) broadcastEngineStateWithoutPreview() {
 	wsManager.broadcastEngineStateWithoutPreviewLocked()
 }
 func (wsManager *WebSocketManager) broadcastEngineStateWithoutPreviewLocked() {
-	if wsManager.engineState == nil {
+	if wsManager.connections.count() == 0 || wsManager.engineState == nil {
 		return
 	}
 	wsManager.engineState.UpdateWithoutPreview()
+	if wsManager.connections.count() == 0 {
+		return
+	}
 	msg, err := msgpack.Marshal(wsManager.engineState.WithoutPreview())
 	if err != nil {
 		log.Log.Err("Error marshaling non-preview message: %v", err)
@@ -556,26 +567,46 @@ func (wsManager *WebSocketManager) previewDue() bool {
 	return time.Since(wsManager.lastPreviewBroadcast) >= interval
 }
 
+// No timer, solver injection, capture, encoding or metric collection is needed
+// while the server only listens for clients. Connection changes wake this loop.
+func (wsManager *WebSocketManager) waitForBroadcastClients() bool {
+	for wsManager.connections.count() == 0 && wsManager.previewConnections.count() == 0 {
+		select {
+		case <-wsManager.broadcastStop:
+			return false
+		case <-wsManager.activity:
+		}
+	}
+	return true
+}
+
+func (wsManager *WebSocketManager) broadcastTick() {
+	if wsManager.previewConnections.activeCount() > 0 && wsManager.previewDue() && wsManager.previewNeedsRefresh() {
+		wsManager.broadcastPreviewState()
+	}
+	// Final solver output and console entries must also reach idle clients.
+	if wsManager.connections.count() > 0 {
+		now := time.Now()
+		if wsManager.lastMainBroadcast.IsZero() || now.Sub(wsManager.lastMainBroadcast) >= wsManager.mainBroadcastInterval {
+			wsManager.broadcastEngineStateWithoutPreview()
+			wsManager.lastMainBroadcast = now
+		}
+	}
+}
+
 func (wsManager *WebSocketManager) startBroadcastLoop() {
 	wsManager.broadcastStart.Do(func() {
 		go func() {
-			for {
+			for wsManager.waitForBroadcastClients() {
+				wsManager.broadcastTick()
+				timer := time.NewTimer(time.Second)
 				select {
 				case <-wsManager.broadcastStop:
+					timer.Stop()
 					return
-				default:
-					if wsManager.previewConnections.activeCount() > 0 && wsManager.previewDue() && wsManager.previewNeedsRefresh() {
-						wsManager.broadcastPreviewState()
-					}
-					// Final solver output and console entries must also reach idle clients.
-					if wsManager.connections.count() > 0 {
-						now := time.Now()
-						if wsManager.lastMainBroadcast.IsZero() || now.Sub(wsManager.lastMainBroadcast) >= wsManager.mainBroadcastInterval {
-							wsManager.broadcastEngineStateWithoutPreview()
-							wsManager.lastMainBroadcast = now
-						}
-					}
-					time.Sleep(1 * time.Second)
+				case <-wsManager.activity:
+					timer.Stop()
+				case <-timer.C:
 				}
 			}
 		}()

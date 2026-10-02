@@ -57,13 +57,17 @@ func initMetricsAPI(e *echo.Group, ws *WebSocketManager) *MetricsState {
 		ws:                 ws,
 		gpuRefreshInterval: 5 * time.Second,
 	}
-	metricState.Update()
 	e.POST("/api/metrics/reset-error", metricState.postMetricsReset)
 	return metricState
 }
 
 // Poll external processes and OS counters without holding the WebUI state lock.
 func (m *MetricsState) Update() {
+	// Metrics are UI telemetry, not solver work. Never start a new collector
+	// at server startup or after the last main client disconnects.
+	if m.ws != nil && m.ws.connections.count() == 0 {
+		return
+	}
 	if m.collector == nil {
 		m.collector = &metricsCollector{}
 	}

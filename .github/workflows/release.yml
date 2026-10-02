@@ -86,6 +86,7 @@ jobs:
               export LD_LIBRARY_PATH=/tmp/cuda-stubs:/usr/local/cuda/lib64
               go test -race ./updater
               go test -race -vet=off ./engine -run TestBackgroundNoticeLogging
+              go test -race -vet=off ./webui -run "TestIdlePublication|TestBroadcastSleeps|TestMetricsAreLazy|TestQueued|TestWebSocketLifecycle|TestPreviewCredits"
               go test -vet=off ./cmd/mumax3 ./webui
               go build -trimpath -ldflags "-X main.commitHash=$commit_hash -X main.buildVersion=$BUILD_VERSION -X main.buildDate=$build_date" -o release/mumax3 ./cmd/mumax3
               go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -mode=binary release/mumax3

@@ -43,6 +43,11 @@ func initParameterAPI(e *echo.Group, ws *WebSocketManager) *ParametersState {
 
 func (s *ParametersState) Update() {
 	engine.InjectAndWait(func() {
+		// A queued UI refresh can outlive its client. Region enumeration may
+		// download the region map, so check demand again on the engine thread.
+		if s.ws != nil && s.ws.connections.count() == 0 {
+			return
+		}
 		s.Regions = engine.ExistingRegionIndices()
 		s.getFields()
 	})
