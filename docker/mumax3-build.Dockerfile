@@ -5,7 +5,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends wget git \
     && rm -rf /var/lib/apt/lists/*
 
-ARG GO_VERSION=1.23.6
+ARG GO_VERSION=1.26.8
 RUN wget -q https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz \
     && tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz \
     && rm go${GO_VERSION}.linux-amd64.tar.gz

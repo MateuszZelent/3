@@ -1,0 +1,85 @@
+go: golang.org/x/vuln@v1.8.0 requires go >= 1.26.0; switching to go1.26.8
+Fetching vulnerabilities from the database...
+
+Checking the code against the vulnerabilities...
+
+The package pattern matched the following 33 root packages:
+  github.com/mumax/3/cuda/cu
+  github.com/mumax/3/cuda/cufft
+  github.com/mumax/3/util
+  github.com/mumax/3/data
+  github.com/mumax/3/oommf
+  github.com/mumax/3/timer
+  github.com/mumax/3/mag
+  github.com/mumax/3/cuda
+  github.com/mumax/3/cuda/curand
+  github.com/mumax/3/freetype/raster
+  github.com/mumax/3/svgo
+  github.com/mumax/3/draw
+  github.com/mumax/3/dump
+  github.com/mumax/3/events
+  github.com/mumax/3/gui
+  github.com/mumax/3/hdf5
+  github.com/mumax/3/httpfs
+  github.com/mumax/3/log
+  github.com/mumax/3/script
+  github.com/mumax/3/zarr
+  github.com/mumax/3/engine
+  github.com/mumax/3/template
+  github.com/mumax/3/updater
+  github.com/mumax/3/webui
+  github.com/mumax/3/cmd/mumax3
+  github.com/mumax/3/cmd/mumax3-convert
+  github.com/mumax/3/cmd/mumax3-httpfsd
+  github.com/mumax/3/cmd/mumax3-plot
+  github.com/mumax/3/cmd/mumax3-script
+  github.com/mumax/3/cmd/mumax3-server
+  github.com/mumax/3/doc
+  github.com/mumax/3/frontend/node_modules/flatted/golang/pkg/flatted
+  github.com/mumax/3/test
+Govulncheck scanned the following 22 modules and the go1.26.8 standard library:
+  github.com/mumax/3
+  github.com/DataDog/zstd@v1.5.7
+  github.com/gorilla/websocket@v1.5.3
+  github.com/kevinburke/ssh_config@v1.4.0
+  github.com/labstack/echo/v4@v4.15.3
+  github.com/labstack/gommon@v0.5.0
+  github.com/mattn/go-colorable@v0.1.14
+  github.com/mattn/go-isatty@v0.0.22
+  github.com/scigolib/hdf5@v0.13.14
+  github.com/shirou/gopsutil/v3@v3.24.5
+  github.com/tklauser/go-sysconf@v0.3.12
+  github.com/tklauser/numcpus@v0.6.1
+  github.com/valyala/bytebufferpool@v1.0.0
+  github.com/valyala/fasttemplate@v1.2.2
+  github.com/vmihailenco/msgpack/v5@v5.4.1
+  github.com/vmihailenco/tagparser/v2@v2.0.0
+  golang.org/x/crypto@v0.56.0
+  golang.org/x/net@v0.57.0
+  golang.org/x/sys@v0.47.0
+  golang.org/x/term@v0.45.0
+  golang.org/x/text@v0.41.0
+  golang.org/x/time@v0.15.0
+
+=== Symbol Results ===
+
+No vulnerabilities found.
+
+=== Package Results ===
+
+No other vulnerabilities found.
+
+=== Module Results ===
+
+Vulnerability #1: GO-2026-5932
+    The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design,
+    and has known security issues
+  More info: https://pkg.go.dev/vuln/GO-2026-5932
+  Module: golang.org/x/crypto
+    Found in: golang.org/x/crypto@v0.56.0
+    Fixed in: N/A
+
+Your code is affected by 0 vulnerabilities.
+This scan also found 0 vulnerabilities in packages you import and 1
+vulnerability in modules you require, but your code doesn't appear to call these
+vulnerabilities.

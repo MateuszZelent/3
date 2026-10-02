@@ -235,12 +235,13 @@ func TestQueueWorkersUseActualPortsAndProxyPaths(t *testing.T) {
 func TestQueueAcceptsReadyEventBeforeImmediateExit(t *testing.T) {
 	oldFactory := workerCommand
 	defer func() { workerCommand = oldFactory }()
+	const preferredPort = 44001
 	workerCommand = func(ctx context.Context, args []string) *exec.Cmd {
 		fullArgs := append([]string{"-test.run=^TestQueueWorkerHelperProcess$"}, args...)
 		cmd := exec.CommandContext(ctx, os.Args[0], fullArgs...)
 		cmd.Env = append(os.Environ(),
 			"MUMAX_QUEUE_HELPER=1",
-			"MUMAX_HELPER_PORT=44001",
+			"MUMAX_HELPER_PORT="+strconv.Itoa(preferredPort),
 			"MUMAX_HELPER_BASE=",
 			"MUMAX_QUEUE_HELPER_EXIT=1",
 		)
@@ -248,7 +249,7 @@ func TestQueueAcceptsReadyEventBeforeImmediateExit(t *testing.T) {
 	}
 	for i := 0; i < 50; i++ {
 		var readyAddr string
-		outcome := run(100+i, "ready-before-exit.mx3", 0, "127.0.0.1:44001",
+		outcome := run(100+i, "ready-before-exit.mx3", 0, net.JoinHostPort("127.0.0.1", strconv.Itoa(preferredPort)),
 			func(int) {},
 			func(addr string) { readyAddr = addr },
 			func(string) {},
@@ -261,8 +262,19 @@ func TestQueueAcceptsReadyEventBeforeImmediateExit(t *testing.T) {
 		if outcome != runSucceeded {
 			t.Fatalf("iteration %d outcome = %v, want runSucceeded", i, outcome)
 		}
-		if readyAddr != "127.0.0.1:44001" {
-			t.Fatalf("iteration %d ready address = %q", i, readyAddr)
+		host, portText, err := net.SplitHostPort(readyAddr)
+		if err != nil {
+			t.Fatalf("iteration %d ready address = %q: %v", i, readyAddr, err)
+		}
+		if host != "127.0.0.1" {
+			t.Fatalf("iteration %d ready host = %q, want 127.0.0.1", i, host)
+		}
+		actualPort, err := strconv.Atoi(portText)
+		if err != nil {
+			t.Fatalf("iteration %d ready port = %q: %v", i, portText, err)
+		}
+		if actualPort < preferredPort || actualPort >= preferredPort+100 {
+			t.Fatalf("iteration %d ready port = %d, want a port in [%d, %d]", i, actualPort, preferredPort, preferredPort+99)
 		}
 	}
 }

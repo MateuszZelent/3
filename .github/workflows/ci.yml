@@ -42,6 +42,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
+          npm audit --audit-level=low
           npm run check
           npm run test:unit
           npm run build
@@ -64,4 +65,5 @@ jobs:
               go test -race -vet=off ./engine -run TestBackgroundNoticeLogging
               go test -vet=off ./cmd/mumax3 ./webui
               go build ./cmd/mumax3
+              go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -mode=binary mumax3
             '

@@ -63,6 +63,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
+          npm audit --audit-level=low
           npm run check
           npm run test:unit
           npm run build
@@ -87,6 +88,7 @@ jobs:
               go test -race -vet=off ./engine -run TestBackgroundNoticeLogging
               go test -vet=off ./cmd/mumax3 ./webui
               go build -trimpath -ldflags "-X main.commitHash=$commit_hash -X main.buildVersion=$BUILD_VERSION -X main.buildDate=$build_date" -o release/mumax3 ./cmd/mumax3
+              go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -mode=binary release/mumax3
               cp -L /usr/local/cuda/lib64/libcufft.so.11 release/libcufft.so.11
               cp -L /usr/local/cuda/lib64/libcurand.so.10 release/libcurand.so.10
             '
