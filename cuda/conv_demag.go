@@ -1,9 +1,11 @@
 package cuda
 
 import (
+	"fmt"
 	"github.com/mumax/3/cuda/cu"
 	"github.com/mumax/3/data"
 	"github.com/mumax/3/util"
+	"time"
 )
 
 // Stores the necessary state to perform FFT-accelerated convolution
@@ -25,8 +27,12 @@ func NewDemag(inputSize, PBC [3]int, kernel [3][3]*data.Slice, test bool) *Demag
 	c := new(DemagConvolution)
 	c.inputSize = inputSize
 	c.realKernSize = kernel[X][X].Size()
+	started := time.Now()
+	util.Log("//Demag GPU: allocating buffers and creating FFT plans for", c.realKernSize)
 	c.init(kernel)
+	util.Log("//Demag GPU initialization completed in", time.Since(started).Round(time.Millisecond))
 	if test {
+		util.Log("//Demag GPU: running convolution self-test")
 		testConvolution(c, PBC, kernel)
 	}
 	return c
@@ -131,6 +137,7 @@ func (c *DemagConvolution) init(realKern [3][3]*data.Slice) {
 	c.fwPlan = newFFT3DR2C(c.realKernSize[X], c.realKernSize[Y], c.realKernSize[Z])
 	c.bwPlan = newFFT3DC2R(c.realKernSize[X], c.realKernSize[Y], c.realKernSize[Z])
 
+	util.Log("//Demag GPU: FFT plans ready; transforming kernel components")
 	// init FFT kernel
 
 	// logic size of FFT(kernel): store real parts only
@@ -152,9 +159,19 @@ func (c *DemagConvolution) init(realKern [3][3]*data.Slice) {
 	kCmplx := data.NewSlice(1, kCSize) // not yet exploiting X symmetry
 	kc := kCmplx.Scalars()
 
+	total, completed := 0, 0
+	for i := 0; i < 3; i++ {
+		for j := i; j < 3; j++ {
+			if realKern[i][j] != nil {
+				total++
+			}
+		}
+	}
+	util.Progress(0, total, "Demag kernel GPU FFT")
 	for i := 0; i < 3; i++ {
 		for j := i; j < 3; j++ { // upper triangular part
 			if realKern[i][j] != nil { // ignore 0's
+				util.Log(fmt.Sprintf("//Demag GPU: transforming component %d%d (%d/%d)", i, j, completed+1, total))
 				// FW FFT
 				data.Copy(input, realKern[i][j])
 				c.fwPlan.ExecAsync(input, output)
@@ -172,6 +189,8 @@ func (c *DemagConvolution) init(realKern [3][3]*data.Slice) {
 				// extract real parts (X symmetry)
 				scaleRealParts(fftKern, kCmplx, 1/float32(c.fwPlan.InputLen()))
 				c.kern[i][j] = GPUCopy(fftKern)
+				completed++
+				util.Progress(completed, total, "Demag kernel GPU FFT")
 			}
 		}
 	}

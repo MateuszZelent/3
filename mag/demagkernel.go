@@ -2,11 +2,11 @@ package mag
 
 import (
 	"bufio"
-	"encoding/binary"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/mumax/3/data"
 	"github.com/mumax/3/oommf"
@@ -36,10 +36,13 @@ func DemagKernel(inputSize, pbc [3]int, cellsize [3]float64, accuracy float64, c
 	}
 
 	cacheFile := kernelCacheName(inputSize, pbc, cellsize, accuracy, cacheDir)
+	util.Log("//Demag cache: checking", cacheFile)
 	if cached, err := loadKernelCache(cacheFile, padSize(inputSize, pbc)); err == nil {
 		util.Log("//Using cached kernel:", cacheFile)
 		return cached
-	} else if !os.IsNotExist(err) {
+	} else if os.IsNotExist(err) {
+		util.Log("//Demag cache miss; calculating kernel")
+	} else {
 		util.Log("//Did not use cached kernel:", err)
 	}
 
@@ -71,73 +74,6 @@ func kernelComponents(size [3]int) [][2]int {
 	return components
 }
 
-func saveKernelCache(filename string, kernel [3][3]*data.Slice) (retErr error) {
-	tmp, err := os.CreateTemp(filepath.Dir(filename), ".kernel-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer func() {
-		_ = tmp.Close()
-		if retErr != nil {
-			_ = os.Remove(tmpName)
-		}
-	}()
-	for _, component := range kernelComponents(kernel[X][X].Size()) {
-		slice := kernel[component[0]][component[1]]
-		if slice == nil {
-			return fmt.Errorf("kernel component %d%d is nil", component[0], component[1])
-		}
-		for _, plane := range slice.Scalars() {
-			for _, row := range plane {
-				for _, value := range row {
-					if err := binary.Write(tmp, binary.LittleEndian, value); err != nil {
-						return err
-					}
-				}
-			}
-		}
-	}
-	if err := tmp.Sync(); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, filename)
-}
-
-func loadKernelCache(filename string, size [3]int) ([3][3]*data.Slice, error) {
-	var kernel [3][3]*data.Slice
-	bytes, err := os.ReadFile(filename)
-	if err != nil {
-		return kernel, err
-	}
-	components := kernelComponents(size)
-	want := len(components) * size[X] * size[Y] * size[Z] * 4
-	if len(bytes) != want {
-		return kernel, fmt.Errorf("invalid kernel cache size: got %d bytes, want %d", len(bytes), want)
-	}
-	offset := 0
-	for _, component := range components {
-		slice := data.NewSlice(1, size)
-		values := slice.Scalars()
-		for z := 0; z < size[Z]; z++ {
-			for y := 0; y < size[Y]; y++ {
-				for x := 0; x < size[X]; x++ {
-					values[z][y][x] = math.Float32frombits(binary.LittleEndian.Uint32(bytes[offset : offset+4]))
-					offset += 4
-				}
-			}
-		}
-		kernel[component[0]][component[1]] = slice
-	}
-	kernel[Y][X] = kernel[X][Y]
-	kernel[Z][X] = kernel[X][Z]
-	kernel[Z][Y] = kernel[Y][Z]
-	return kernel, nil
-}
-
 func LoadKernel(fname string) (kernel *data.Slice, err error) {
 	kernel, _, err = oommf.ReadFile(fname)
 	return
@@ -158,8 +94,13 @@ func SaveKernel(fname string, kernel *data.Slice, info data.Meta) error {
 // of magnetic charges over the faces and averages over cell volumes.
 func CalcDemagKernel(inputSize, pbc [3]int, cellsize [3]float64, accuracy float64) (kernel [3][3]*data.Slice) {
 
+	started := time.Now()
+	defer func() {
+		util.Log("//Demag kernel calculation completed in", time.Since(started).Round(time.Millisecond))
+	}()
 	// Add zero-padding in non-PBC directions
 	size := padSize(inputSize, pbc)
+	util.Log("//Calculating demag kernel: mesh", inputSize, "padded", size, "PBC", pbc, "accuracy", accuracy)
 
 	// Sanity check
 	{
