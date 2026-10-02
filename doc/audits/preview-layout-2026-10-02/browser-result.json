@@ -1,0 +1,696 @@
+{
+  "reports": [
+    {
+      "mode": "Volume",
+      "windowMode": "inline",
+      "viewport": {
+        "width": 1640,
+        "height": 1200
+      },
+      "canvas": {
+        "x": 34,
+        "y": 708.90625,
+        "width": 761,
+        "height": 624,
+        "right": 795,
+        "bottom": 1332.90625
+      },
+      "controls": {
+        "x": 34,
+        "y": 434.515625,
+        "width": 761,
+        "height": 274.390625,
+        "right": 795,
+        "bottom": 708.90625
+      },
+      "stats": {
+        "x": 34,
+        "y": 1332.90625,
+        "width": 761,
+        "height": 59.9375,
+        "right": 795,
+        "bottom": 1392.84375
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Volume",
+      "windowMode": "popout",
+      "viewport": {
+        "width": 1640,
+        "height": 1200
+      },
+      "canvas": {
+        "x": 61,
+        "y": 424.78125,
+        "width": 758,
+        "height": 334.28125,
+        "right": 819,
+        "bottom": 759.0625
+      },
+      "controls": {
+        "x": 61,
+        "y": 159.484375,
+        "width": 758,
+        "height": 265.296875,
+        "right": 819,
+        "bottom": 424.78125
+      },
+      "stats": {
+        "x": 61,
+        "y": 759.0625,
+        "width": 758,
+        "height": 59.9375,
+        "right": 819,
+        "bottom": 819
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Volume",
+      "windowMode": "fullscreen",
+      "viewport": {
+        "width": 1640,
+        "height": 1200
+      },
+      "canvas": {
+        "x": 1,
+        "y": 335.578125,
+        "width": 1638,
+        "height": 823.359375,
+        "right": 1639,
+        "bottom": 1158.9375
+      },
+      "controls": {
+        "x": 1,
+        "y": 61.1875,
+        "width": 1638,
+        "height": 274.390625,
+        "right": 1639,
+        "bottom": 335.578125
+      },
+      "stats": {
+        "x": 1,
+        "y": 1158.9375,
+        "width": 1638,
+        "height": 40.0625,
+        "right": 1639,
+        "bottom": 1199
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Arrows",
+      "windowMode": "inline",
+      "viewport": {
+        "width": 1640,
+        "height": 1200
+      },
+      "canvas": {
+        "x": 34,
+        "y": 738.4375,
+        "width": 761,
+        "height": 624,
+        "right": 795,
+        "bottom": 1362.4375
+      },
+      "controls": {
+        "x": 34,
+        "y": 434.515625,
+        "width": 761,
+        "height": 303.921875,
+        "right": 795,
+        "bottom": 738.4375
+      },
+      "stats": {
+        "x": 34,
+        "y": 1362.4375,
+        "width": 761,
+        "height": 59.9375,
+        "right": 795,
+        "bottom": 1422.375
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Arrows",
+      "windowMode": "popout",
+      "viewport": {
+        "width": 1640,
+        "height": 1200
+      },
+      "canvas": {
+        "x": 61,
+        "y": 424.78125,
+        "width": 758,
+        "height": 334.28125,
+        "right": 819,
+        "bottom": 759.0625
+      },
+      "controls": {
+        "x": 61,
+        "y": 159.484375,
+        "width": 758,
+        "height": 265.296875,
+        "right": 819,
+        "bottom": 424.78125
+      },
+      "stats": {
+        "x": 61,
+        "y": 759.0625,
+        "width": 758,
+        "height": 59.9375,
+        "right": 819,
+        "bottom": 819
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Arrows",
+      "windowMode": "fullscreen",
+      "viewport": {
+        "width": 1640,
+        "height": 1200
+      },
+      "canvas": {
+        "x": 1,
+        "y": 365.109375,
+        "width": 1638,
+        "height": 793.828125,
+        "right": 1639,
+        "bottom": 1158.9375
+      },
+      "controls": {
+        "x": 1,
+        "y": 61.1875,
+        "width": 1638,
+        "height": 303.921875,
+        "right": 1639,
+        "bottom": 365.109375
+      },
+      "stats": {
+        "x": 1,
+        "y": 1158.9375,
+        "width": 1638,
+        "height": 40.0625,
+        "right": 1639,
+        "bottom": 1199
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Voxel",
+      "windowMode": "inline",
+      "viewport": {
+        "width": 1640,
+        "height": 1200
+      },
+      "canvas": {
+        "x": 34,
+        "y": 708.046875,
+        "width": 761,
+        "height": 624,
+        "right": 795,
+        "bottom": 1332.046875
+      },
+      "controls": {
+        "x": 34,
+        "y": 434.515625,
+        "width": 761,
+        "height": 273.53125,
+        "right": 795,
+        "bottom": 708.046875
+      },
+      "stats": {
+        "x": 34,
+        "y": 1332.046875,
+        "width": 761,
+        "height": 59.9375,
+        "right": 795,
+        "bottom": 1391.984375
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Voxel",
+      "windowMode": "popout",
+      "viewport": {
+        "width": 1640,
+        "height": 1200
+      },
+      "canvas": {
+        "x": 61,
+        "y": 424.78125,
+        "width": 758,
+        "height": 334.28125,
+        "right": 819,
+        "bottom": 759.0625
+      },
+      "controls": {
+        "x": 61,
+        "y": 159.484375,
+        "width": 758,
+        "height": 265.296875,
+        "right": 819,
+        "bottom": 424.78125
+      },
+      "stats": {
+        "x": 61,
+        "y": 759.0625,
+        "width": 758,
+        "height": 59.9375,
+        "right": 819,
+        "bottom": 819
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Voxel",
+      "windowMode": "fullscreen",
+      "viewport": {
+        "width": 1640,
+        "height": 1200
+      },
+      "canvas": {
+        "x": 1,
+        "y": 334.71875,
+        "width": 1638,
+        "height": 824.21875,
+        "right": 1639,
+        "bottom": 1158.9375
+      },
+      "controls": {
+        "x": 1,
+        "y": 61.1875,
+        "width": 1638,
+        "height": 273.53125,
+        "right": 1639,
+        "bottom": 334.71875
+      },
+      "stats": {
+        "x": 1,
+        "y": 1158.9375,
+        "width": 1638,
+        "height": 40.0625,
+        "right": 1639,
+        "bottom": 1199
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "uniqueControls": true,
+      "lightingWorks": true,
+      "localWindowRequest": true,
+      "topographyWorks": true,
+      "column": {
+        "gap": 14,
+        "expected": 14,
+        "sameColumn": true
+      },
+      "viewport": {
+        "width": 1640,
+        "height": 1200
+      }
+    },
+    {
+      "scalarCameraVisible": true,
+      "viewport": {
+        "width": 1640,
+        "height": 1200
+      }
+    },
+    {
+      "mode": "Volume",
+      "windowMode": "inline",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "canvas": {
+        "x": 34,
+        "y": 959,
+        "width": 322,
+        "height": 400,
+        "right": 356,
+        "bottom": 1359
+      },
+      "controls": {
+        "x": 34,
+        "y": 806.265625,
+        "width": 322,
+        "height": 152.734375,
+        "right": 356,
+        "bottom": 959
+      },
+      "stats": {
+        "x": 34,
+        "y": 1359,
+        "width": 322,
+        "height": 119.5625,
+        "right": 356,
+        "bottom": 1478.5625
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Volume",
+      "windowMode": "popout",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "canvas": {
+        "x": 17,
+        "y": 312.21875,
+        "width": 356,
+        "height": 407.09375,
+        "right": 373,
+        "bottom": 719.3125
+      },
+      "controls": {
+        "x": 17,
+        "y": 159.484375,
+        "width": 356,
+        "height": 152.734375,
+        "right": 373,
+        "bottom": 312.21875
+      },
+      "stats": {
+        "x": 17,
+        "y": 719.3125,
+        "width": 356,
+        "height": 99.6875,
+        "right": 373,
+        "bottom": 819
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Volume",
+      "windowMode": "fullscreen",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "canvas": {
+        "x": 1,
+        "y": 213.921875,
+        "width": 388,
+        "height": 529.390625,
+        "right": 389,
+        "bottom": 743.3125
+      },
+      "controls": {
+        "x": 1,
+        "y": 61.1875,
+        "width": 388,
+        "height": 152.734375,
+        "right": 389,
+        "bottom": 213.921875
+      },
+      "stats": {
+        "x": 1,
+        "y": 743.3125,
+        "width": 388,
+        "height": 99.6875,
+        "right": 389,
+        "bottom": 843
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Arrows",
+      "windowMode": "inline",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "canvas": {
+        "x": 34,
+        "y": 1154.171875,
+        "width": 322,
+        "height": 400,
+        "right": 356,
+        "bottom": 1554.171875
+      },
+      "controls": {
+        "x": 34,
+        "y": 806.265625,
+        "width": 322,
+        "height": 347.90625,
+        "right": 356,
+        "bottom": 1154.171875
+      },
+      "stats": {
+        "x": 34,
+        "y": 1554.171875,
+        "width": 322,
+        "height": 119.5625,
+        "right": 356,
+        "bottom": 1673.734375
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Arrows",
+      "windowMode": "popout",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "canvas": {
+        "x": 17,
+        "y": 424.78125,
+        "width": 356,
+        "height": 294.53125,
+        "right": 373,
+        "bottom": 719.3125
+      },
+      "controls": {
+        "x": 17,
+        "y": 159.484375,
+        "width": 356,
+        "height": 265.296875,
+        "right": 373,
+        "bottom": 424.78125
+      },
+      "stats": {
+        "x": 17,
+        "y": 719.3125,
+        "width": 356,
+        "height": 99.6875,
+        "right": 373,
+        "bottom": 819
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Arrows",
+      "windowMode": "fullscreen",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "canvas": {
+        "x": 1,
+        "y": 355.875,
+        "width": 388,
+        "height": 387.4375,
+        "right": 389,
+        "bottom": 743.3125
+      },
+      "controls": {
+        "x": 1,
+        "y": 61.1875,
+        "width": 388,
+        "height": 294.6875,
+        "right": 389,
+        "bottom": 355.875
+      },
+      "stats": {
+        "x": 1,
+        "y": 743.3125,
+        "width": 388,
+        "height": 99.6875,
+        "right": 389,
+        "bottom": 843
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Voxel",
+      "windowMode": "inline",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "canvas": {
+        "x": 34,
+        "y": 1090.1875,
+        "width": 322,
+        "height": 400,
+        "right": 356,
+        "bottom": 1490.1875
+      },
+      "controls": {
+        "x": 34,
+        "y": 806.265625,
+        "width": 322,
+        "height": 283.921875,
+        "right": 356,
+        "bottom": 1090.1875
+      },
+      "stats": {
+        "x": 34,
+        "y": 1490.1875,
+        "width": 322,
+        "height": 119.5625,
+        "right": 356,
+        "bottom": 1609.75
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Voxel",
+      "windowMode": "popout",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "canvas": {
+        "x": 17,
+        "y": 424.78125,
+        "width": 356,
+        "height": 294.53125,
+        "right": 373,
+        "bottom": 719.3125
+      },
+      "controls": {
+        "x": 17,
+        "y": 159.484375,
+        "width": 356,
+        "height": 265.296875,
+        "right": 373,
+        "bottom": 424.78125
+      },
+      "stats": {
+        "x": 17,
+        "y": 719.3125,
+        "width": 356,
+        "height": 99.6875,
+        "right": 373,
+        "bottom": 819
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "mode": "Voxel",
+      "windowMode": "fullscreen",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "canvas": {
+        "x": 1,
+        "y": 345.109375,
+        "width": 388,
+        "height": 398.203125,
+        "right": 389,
+        "bottom": 743.3125
+      },
+      "controls": {
+        "x": 1,
+        "y": 61.1875,
+        "width": 388,
+        "height": 283.921875,
+        "right": 389,
+        "bottom": 345.109375
+      },
+      "stats": {
+        "x": 1,
+        "y": 743.3125,
+        "width": 388,
+        "height": 99.6875,
+        "right": 389,
+        "bottom": 843
+      },
+      "contained": true,
+      "outside": [],
+      "controlsClear": true,
+      "statsClear": true
+    },
+    {
+      "uniqueControls": true,
+      "lightingWorks": true,
+      "localWindowRequest": true,
+      "topographyWorks": true,
+      "column": {
+        "gap": 14,
+        "expected": 14,
+        "sameColumn": true
+      },
+      "viewport": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "scalarCameraVisible": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      }
+    }
+  ]
+}

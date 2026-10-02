@@ -22,7 +22,6 @@
 		postPlaneResolution,
 		postMaxPoints,
 		postFullResolution,
-		postScale,
 		postComponent,
 		postAutoScaleEnabled,
 		postLayer,
@@ -47,7 +46,6 @@
 	import SegmentedControl from '$lib/ui/SegmentedControl.svelte';
 	import StatusBadge from '$lib/ui/StatusBadge.svelte';
 	import Toggle from '$lib/ui/Toggle.svelte';
-	import TextField from '$lib/ui/TextField.svelte';
 	import { panelPreferences, setPreferredPreviewMode } from '$lib/ui/preferences';
 	import type { SelectOption } from '$lib/ui/SelectField.svelte';
 	import type { ViewportMode } from '$lib/ui/types';
@@ -68,11 +66,10 @@
 		disposePreview3D,
 		glyphSampling,
 		voxelSampling,
-		clipAxis,
 		type Preview3DRenderMode,
 		type QualityLevel
 	} from './preview3D';
-	import Toolbar3D from './inputs/Toolbar3D.svelte';
+	import RenderControls from './inputs/RenderControls.svelte';
 	import ViewCube from './ViewCube.svelte';
 	import { quantities } from './inputs/quantities';
 
@@ -213,10 +210,7 @@
 
 		if (mode === 'popout') {
 			popW = Math.min(popW, window.innerWidth - 32);
-			popH = Math.min(
-				Math.max(popH, 760),
-				window.innerHeight - 32
-			);
+			popH = Math.min(Math.max(popH, 760), window.innerHeight - 32);
 			popX = Math.max(16, Math.min(popX, window.innerWidth - popW - 16));
 			popY = Math.max(16, Math.min(popY, window.innerHeight - popH - 16));
 		}
@@ -271,10 +265,7 @@
 			const dx = event.clientX - dragOffX;
 			const dy = event.clientY - dragOffY;
 			popW = Math.max(Math.min(460, window.innerWidth - 32), popW + dx);
-			popH = Math.max(
-				Math.min(660, window.innerHeight - 32),
-				popH + dy
-			);
+			popH = Math.max(Math.min(660, window.innerHeight - 32), popH + dy);
 			dragOffX = event.clientX;
 			dragOffY = event.clientY;
 		}
@@ -512,79 +503,87 @@
 						onclick={() => setMode('inline')}>Exit fullscreen</Button
 					>{/if}
 			</div>
-			{#if viewMode !== 'inline' && is2D}
-				<details class="floating-section" bind:open={sectionExpanded}>
-					<summary>Section · {plane.toUpperCase()} · {sectionCaption}</summary>
-					<div class="floating-section-controls">
-						<SegmentedControl
-							value={plane}
-							options={['xy', 'yz', 'xz'].map((value) => ({ value, label: value.toUpperCase() }))}
-							onchange={(value) => postSection({ plane: value as PreviewPlane })}
+			<div class="preview-field-controls">
+				{#if is2D}
+					{#if viewMode !== 'inline' && is2D}
+						<details class="floating-section" bind:open={sectionExpanded}>
+							<summary>Section · {plane.toUpperCase()} · {sectionCaption}</summary>
+							<div class="floating-section-controls">
+								<SegmentedControl
+									value={plane}
+									options={['xy', 'yz', 'xz'].map((value) => ({
+										value,
+										label: value.toUpperCase()
+									}))}
+									onchange={(value) => postSection({ plane: value as PreviewPlane })}
+								/>
+								<SegmentedControl
+									value={$previewState.allLayers ? 'average' : 'single'}
+									options={[
+										{ value: 'single', label: 'Single layer' },
+										{ value: 'average', label: 'Average' }
+									]}
+									onchange={(value) => postSection({ mode: value as 'single' | 'average' })}
+								/>
+								{#if !$previewState.allLayers}<SliceControl
+										axis={axes.normal}
+										count={sliceCount}
+										cellSize={cellSizes[axes.normal]}
+										value={sliceIndex}
+										onchange={setSlice}
+									/>{/if}
+							</div>
+						</details>
+					{/if}
+					<PlaneWindowControls />
+				{:else}
+					<VolumeControls />
+					<RenderControls />
+					<RegionWindowControls compact />
+				{/if}
+			</div>
+			<div class="preview-viewport">
+				<div
+					id="container"
+					bind:this={previewCanvas}
+					class="preview-wrapper__canvas"
+					aria-busy={!!$previewTransition}
+				></div>
+				{#if !is2D}<ViewCube />{/if}
+				{#if !$connected || !hasData}
+					<div class="preview-wrapper__empty">
+						<EmptyState
+							title={!$connected
+								? 'Preview offline'
+								: is2D && $previewState.sequence
+									? 'No cells in this section'
+									: 'No preview data yet'}
+							description={!$connected
+								? 'Reconnect to the backend to stream scalar or vector fields.'
+								: is2D && $previewState.sequence
+									? $previewState.invalidCount
+										? 'This section contains no finite values. Choose another layer or quantity.'
+										: 'The selected cut does not intersect the geometry. Move the slice or choose Average.'
+									: 'This surface will populate once the engine publishes preview data.'}
+							tone={!$connected ? 'warn' : 'info'}
 						/>
-						<SegmentedControl
-							value={$previewState.allLayers ? 'average' : 'single'}
-							options={[
-								{ value: 'single', label: 'Single layer' },
-								{ value: 'average', label: 'Average' }
-							]}
-							onchange={(value) => postSection({ mode: value as 'single' | 'average' })}
-						/>
-						{#if !$previewState.allLayers}<SliceControl
-								axis={axes.normal}
-								count={sliceCount}
-								cellSize={cellSizes[axes.normal]}
-								value={sliceIndex}
-								onchange={setSlice}
-							/>{/if}
 					</div>
-				</details>
-			{/if}
-			{#if !is2D}<ViewCube axisBottom={20} />{/if}
+				{/if}
 
-			{#if !$connected || !hasData}
-				<div class="preview-wrapper__empty">
-					<EmptyState
-						title={!$connected
-							? 'Preview offline'
-							: is2D && $previewState.sequence
-								? 'No cells in this section'
-								: 'No preview data yet'}
-						description={!$connected
-							? 'Reconnect to the backend to stream scalar or vector fields.'
-							: is2D && $previewState.sequence
-								? $previewState.invalidCount
-									? 'This section contains no finite values. Choose another layer or quantity.'
-									: 'The selected cut does not intersect the geometry. Move the slice or choose Average.'
-								: 'This surface will populate once the engine publishes preview data.'}
-						tone={!$connected ? 'warn' : 'info'}
-					/>
-				</div>
-			{/if}
-
-			{#if is2D}<PlaneWindowControls />{/if}
-			{#if $previewTransition}<div class="preview-transition" role="status" aria-live="polite">
-					<span class="preview-transition__spinner" aria-hidden="true"></span>
-					<div>
-						<strong>{$previewTransition.label}</strong><span
-							>{$previewTransition.phase === 'backend'
-								? 'Waiting for the backend to prepare field data…'
-								: 'Rendering the new view…'} · {Math.max(
-								0,
-								(previewNow - $previewTransition.startedAt) / 1000
-							).toFixed(0)} s</span
-						>
-					</div>
-				</div>{/if}
-            {#if !is2D}<div class="preview-field-controls">
-                <VolumeControls />
-                {#if viewMode !== 'inline'}<RegionWindowControls compact />{/if}
-                {#if $renderMode === 'voxel'}<details class="voxel-controls" open>
-                    <summary>Voxel material &amp; topography</summary>
-                    <Toolbar3D embedded />
-                </details>{/if}
-            </div>{/if}
-			<div id="container" bind:this={previewCanvas} class="preview-wrapper__canvas" aria-busy={!!$previewTransition}></div>
-
+				{#if $previewTransition}<div class="preview-transition" role="status" aria-live="polite">
+						<span class="preview-transition__spinner" aria-hidden="true"></span>
+						<div>
+							<strong>{$previewTransition.label}</strong><span
+								>{$previewTransition.phase === 'backend'
+									? 'Waiting for the backend to prepare field data…'
+									: 'Rendering the new view…'} · {Math.max(
+									0,
+									(previewNow - $previewTransition.startedAt) / 1000
+								).toFixed(0)} s</span
+							>
+						</div>
+					</div>{/if}
+			</div>
 
 			{#if $previewState.type === '3D' && hasData}
 				<div class="preview-wrapper__stats">
@@ -605,10 +604,7 @@
 							? 1
 							: $renderMode === 'voxel'
 								? $voxelSampling
-								: $glyphSampling}×
-					{#if $clipAxis !== 'none'}
-						· section {$clipAxis.toUpperCase()}{/if}
-					· {$previewPerformance.updateMs.toFixed(1)} ms update
+								: $glyphSampling}× · {$previewPerformance.updateMs.toFixed(1)} ms update
 					{#if $previewState.timestamp}
 						· step {$previewState.step} · {Math.max(
 							0,
@@ -665,8 +661,6 @@
 			</div>
 		{/if}
 
-		{#if !is2D && viewMode === 'inline'}<RegionWindowControls />{/if}
-
 		<details class="studio-settings" open>
 			<summary
 				><span>Resolution &amp; rendering</span><span class="studio-settings__grid"
@@ -682,8 +676,8 @@
 					{#if !is2D && $previewState.regionActive}
 						<h3>Local window resolution</h3>
 						<p class="settings-hint">
-							Set Native cells or Custom resolution in the 3D render window. Full-domain
-							resolution settings are retained.
+							Set Native cells or Custom resolution in the 3D render window. Full-domain resolution
+							settings are retained.
 						</p>
 					{:else}
 						<div class="settings-card__heading">
@@ -781,11 +775,11 @@
 						</p>
 					{/if}
 				</section>
-				<section class="settings-card" aria-label="Preview appearance">
+				<section class="settings-card" aria-label="Rendering quality">
 					<div class="settings-card__heading">
 						<div>
 							<span class="settings-card__eyebrow">Display</span>
-							<h3>{is2D ? 'Calibrated heatmap' : '3D appearance'}</h3>
+							<h3>{is2D ? 'Calibrated heatmap' : 'Rendering quality'}</h3>
 						</div>
 						<StatusBadge
 							label={is2D
@@ -829,33 +823,29 @@
 							options={qualityOptions}
 							onchange={(next) => setQuality(next as QualityLevel)}
 						/>
-						<div class="appearance-fields">
-							<TextField
-								label="Field scale"
-								hint="0 = adaptive"
-								type="number"
-								min={0}
-								step="any"
-								value={$previewState.fixedScale ?? 0}
-								onchange={(event) =>
-									postScale(Number((event.currentTarget as HTMLInputElement).value))}
-							/>
-						</div>
+
 						{#if $renderMode !== 'volume' && !$previewState.regionActive}
-                            <details class="transfer-settings">
-                                <summary>Advanced: browser transfer</summary>
-                                <SelectField label="Maximum transferred points" value={$previewClientBudget}
-                                    options={transferOptions} onchange={(value) => setPreviewClientBudget(Number(value))} />
-                                <p class="settings-hint">Optional extra sampling for slower connections. This can reduce displayed detail; it cannot increase the preview resolution.</p>
-                            </details>
-                        {/if}
+							<details class="transfer-settings">
+								<summary>Advanced: browser transfer</summary>
+								<SelectField
+									label="Maximum transferred points"
+									value={$previewClientBudget}
+									options={transferOptions}
+									onchange={(value) => setPreviewClientBudget(Number(value))}
+								/>
+								<p class="settings-hint">
+									Optional extra sampling for slower connections. This can reduce displayed detail;
+									it cannot increase the preview resolution.
+								</p>
+							</details>
+						{/if}
 						<p class="settings-hint">
 							{#if $renderMode === 'volume'}Volume uses the full applied preview to preserve a
-								continuous body. Adjust preview resolution to change geometry detail.{:else if $previewState.regionActive}All prepared window points are transferred and displayed. Adjust the window or its resolution to change detail.{:else}Advanced transfer and display sampling can reduce visible points.{/if}
+								continuous body. Adjust preview resolution to change geometry detail.{:else if $previewState.regionActive}All
+								prepared window points are transferred and displayed. Adjust the window or its
+								resolution to change detail.{:else}Advanced transfer and display sampling can reduce
+								visible points.{/if}
 						</p>
-                        {#if $renderMode !== 'voxel'}<details class="advanced-appearance">
-                            <summary>Lighting, clipping &amp; material</summary><Toolbar3D embedded />
-                        </details>{/if}
 					{/if}
 				</section>
 			</div>
@@ -867,7 +857,7 @@
 	.preview-transition {
 		position: absolute;
 		z-index: 8;
-		top: 64px;
+		top: 16px;
 		left: 16px;
 		right: 16px;
 		display: flex;
@@ -916,15 +906,6 @@
 		flex-direction: column;
 		gap: 1rem;
 		min-width: 0;
-	}
-	.preview-wrapper :global(.vc) {
-		top: 4.2rem;
-	}
-	.preview-wrapper--popout :global(.vc) {
-		top: 7rem;
-	}
-	.preview-wrapper :global(.ag) {
-		bottom: 4.5rem;
 	}
 	:global([data-panel='preview'] > .ui-panel__body) {
 		container-type: inline-size;
@@ -991,7 +972,11 @@
 		border-color: var(--border-interactive);
 	}
 	.plane-button.active {
-		background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 13%, transparent), color-mix(in srgb, var(--accent) 3.5%, transparent));
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--accent) 13%, transparent),
+			color-mix(in srgb, var(--accent) 3.5%, transparent)
+		);
 		border-color: color-mix(in srgb, var(--accent) 50%, transparent);
 		color: var(--accent);
 		box-shadow: inset 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
@@ -1106,19 +1091,31 @@
 		color: var(--text-3);
 		white-space: nowrap;
 	}
-    .preview-field-controls {
-        flex-shrink: 0;
-        max-height: 45vh;
-        overflow-y: auto;
-        min-width: 0;
-        border-bottom: 1px solid var(--border-subtle);
-    }
-    .voxel-controls { padding: 0.75rem 1rem; border-top: 1px solid var(--border-subtle); }
-    .voxel-controls > summary { cursor: pointer; font-size: 0.8rem; font-weight: 600; color: var(--text-1); }
-	.preview-wrapper__canvas {
+	.preview-field-controls {
+		flex-shrink: 0;
+		max-height: 45vh;
+		overflow-y: auto;
+		min-width: 0;
+		border-bottom: 1px solid var(--border-subtle);
+	}
+	.preview-viewport {
+		position: relative;
+		isolation: isolate;
+		overflow: hidden;
 		width: 100%;
 		height: clamp(25rem, 46vw, 39rem);
 		min-height: 21rem;
+		flex-shrink: 0;
+	}
+	.preview-wrapper__canvas {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+	}
+	.surface-heading,
+	.preview-wrapper__titlebar,
+	.preview-wrapper__stats {
 		flex-shrink: 0;
 	}
 	.preview-wrapper__stats {
@@ -1136,7 +1133,7 @@
 	}
 	.preview-wrapper__empty {
 		position: absolute;
-		inset: 3.5rem 1rem 2rem;
+		inset: 1rem;
 		z-index: 2;
 		display: grid;
 		place-items: center;
@@ -1247,11 +1244,7 @@
 		color: var(--text-2);
 		line-height: 1.65;
 	}
-	.appearance-fields {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-		gap: 0.8rem;
-	}
+
 	.heatmap-swatch {
 		height: 0.5rem;
 		border-radius: 999px;
@@ -1275,15 +1268,6 @@
 		font-size: 0.74rem;
 		line-height: 1.65;
 		color: var(--text-2);
-	}
-	.advanced-appearance {
-		border-top: 1px solid var(--border-subtle);
-		padding-top: 0.75rem;
-	}
-	.advanced-appearance summary {
-		font-size: 0.75rem;
-		color: var(--text-2);
-		cursor: pointer;
 	}
 	.studio-alert {
 		margin: 0;
@@ -1310,11 +1294,15 @@
 		z-index: var(--z-popout);
 		box-shadow: var(--shadow-panel);
 	}
-	.preview-wrapper--popout .preview-wrapper__canvas,
-	.preview-wrapper--fullscreen .preview-wrapper__canvas {
+	.preview-wrapper--popout .preview-viewport,
+	.preview-wrapper--fullscreen .preview-viewport {
 		flex: 1;
-		min-height: 0;
-		height: 100%;
+		min-height: 8rem;
+		height: auto;
+	}
+	.preview-wrapper--popout .preview-field-controls,
+	.preview-wrapper--fullscreen .preview-field-controls {
+		max-height: 35%;
 	}
 	.preview-wrapper--fullscreen {
 		width: 100%;
@@ -1346,7 +1334,11 @@
 		width: 1.2rem;
 		height: 1.2rem;
 		cursor: nwse-resize;
-		background: linear-gradient(135deg, transparent 55%, color-mix(in srgb, var(--info) 45%, transparent) 55%);
+		background: linear-gradient(
+			135deg,
+			transparent 55%,
+			color-mix(in srgb, var(--info) 45%, transparent) 55%
+		);
 	}
 	.floating-section > summary {
 		padding: 0.65rem 1rem;
@@ -1401,7 +1393,7 @@
 		.volume-strip :global(.ui-button) {
 			grid-column: 1/-1;
 		}
-		.preview-wrapper__canvas {
+		.preview-viewport {
 			height: 25rem;
 		}
 		.surface-heading__unit {

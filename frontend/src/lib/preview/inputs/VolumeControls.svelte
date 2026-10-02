@@ -2,7 +2,6 @@
 	import { previewState } from '$api/incoming/preview';
 	import SelectField from '$lib/ui/SelectField.svelte';
 	import SegmentedControl from '$lib/ui/SegmentedControl.svelte';
-	import Toggle from '$lib/ui/Toggle.svelte';
 	import {
 		volumeColorMode,
 		voxelColorMode,
@@ -11,13 +10,11 @@
 		type VoxelColorMode,
 		volumeProjection,
 		volumeProjectionAxis,
-		volumeLighting,
 		volumeScaleMode,
 		volumeManualRange,
 		volumeLegend,
 		setVolumeColorMode,
 		setVolumeProjection,
-		setVolumeLighting,
 		setVolumeScale,
 		type VolumeColorMode
 	} from '../preview3D';
@@ -29,11 +26,7 @@
 		else setVoxelColorMode(value as VoxelColorMode);
 	}
 	$effect(() => {
-		if (
-			$previewState.nComp === 1 &&
-			colorMode !== 'geometry' &&
-			colorMode !== 'value'
-		)
+		if ($previewState.nComp === 1 && colorMode !== 'geometry' && colorMode !== 'value')
 			setColorMode('value');
 		if ($previewState.nComp === 3 && colorMode === 'value') setColorMode('x');
 	});
@@ -60,14 +53,20 @@
 	<summary class="volume-controls__heading">
 		<span class="volume-controls__icon" aria-hidden="true">▧</span>
 		<div>
-			<strong>{isVolume ? "Volume surface" : $renderMode === "glyph" ? "Arrow colors" : "Voxel colors"}</strong><span
-				>Field coloring · {$previewState.quantity || 'Field'}</span
-			>
+			<strong
+				>{isVolume
+					? 'Volume surface'
+					: $renderMode === 'glyph'
+						? 'Arrow colors'
+						: 'Voxel colors'}</strong
+			><span>Field coloring · {$previewState.quantity || 'Field'}</span>
 		</div>
 		<span class="volume-controls__badge"
 			>{isVolume && $volumeProjection === 'average' && field
 				? `Mean · ${$volumeProjectionAxis.toUpperCase()}`
-				: isVolume ? 'Surface' : 'Local'}</span
+				: isVolume
+					? 'Surface'
+					: 'Local'}</span
 		>
 	</summary>
 	<div class="volume-controls__grid">
@@ -89,23 +88,23 @@
 					]}
 			onchange={setColorMode}
 		/>
-		{#if isVolume}<SegmentedControl
-			label="Field on surface"
-			value={$volumeProjection}
-			options={[
-				{ value: 'surface', label: 'Surface values' },
-				{ value: 'average', label: 'Thickness average' }
-			]}
-			onchange={(value) => setVolumeProjection(value as 'surface' | 'average')}
-		/>
-		{#if isVolume && $volumeProjection === 'average'}
-			<SegmentedControl
-				label="Average along"
-				value={$volumeProjectionAxis}
-				options={['x', 'y', 'z'].map((value) => ({ value, label: value.toUpperCase() }))}
-				onchange={(value) => setVolumeProjection('average', value as ProjectionAxis)}
+		{#if isVolume && field}<SegmentedControl
+				label="Field on surface"
+				value={$volumeProjection}
+				options={[
+					{ value: 'surface', label: 'Surface values' },
+					{ value: 'average', label: 'Thickness average' }
+				]}
+				onchange={(value) => setVolumeProjection(value as 'surface' | 'average')}
 			/>
-		{/if}
+			{#if isVolume && $volumeProjection === 'average'}
+				<SegmentedControl
+					label="Average along"
+					value={$volumeProjectionAxis}
+					options={['x', 'y', 'z'].map((value) => ({ value, label: value.toUpperCase() }))}
+					onchange={(value) => setVolumeProjection('average', value as ProjectionAxis)}
+				/>
+			{/if}
 		{/if}
 		{#if scalar}<SegmentedControl
 				label="Color range"
@@ -126,13 +125,16 @@
 				}}
 			/>{/if}
 	</div>
-    {#if $renderMode === 'glyph'}<div class="volume-controls__description">
-        Arrow direction always uses the complete XYZ vector. Color by selects only the color; it does not change arrow orientation.
-    </div>{/if}
+	{#if $renderMode === 'glyph'}<div class="volume-controls__description">
+			Arrow direction always uses the complete XYZ vector. Color by selects only the color; it does
+			not change arrow orientation.
+		</div>{/if}
 	{#if field}<div class="volume-controls__description">
 			{#if isVolume && $volumeProjection === 'average'}Arithmetic mean along {$volumeProjectionAxis.toUpperCase()},
 				projected onto the existing surface. All preview layers contribute, including zero values;
-				empty cells contribute zero.{:else}Local field values on {isVolume ? "the outer boundary and cavity walls" : "each displayed cell"}. Clipping exposes values inside the body.{/if}
+				empty cells contribute zero.{:else}Local field values on {isVolume
+					? 'the outer boundary and cavity walls'
+					: 'each displayed cell'}. Use the 3D render window to inspect values inside the body.{/if}
 		</div>{:else}<div class="volume-controls__description">
 			Solid, opaque cells reveal geometry and cavities. Choose a field component to apply the 2D
 			color map.
@@ -166,19 +168,7 @@
 			>
 		</div>
 	{/if}
-	{#if isVolume}<div class="volume-controls__footer">
-		{#if field}<Toggle
-				label="Surface lighting"
-				checked={$volumeLighting}
-				onchange={setVolumeLighting}
-			/>{:else}<strong>Lit geometry</strong>{/if}<span
-			>{field
-				? $volumeLighting
-					? 'Lighting changes perceived colors.'
-					: 'Unlit colors match the 2D palette.'
-				: 'Solid geometry uses lighting to reveal its shape.'}</span
-		>
-	</div>{/if}
+
 	{#if !$previewState.allLayers && isVolume && $volumeProjection === 'average' && field}<div
 			class="volume-controls__notice"
 		>
@@ -248,17 +238,10 @@
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 		gap: 0.8rem;
 	}
-	.volume-controls__description,
-	.volume-controls__footer > span {
+	.volume-controls__description {
 		font-size: 0.7rem;
 		color: var(--text-2);
 		line-height: 1.5;
-	}
-	.volume-controls__footer {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: 0.75rem;
 	}
 	.volume-controls__legend {
 		display: flex;

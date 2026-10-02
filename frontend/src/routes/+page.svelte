@@ -69,7 +69,11 @@
 			return;
 		}
 
-		if ((event.key === '?' || (event.key === '/' && event.shiftKey)) && !event.metaKey && !event.ctrlKey) {
+		if (
+			(event.key === '?' || (event.key === '/' && event.shiftKey)) &&
+			!event.metaKey &&
+			!event.ctrlKey
+		) {
 			event.preventDefault();
 			showShortcuts = !showShortcuts;
 			return;
@@ -148,52 +152,53 @@
 					{tab.label}
 				</Button>
 			{/each}
-			<Button size="sm" variant="ghost" tone="info" onclick={() => (showShortcuts = true)}>Shortcuts</Button>
+			<Button size="sm" variant="ghost" tone="info" onclick={() => (showShortcuts = true)}
+				>Shortcuts</Button
+			>
 		</div>
 	{/if}
 
 	<div class="workspace">
-		<!-- Row 1: Visualization -->
-		<div class="zone-viz">
-			{#if PreviewComponent}
-				<PreviewComponent />
-			{:else if previewLoadError}
-				<div class="workspace-loading-card workspace-loading-card--error">
-					Preview failed to load: {previewLoadError}
-				</div>
-			{:else}
-				<div class="workspace-loading-card">Loading preview surface…</div>
-			{/if}
+		<div class="workspace-column">
+			<div class="zone-viz">
+				{#if PreviewComponent}
+					<PreviewComponent />
+				{:else if previewLoadError}
+					<div class="workspace-loading-card workspace-loading-card--error">
+						Preview failed to load: {previewLoadError}
+					</div>
+				{:else}
+					<div class="workspace-loading-card">Loading preview surface…</div>
+				{/if}
+			</div>
+			<div class="zone-solver">
+				<Solver />
+			</div>
 		</div>
-		<div class="zone-table">
-			{#if TablePlotComponent}
-				<TablePlotComponent />
-			{:else if tablePlotLoadError}
-				<div class="workspace-loading-card workspace-loading-card--error">
-					Plots failed to load: {tablePlotLoadError}
-				</div>
-			{:else}
-				<div class="workspace-loading-card">Loading analytical plot…</div>
-			{/if}
+		<div class="workspace-column">
+			<div class="zone-table">
+				{#if TablePlotComponent}
+					<TablePlotComponent />
+				{:else if tablePlotLoadError}
+					<div class="workspace-loading-card workspace-loading-card--error">
+						Plots failed to load: {tablePlotLoadError}
+					</div>
+				{:else}
+					<div class="workspace-loading-card">Loading analytical plot…</div>
+				{/if}
+			</div>
+			<div class="zone-console">
+				<Console />
+			</div>
+			<div class="zone-mesh">
+				<Mesh />
+			</div>
+			<div class="zone-params">
+				<Parameters />
+			</div>
 		</div>
 
-		<!-- Row 2: Console + Solver -->
-		<div class="zone-console">
-			<Console />
-		</div>
-		<div class="zone-solver">
-			<Solver />
-		</div>
-
-		<!-- Row 3: Mesh + Parameters -->
-		<div class="zone-mesh">
-			<Mesh />
-		</div>
-		<div class="zone-params">
-			<Parameters />
-		</div>
-
-		<!-- Row 4: Diagnostics (full width) -->
+		<!-- Diagnostics spans both independent columns. -->
 		<div class="zone-metrics">
 			<Metrics />
 		</div>
@@ -207,7 +212,9 @@
 						<p class="shortcuts-card__eyebrow">Keyboard</p>
 						<h2>Shortcuts</h2>
 					</div>
-					<Button size="sm" variant="ghost" tone="info" onclick={() => (showShortcuts = false)}>Close</Button>
+					<Button size="sm" variant="ghost" tone="info" onclick={() => (showShortcuts = false)}
+						>Close</Button
+					>
 				</div>
 
 				<div class="shortcuts-list">
@@ -298,8 +305,7 @@
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-lg);
 		background:
-			linear-gradient(180deg, rgba(18, 28, 47, 0.96), rgba(9, 15, 25, 0.96)),
-			var(--surface-1);
+			linear-gradient(180deg, rgba(18, 28, 47, 0.96), rgba(9, 15, 25, 0.96)), var(--surface-1);
 		color: var(--text-2);
 		font-weight: 600;
 		letter-spacing: 0.02em;

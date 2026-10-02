@@ -18,7 +18,7 @@ export type QualityLevel = 'low' | 'high' | 'ultra';
 export type Preview3DRenderMode = 'glyph' | 'voxel' | 'volume';
 export type VoxelColorMode = 'orientation' | 'magnitude' | 'value' | 'x' | 'y' | 'z';
 export type VolumeColorMode = 'geometry' | 'value' | VoxelColorMode;
-export const volumeColorMode = writable<VolumeColorMode>('geometry');
+export const volumeColorMode = writable<VolumeColorMode>('orientation');
 export const volumeProjection = writable<'surface' | 'average'>('surface');
 export const volumeProjectionAxis = writable<ProjectionAxis>('z');
 export const volumeLighting = writable(false);
@@ -178,9 +178,6 @@ export const voxelOpaque = writable(
 	browser ? localStorage.getItem('preview3d_opaque') === 'true' : false
 );
 export const glyphSampling = writable<VoxelSampling>(1);
-export const clipAxis = writable<'none' | 'x' | 'y' | 'z'>('none');
-export const clipMin = writable(0);
-export const clipMax = writable(1);
 export const previewPerformance = writable({
 	updateMs: 0,
 	renderMs: 0,
@@ -488,7 +485,8 @@ function installCameraRoll(
 	let lastX = 0;
 	let previousFlags = { enabled: true, noRotate: false, noPan: false, noZoom: false };
 	const axis = new THREE.Vector3();
-	canvas.title = 'Left drag: orbit; right drag: pan; left + right drag horizontally: roll; wheel: zoom';
+	canvas.title =
+		'Left drag: orbit; right drag: pan; left + right drag horizontally: roll; wheel: zoom';
 
 	function endRoll(event?: MouseEvent) {
 		if (!rolling) return;
@@ -498,10 +496,16 @@ function installCameraRoll(
 		controls.dispatchEvent({ type: 'end' });
 		// Restart the remaining single-button gesture at the current position.
 		if (event && (event.buttons & 3) !== 0) {
-			canvas.dispatchEvent(new PointerEvent('pointerdown', {
-				pointerId, pointerType: 'mouse', button: event.buttons & 1 ? 0 : 2,
-				buttons: event.buttons, clientX: event.clientX, clientY: event.clientY
-			}));
+			canvas.dispatchEvent(
+				new PointerEvent('pointerdown', {
+					pointerId,
+					pointerType: 'mouse',
+					button: event.buttons & 1 ? 0 : 2,
+					buttons: event.buttons,
+					clientX: event.clientX,
+					clientY: event.clientY
+				})
+			);
 		}
 	}
 
@@ -513,7 +517,7 @@ function installCameraRoll(
 		}
 		event.preventDefault();
 		event.stopImmediatePropagation();
-		const angle = (event.clientX - lastX) * 2 * Math.PI / Math.max(canvas.clientWidth, 1);
+		const angle = ((event.clientX - lastX) * 2 * Math.PI) / Math.max(canvas.clientWidth, 1);
 		lastX = event.clientX;
 		camera.getWorldDirection(axis);
 		camera.up.applyAxisAngle(axis, angle).normalize();
@@ -531,8 +535,10 @@ function installCameraRoll(
 		controls.update();
 		canvas.dispatchEvent(new PointerEvent('pointerup', { pointerId, pointerType: 'mouse' }));
 		previousFlags = {
-			enabled: controls.enabled, noRotate: controls.noRotate,
-			noPan: controls.noPan, noZoom: controls.noZoom
+			enabled: controls.enabled,
+			noRotate: controls.noRotate,
+			noPan: controls.noPan,
+			noZoom: controls.noZoom
 		};
 		rolling = true;
 		lastX = event.clientX;
@@ -546,7 +552,9 @@ function installCameraRoll(
 	function onMouseUp(event: MouseEvent) {
 		if ((event.buttons & 3) !== 3) endRoll(event);
 	}
-	function cancelRoll() { endRoll(); }
+	function cancelRoll() {
+		endRoll();
+	}
 	function onLostPointerCapture() {
 		if (!canvas.hasPointerCapture(pointerId)) cancelRoll();
 	}
@@ -824,11 +832,8 @@ function updateInstances(display: ThreeDPreview) {
 		display.rendererMode = mode;
 	}
 	const colorMode = mode === 'volume' ? get(volumeColorMode) : get(voxelColorMode),
-		threshold = get(voxelThreshold),
-		axis = get(clipAxis),
-		lo = get(clipMin),
-		hi = get(clipMax);
-	const filterKey = [mode, colorMode, threshold, axis, lo, hi].join(':');
+		threshold = get(voxelThreshold);
+	const filterKey = [mode, colorMode, threshold].join(':');
 	const physicalScale = state.normScale || 1;
 	let min = Infinity,
 		max = -Infinity;
@@ -925,15 +930,6 @@ function updateInstances(display: ThreeDPreview) {
 			if (mode === 'voxel') {
 				// Changing color must not hide cells with a zero selected component.
 				if (vx * vx + vy * vy + vz * vz < threshold * threshold) continue;
-			}
-			if (axis !== 'none') {
-				const coordinate =
-					axis === 'x'
-						? (positions[o] + 0.5) / width
-						: axis === 'y'
-							? (positions[o + 1] + 0.5) / height
-							: (Math.floor(positions[o + 2] / stride) + 0.5) / depth;
-				if (coordinate < lo || coordinate > hi) continue;
 			}
 			const target = n * 3;
 			fields[target] = vx;
@@ -1249,13 +1245,6 @@ export function setGlyphSampling(value: VoxelSampling) {
 	glyphSampling.set(value);
 	scheduleInstanceUpdate();
 }
-export function setClip(axis: 'none' | 'x' | 'y' | 'z', min = 0, max = 1) {
-	clipAxis.set(axis);
-	clipMin.set(Math.max(0, min));
-	clipMax.set(Math.min(1, Math.max(min, max)));
-	scheduleInstanceUpdate();
-}
-
 export function setVoxelOpacity(value: number) {
 	const clamped = Math.max(0.15, Math.min(0.95, value));
 	persistSetting(STORAGE_KEYS.voxelOpacity, clamped);

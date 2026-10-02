@@ -9,16 +9,13 @@
 		resetCamera
 	} from '$lib/preview/preview3D';
 
-	let { axisBottom = 20 }: { axisBottom?: number } = $props();
 	let cubeTransform = $state('none');
 	let dragging = $state(false);
 	let dragStartX = 0;
 	let dragStartY = 0;
 	let hasDragged = false;
 
-	const isVisible = $derived(
-		$previewState.nComp === 3 && $previewState.type === '3D' && $threeDPreview !== null
-	);
+	const isVisible = $derived($previewState.type === '3D' && $threeDPreview !== null);
 
 	type FaceZone = {
 		dir: [number, number, number];
@@ -159,7 +156,7 @@
 	</div>
 
 	<!-- Axis Gizmo: bottom-right -->
-	<div class="ag" style:bottom={`${axisBottom}px`}>
+	<div class="ag">
 		<div class="ag-scene" style="transform: {cubeTransform}">
 			<!-- X axis (red) — points along +X -->
 			<div class="ag-shaft ag-shaft--x" style="transform: rotateZ(-90deg) translateY(-18px)"></div>
@@ -183,8 +180,8 @@
 		position: absolute;
 		top: 16px;
 		right: 16px;
-		width: 72px;
-		height: 82px;
+		width: 112px;
+		height: 124px;
 		z-index: var(--z-sticky, 10);
 		perspective: 220px;
 		display: flex;
@@ -196,6 +193,7 @@
 	.vc-scene {
 		width: 60px;
 		height: 60px;
+		margin-top: 22px;
 		transform-style: preserve-3d;
 		cursor: grab;
 		touch-action: none;
@@ -253,7 +251,7 @@
 	}
 
 	.vc-home {
-		margin-top: 3px;
+		margin-top: 18px;
 		width: 20px;
 		height: 20px;
 		border-radius: 50%;
@@ -281,16 +279,16 @@
 		position: absolute;
 		bottom: 20px;
 		right: 20px;
-		width: 90px;
-		height: 90px;
+		width: 112px;
+		height: 112px;
 		z-index: var(--z-sticky, 10);
 		perspective: 200px;
 		pointer-events: none;
 	}
 
 	.ag-scene {
-		width: 90px;
-		height: 90px;
+		width: 112px;
+		height: 112px;
 		transform-style: preserve-3d;
 		position: relative;
 	}
