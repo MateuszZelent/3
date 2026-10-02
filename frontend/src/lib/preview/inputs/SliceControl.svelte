@@ -101,7 +101,7 @@
 		padding: 1rem 1.1rem;
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-md);
-		background: linear-gradient(100deg, rgba(87, 200, 182, 0.065), rgba(107, 167, 255, 0.035));
+		background: var(--surface-2);
 		min-width: 0;
 	}
 	.slice-control__heading,

@@ -1,0 +1,38 @@
+{
+  "activeUpdates": 7,
+  "stages": [
+    "Calculating demag kernel",
+    "Demag cache write",
+    "//Demag GPU: allocating buffers and creating FFT plans for [256 256 256]\n",
+    "//Demag GPU: transforming component 01 (2/6)\n"
+  ],
+  "completed": {
+    "id": 1,
+    "active": false,
+    "failed": false,
+    "stage": "Demagnetization ready",
+    "percent": 100,
+    "startedAt": 1790929615522,
+    "logs": [
+      "08:26:55 //Demag cache: checking /evidence/3-ui-demag-cache/128_128_128_0_0_0_5.000000e-09_7.000000e-09_9.000000e-09_6.cache2",
+      "08:26:55 //Demag cache miss; calculating kernel",
+      "08:26:55 //Calculating demag kernel: mesh [128 128 128] padded [256 256 256] PBC [0 0 0] accuracy 6",
+      "08:26:57 //Demag kernel calculation completed in 2.455s",
+      "08:26:57 //Demag cache write: 384.0 MiB",
+      "08:26:58 //Demag cache write: 100% (384.0 / 384.0 MiB), elapsed 534ms",
+      "08:26:58 //Demag cache: synchronizing file to storage /evidence/3-ui-demag-cache/128_128_128_0_0_0_5.000000e-09_7.000000e-09_9.000000e-09_6.cache2",
+      "08:26:58 //Demag cache write completed in 878ms",
+      "08:26:58 //Cached kernel: /evidence/3-ui-demag-cache/128_128_128_0_0_0_5.000000e-09_7.000000e-09_9.000000e-09_6.cache2",
+      "08:26:58 //Demag GPU: allocating buffers and creating FFT plans for [256 256 256]",
+      "08:26:59 //Demag GPU: FFT plans ready; transforming kernel components",
+      "08:26:59 //Demag GPU: transforming component 00 (1/6)",
+      "08:26:59 //Demag GPU: transforming component 01 (2/6)",
+      "08:26:59 //Demag GPU: transforming component 02 (3/6)",
+      "08:26:59 //Demag GPU: transforming component 11 (4/6)",
+      "08:26:59 //Demag GPU: transforming component 12 (5/6)",
+      "08:26:59 //Demag GPU: transforming component 22 (6/6)",
+      "08:26:59 //Demag GPU initialization completed in 654ms"
+    ]
+  },
+  "errors": []
+}

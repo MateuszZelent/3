@@ -213,8 +213,8 @@
 		grid-template-columns: 10px 1fr 10px;
 		grid-template-rows: 10px 1fr 10px;
 		backface-visibility: visible;
-		background: linear-gradient(135deg, rgba(15, 22, 40, 0.8), rgba(20, 30, 52, 0.76));
-		border: 1px solid rgba(90, 130, 200, 0.2);
+		background: var(--surface-glass);
+		border: 1px solid var(--border-subtle);
 	}
 
 	.vc-zone {
@@ -229,20 +229,20 @@
 		transition: background 0.1s;
 	}
 	.vc-zone:hover {
-		background: rgba(107, 167, 255, 0.25);
+		background: color-mix(in srgb, var(--info) 25%, transparent);
 	}
 	.vc-zone--face {
-		color: rgba(200, 215, 240, 0.8);
+		color: var(--text-2);
 	}
 	.vc-zone--face:hover {
-		background: rgba(107, 167, 255, 0.38);
-		color: #fff;
+		background: color-mix(in srgb, var(--info) 38%, transparent);
+		color: var(--text-1);
 	}
 	.vc-zone--edge:hover {
-		background: rgba(87, 200, 182, 0.3);
+		background: color-mix(in srgb, var(--accent) 30%, transparent);
 	}
 	.vc-zone--corner:hover {
-		background: rgba(200, 160, 80, 0.3);
+		background: color-mix(in srgb, var(--warn) 30%, transparent);
 	}
 
 	.vc-label {
@@ -257,9 +257,9 @@
 		width: 20px;
 		height: 20px;
 		border-radius: 50%;
-		background: rgba(15, 22, 40, 0.8);
-		border: 1px solid rgba(90, 130, 200, 0.3);
-		color: rgba(200, 215, 240, 0.7);
+		background: var(--surface-glass);
+		border: 1px solid var(--border-interactive);
+		color: var(--text-2);
 		font-size: 12px;
 		cursor: pointer;
 		display: flex;
@@ -271,9 +271,9 @@
 		pointer-events: auto;
 	}
 	.vc-home:hover {
-		background: rgba(55, 95, 170, 0.6);
-		border-color: rgba(107, 167, 255, 0.5);
-		color: #fff;
+		background: var(--surface-3);
+		border-color: var(--border-interactive);
+		color: var(--text-1);
 	}
 
 	/* ── Axis Gizmo ──────────────────────────── */

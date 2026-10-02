@@ -765,7 +765,7 @@ function updateInstances(display: ThreeDPreview) {
 		1000000
 	);
 	const step =
-		(mode === 'volume' || (state.regionActive && state.region?.mode === 'native')
+		(mode === 'volume' || state.regionActive
 			? 1
 			: mode === 'voxel'
 				? get(voxelSampling)

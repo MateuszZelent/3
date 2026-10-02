@@ -1,6 +1,9 @@
 package webui
 
-import "testing"
+import (
+	"github.com/labstack/echo/v4"
+	"testing"
+)
 
 func TestRegionResolutionAndBounds(t *testing.T) {
 	mesh := [3]int{4096, 8, 4}
@@ -44,5 +47,13 @@ func TestRegionResolutionAndBounds(t *testing.T) {
 		if applied[a] < 1 || applied[a] > large[a] {
 			t.Fatal(applied)
 		}
+	}
+}
+
+func TestPreviewRegionInitializedBeforeFirstFrame(t *testing.T) {
+	e := echo.New()
+	s := initPreviewAPI(e.Group(""), &WebSocketManager{})
+	if s.Region.Mode != "native" || s.Region.MaxPoints != previewHardLimit || s.Region.Enabled {
+		t.Fatalf("render window must be available without a previous region request: %+v", s.Region)
 	}
 }

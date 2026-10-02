@@ -84,7 +84,7 @@
 		padding: 0.9rem;
 		border-radius: var(--radius-md);
 		border: 1px solid var(--border-subtle);
-		background: rgba(255, 255, 255, 0.03);
+		background: color-mix(in srgb, var(--text-1) 3%, transparent);
 	}
 
 	.slider-field__track {
@@ -97,7 +97,7 @@
 
 	.slider-field__fill {
 		height: 100%;
-		background: linear-gradient(90deg, rgba(107, 167, 255, 0.16), rgba(87, 200, 182, 0.2));
+		background: linear-gradient(90deg, color-mix(in srgb, var(--info) 16%, transparent), color-mix(in srgb, var(--accent) 20%, transparent));
 		transition: width var(--duration-fast) var(--easing-default);
 	}
 
@@ -117,7 +117,7 @@
 		grid-template-columns: auto 1fr auto;
 		align-items: center;
 		gap: 0.5rem;
-		font-family: 'IBM Plex Mono', monospace;
+		font-family: var(--font-mono);
 		font-size: 0.8rem;
 		color: var(--text-3);
 	}

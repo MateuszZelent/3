@@ -185,7 +185,8 @@
 						<div class="btn-group btn-group--wide">
 							{#each samplingModes as { key, label }}<button
 									class="seg-btn"
-									class:active={$glyphSampling === key}
+									class:active={($p.regionActive ? 1 : $glyphSampling) === key}
+                                    disabled={$p.regionActive}
 									onclick={() => setGlyphSampling(key)}>{label}</button
 								>{/each}
 						</div>
@@ -251,7 +252,8 @@
 							{#each samplingModes as { key, label }}
 								<button
 									class="seg-btn"
-									class:active={$voxelSampling === key}
+									class:active={($p.regionActive ? 1 : $voxelSampling) === key}
+                                    disabled={$p.regionActive}
 									onclick={() => setVoxelSampling(key)}
 								>
 									{label}
@@ -380,7 +382,7 @@
 
 	.toolbar-content {
 		margin-top: var(--space-xs);
-		background: linear-gradient(180deg, rgba(12, 18, 31, 0.92), rgba(8, 12, 22, 0.92));
+		background: var(--surface-2);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-lg);
 		padding: var(--space-sm);
@@ -392,9 +394,9 @@
 		flex-direction: column;
 		gap: var(--space-sm);
 		backdrop-filter: blur(14px);
-		box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+		box-shadow: var(--shadow-panel);
 		scrollbar-width: thin;
-		scrollbar-color: rgba(107, 167, 255, 0.3) transparent;
+		scrollbar-color: var(--border-interactive) transparent;
 	}
 
 	.control-group {
@@ -424,7 +426,7 @@
 		height: 4px;
 		-webkit-appearance: none;
 		appearance: none;
-		background: linear-gradient(90deg, rgba(87, 200, 182, 0.2), rgba(107, 167, 255, 0.24));
+		background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 20%, transparent), color-mix(in srgb, var(--info) 24%, transparent));
 		border-radius: 999px;
 		outline: none;
 		cursor: pointer;
@@ -437,7 +439,7 @@
 		height: 14px;
 		border-radius: 50%;
 		background: var(--accent);
-		border: 2px solid rgba(9, 14, 24, 0.9);
+		border: 2px solid var(--surface-1);
 		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
 		cursor: pointer;
 	}
@@ -448,7 +450,7 @@
 		border-radius: var(--radius-md);
 		overflow: hidden;
 		border: 1px solid var(--border);
-		background: rgba(255, 255, 255, 0.03);
+		background: color-mix(in srgb, var(--text-1) 3%, transparent);
 	}
 
 	.section-range {
@@ -481,14 +483,16 @@
 		border-right: 1px solid var(--border);
 	}
 
-	.seg-btn:hover {
-		background: rgba(107, 167, 255, 0.08);
+	.seg-btn:disabled { opacity: 0.6; cursor: default; }
+
+	.seg-btn:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--info) 8%, transparent);
 		color: var(--text-2);
 	}
 
 	.seg-btn.active {
-		background: linear-gradient(135deg, rgba(87, 200, 182, 0.92), rgba(56, 178, 162, 0.92));
-		color: #08101d;
+		background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+		color: var(--on-accent);
 	}
 
 	.action-btn--topo-active {
@@ -497,7 +501,7 @@
 			rgba(52, 211, 153, 0.85),
 			rgba(16, 185, 129, 0.85)
 		) !important;
-		color: #08101d !important;
+		color: var(--on-accent) !important;
 		border-color: rgba(52, 211, 153, 0.5) !important;
 	}
 
@@ -513,7 +517,7 @@
 		font-weight: 700;
 		letter-spacing: 0.04em;
 		color: var(--text-2);
-		background: rgba(255, 255, 255, 0.035);
+		background: color-mix(in srgb, var(--text-1) 3.5%, transparent);
 		border: 1px solid var(--border);
 		border-radius: var(--radius-md);
 		cursor: pointer;
@@ -521,7 +525,7 @@
 	}
 
 	.action-btn:hover {
-		background: rgba(107, 167, 255, 0.08);
+		background: color-mix(in srgb, var(--info) 8%, transparent);
 		border-color: var(--border-interactive);
 		color: var(--text-1);
 	}

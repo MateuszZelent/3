@@ -81,7 +81,7 @@
 		padding: 0 0.9rem;
 		border-radius: var(--radius-md);
 		border: 1px solid var(--border-subtle);
-		background: rgba(255, 255, 255, 0.03);
+		background: color-mix(in srgb, var(--text-1) 3%, transparent);
 	}
 
 	.ui-select__control:focus-within {

@@ -24,7 +24,7 @@
 		padding: 0.4rem 0.75rem;
 		border-radius: var(--radius-pill);
 		border: 1px solid var(--border-subtle);
-		background: rgba(255, 255, 255, 0.03);
+		background: color-mix(in srgb, var(--text-1) 3%, transparent);
 		color: var(--text-2);
 		font-size: 0.82rem;
 		font-weight: 600;
@@ -36,7 +36,7 @@
 		height: 0.55rem;
 		border-radius: 50%;
 		background: currentColor;
-		box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.16);
+		box-shadow: 0 0 0 0 color-mix(in srgb, var(--text-1) 16%, transparent);
 	}
 
 	.ui-badge[data-tone='accent'],

@@ -193,7 +193,7 @@
 	.volume-controls {
 		padding: 1rem;
 		border-top: 1px solid var(--border-subtle);
-		background: rgba(87, 200, 182, 0.025);
+		background: var(--surface-2);
 		display: block;
 		gap: 0.85rem;
 		flex-shrink: 0;

@@ -37,7 +37,7 @@
 		padding: 0.95rem;
 		border-radius: var(--radius-md);
 		border: 1px solid var(--border-subtle);
-		background: rgba(255, 255, 255, 0.03);
+		background: color-mix(in srgb, var(--text-1) 3%, transparent);
 	}
 
 	.ui-metric header {
@@ -66,7 +66,7 @@
 	.ui-metric__bar {
 		height: 0.5rem;
 		border-radius: var(--radius-pill);
-		background: rgba(255, 255, 255, 0.06);
+		background: color-mix(in srgb, var(--text-1) 6%, transparent);
 		overflow: hidden;
 	}
 

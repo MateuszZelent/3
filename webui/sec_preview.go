@@ -197,6 +197,7 @@ func (s *PreviewState) clearVectorPayload() {
 
 func initPreviewAPI(e *echo.Group, ws *WebSocketManager) *PreviewState {
 	previewState := &PreviewState{
+		Region:               PreviewRegion{Mode: "native", MaxPoints: previewHardLimit, Samples: engine.MeshSnapshotSize(), End: engine.MeshSnapshotSize()},
 		Quantity:             "m",
 		Component:            "3D",
 		Layer:                0,
@@ -820,6 +821,7 @@ func (s *PreviewState) addPossibleDownscaleSizes() bool {
 		if !s.Region.Enabled {
 			s.Region.Start = [3]int{}
 			s.Region.End = meshSize
+			s.Region.Samples = meshSize
 		}
 	}
 	xPossibleSizes := possiblePreviewXYSizes(meshSize[0])

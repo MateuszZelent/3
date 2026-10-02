@@ -1,6 +1,10 @@
 package webui
 
-import "github.com/labstack/echo/v4"
+import (
+	"github.com/labstack/echo/v4"
+	"github.com/mumax/3/util"
+	"net/http"
+)
 
 type EngineState struct {
 	Header    *HeaderState     `msgpack:"header"`
@@ -26,6 +30,7 @@ type EngineStateNoPreview struct {
 }
 
 func initEngineStateAPI(e *echo.Group, ws *WebSocketManager) *EngineState {
+	e.GET("/api/demag/progress", getDemagProgress)
 	return &EngineState{
 		Header:    initHeaderAPI(),
 		Console:   initConsoleAPI(e, ws),
@@ -73,4 +78,10 @@ func (es *EngineState) WithoutPreview() *EngineStateNoPreview {
 		Metrics:   es.Metrics,
 		Fft:       es.Fft,
 	}
+}
+
+// Does not acquire engine or websocket state locks.
+func getDemagProgress(c echo.Context) error {
+	c.Response().Header().Set("Cache-Control", "no-store")
+	return c.JSON(http.StatusOK, util.DemagProgressSnapshot())
 }

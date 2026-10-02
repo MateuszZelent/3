@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { meshState } from '$api/incoming/mesh';
 	import { previewState } from '$api/incoming/preview';
 	import Button from '$lib/ui/Button.svelte';
@@ -16,7 +17,8 @@
 		fullDomain
 	} from '../preview3DRegion';
 	import { fitPreviewRegion, setGlyphSampling, setVoxelSampling } from '../preview3D';
-	let expanded = $state(false);
+	let { compact = false }: { compact?: boolean } = $props();
+	let expanded = $state(untrack(() => !compact));
 	const counts = $derived([$meshState.Nx, $meshState.Ny, $meshState.Nz]);
 	const cells = $derived([$meshState.dx, $meshState.dy, $meshState.dz]);
 	const sizes = $derived($regionDraft.end.map((n, a) => Math.max(n - $regionDraft.start[a], 1)));
@@ -32,7 +34,7 @@
 
 <details class="region-controls" bind:open={expanded}>
 	<summary
-		><strong>Render window</strong><span
+		><strong>3D render window · X / Y / Z</strong><span
 			>{$regionPending
 				? 'Updating…'
 				: $regionDraft.enabled
@@ -47,7 +49,7 @@
 				checked={$regionDraft.enabled}
 				onchange={(enabled) => changeRegion({ enabled })}
 			/>
-			<span>Crop source cells before sampling · physical proportions</span>
+			<span>Applies to Volume, Arrows and Voxel</span>
 			<Button size="sm" variant="ghost" onclick={fitPreviewRegion}>Fit camera</Button>
 			<Button size="sm" variant="ghost" onclick={fullDomain}>Full domain</Button>
 		</div>
@@ -111,7 +113,7 @@
 					: 'Enable to apply local resolution'}</span
 			>
 		</div>
-		{#if $regionDraft.mode === 'custom'}<div class="region-custom">
+		{#if $regionDraft.enabled && $regionDraft.mode === 'custom'}<div class="region-custom">
 				{#each ['X', 'Y', 'Z'] as axis, a}<TextField
 						label={`Local ${axis} samples`}
 						type="number"
@@ -129,7 +131,7 @@
 						}}
 					/>{/each}
 				<SelectField
-					label="Local point budget"
+					label="Preview point budget"
 					value={$regionDraft.maxPoints}
 					options={[65536, 262144, 1000000].map((value) => ({
 						value: String(value),
@@ -139,7 +141,7 @@
 				/>
 			</div>{/if}
 		<p>
-			Drag the filled range to pan, or use arrow keys (Shift: 10 cells). Bounds are measured from
+			Choose a smaller window to increase local detail, then select Native cells. Drag the filled range to pan, or use arrow keys (Shift: 10 cells). Bounds are measured from
 			the mesh edge. Surface and thickness averages use this window. Native cells are exact up to
 			1,000,000 points; larger windows are averaged.
 		</p>
@@ -172,8 +174,7 @@
 		display: grid;
 		gap: 1rem;
 		padding: 0.25rem 1rem 1rem;
-		max-height: 320px;
-		overflow: auto;
+
 	}
 	.region-header,
 	.region-resolution {
@@ -215,9 +216,6 @@
 		.region-ranges,
 		.region-custom {
 			grid-template-columns: 1fr;
-		}
-		.region-body {
-			max-height: 230px;
 		}
 		.region-header > span {
 			flex-basis: 100%;

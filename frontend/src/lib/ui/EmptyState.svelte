@@ -32,7 +32,7 @@
 		padding: 1rem;
 		border: 1px dashed var(--border);
 		border-radius: var(--radius-md);
-		background: rgba(255, 255, 255, 0.025);
+		background: color-mix(in srgb, var(--text-1) 2.5%, transparent);
 		color: var(--text-2);
 		text-align: left;
 	}
@@ -60,18 +60,18 @@
 	}
 
 	.ui-empty[data-tone='danger'] {
-		border-color: rgba(255, 124, 124, 0.32);
-		background: rgba(255, 124, 124, 0.06);
+		border-color: color-mix(in srgb, var(--danger) 32%, transparent);
+		background: color-mix(in srgb, var(--danger) 6%, transparent);
 	}
 
 	.ui-empty[data-tone='warn'] {
-		border-color: rgba(242, 180, 90, 0.32);
-		background: rgba(242, 180, 90, 0.07);
+		border-color: color-mix(in srgb, var(--warn) 32%, transparent);
+		background: color-mix(in srgb, var(--warn) 7%, transparent);
 	}
 
 	.ui-empty[data-tone='info'] {
-		border-color: rgba(107, 167, 255, 0.28);
-		background: rgba(107, 167, 255, 0.06);
+		border-color: color-mix(in srgb, var(--info) 28%, transparent);
+		background: color-mix(in srgb, var(--info) 6%, transparent);
 	}
 
 	.ui-empty__actions {

@@ -40,7 +40,7 @@
 		width: 2.7rem;
 		height: 1.55rem;
 		border-radius: var(--radius-pill);
-		background: rgba(255, 255, 255, 0.08);
+		background: color-mix(in srgb, var(--text-1) 8%, transparent);
 		border: 1px solid var(--border-subtle);
 		transition: background var(--duration-fast) var(--easing-default);
 	}
@@ -59,7 +59,7 @@
 	}
 
 	input:checked + .ui-toggle__track {
-		background: rgba(87, 200, 182, 0.24);
+		background: color-mix(in srgb, var(--accent) 24%, transparent);
 	}
 
 	input:checked + .ui-toggle__track .ui-toggle__thumb {

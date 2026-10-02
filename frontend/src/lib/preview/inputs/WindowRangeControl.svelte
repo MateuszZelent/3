@@ -125,7 +125,7 @@
 		height: 1.7rem;
 		margin: 0 0.45rem;
 		border-radius: 0.45rem;
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--surface-3);
 		border: 1px solid var(--border-subtle);
 	}
 	.window-range__selection {
@@ -136,7 +136,7 @@
 		place-items: center;
 		min-width: 1px;
 		border-radius: 0.4rem;
-		background: rgba(87, 200, 182, 0.2);
+		background: color-mix(in srgb, var(--accent) 20%, transparent);
 		color: var(--accent);
 		cursor: grab;
 		touch-action: none;

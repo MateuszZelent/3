@@ -106,7 +106,7 @@
 		padding: 0 0.9rem;
 		border-radius: var(--radius-md);
 		border: 1px solid var(--border-subtle);
-		background: rgba(255, 255, 255, 0.03);
+		background: color-mix(in srgb, var(--text-1) 3%, transparent);
 		transition:
 			border-color var(--duration-fast) var(--easing-default),
 			box-shadow var(--duration-fast) var(--easing-default),
@@ -116,11 +116,11 @@
 	.ui-textfield__control:focus-within {
 		border-color: var(--border-interactive);
 		box-shadow: var(--focus-ring);
-		background: rgba(255, 255, 255, 0.04);
+		background: color-mix(in srgb, var(--text-1) 4%, transparent);
 	}
 
 	.ui-textfield__control[data-readonly='true'] {
-		background: rgba(255, 255, 255, 0.02);
+		background: color-mix(in srgb, var(--text-1) 2%, transparent);
 	}
 
 	.ui-textfield input {

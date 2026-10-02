@@ -78,7 +78,6 @@
 	let previewNow = $state(Date.now());
 	let viewMode = $state<ViewportMode>('inline');
 	let viewportWidth = $state(1024);
-	let volumeControlsHeight = $state(0);
 	let sectionExpanded = $state(true);
 	$effect(() => {
 		sectionExpanded = viewportWidth > 650;
@@ -544,7 +543,7 @@
 					</div>
 				</details>
 			{/if}
-			{#if !is2D}<ViewCube axisBottom={volumeControlsHeight + 20} />{/if}
+			{#if !is2D}<ViewCube axisBottom={20} />{/if}
 
 			{#if !$connected || !hasData}
 				<div class="preview-wrapper__empty">
@@ -582,15 +581,14 @@
 				</div>{/if}
             {#if !is2D}<div class="preview-field-controls">
                 <VolumeControls />
+                {#if viewMode !== 'inline'}<RegionWindowControls compact />{/if}
                 {#if $renderMode === 'voxel'}<details class="voxel-controls" open>
                     <summary>Voxel material &amp; topography</summary>
                     <Toolbar3D embedded />
                 </details>{/if}
             </div>{/if}
 			<div id="container" class="preview-wrapper__canvas" aria-busy={!!$previewTransition}></div>
-			{#if !is2D}<div bind:clientHeight={volumeControlsHeight}>
-					{#if $previewState.region}<RegionWindowControls />{/if}
-				</div>{/if}
+
 
 			{#if $previewState.type === '3D' && hasData}
 				<div class="preview-wrapper__stats">
@@ -607,7 +605,7 @@
 						: 1}
 					· display sampling {$renderMode === 'volume'
 						? 1
-						: $previewState.regionActive && $previewState.region?.mode === 'native'
+						: $previewState.regionActive
 							? 1
 							: $renderMode === 'voxel'
 								? $voxelSampling
@@ -671,6 +669,8 @@
 			</div>
 		{/if}
 
+		{#if !is2D && viewMode === 'inline'}<RegionWindowControls />{/if}
+
 		<details class="studio-settings" open>
 			<summary
 				><span>Resolution &amp; rendering</span><span class="studio-settings__grid"
@@ -686,7 +686,7 @@
 					{#if !is2D && $previewState.regionActive}
 						<h3>Local window resolution</h3>
 						<p class="settings-hint">
-							Set Native cells or Custom resolution in Render window below the viewport. Full-domain
+							Set Native cells or Custom resolution in the 3D render window. Full-domain
 							resolution settings are retained.
 						</p>
 					{:else}
@@ -760,11 +760,11 @@
 						</div>
 						<div class="budget-controls">
 							<Toggle
-								label="Auto-adjust resolution"
+								label="Fit resolution to budget"
 								checked={$previewState.autoScaleEnabled}
 								onchange={postAutoScaleEnabled}
 							/><SelectField
-								label="Auto-adjust budget"
+								label="Preview point budget"
 								value={$previewState.maxPoints}
 								options={budgetOptions}
 								disabled={!$previewState.autoScaleEnabled}
@@ -834,15 +834,7 @@
 							onchange={(next) => setQuality(next as QualityLevel)}
 						/>
 						<div class="appearance-fields">
-							<SelectField
-								label="Transfer limit"
-								value={$previewClientBudget}
-								options={transferOptions.map((option) => ({
-									...option,
-									disabled: $renderMode === 'volume' && option.value !== '1000000'
-								}))}
-								onchange={(value) => setPreviewClientBudget(Number(value))}
-							/><TextField
+							<TextField
 								label="Field scale"
 								hint="0 = adaptive"
 								type="number"
@@ -853,11 +845,17 @@
 									postScale(Number((event.currentTarget as HTMLInputElement).value))}
 							/>
 						</div>
+						{#if $renderMode !== 'volume' && !$previewState.regionActive}
+                            <details class="transfer-settings">
+                                <summary>Advanced: browser transfer</summary>
+                                <SelectField label="Maximum transferred points" value={$previewClientBudget}
+                                    options={transferOptions} onchange={(value) => setPreviewClientBudget(Number(value))} />
+                                <p class="settings-hint">Optional extra sampling for slower connections. This can reduce displayed detail; it cannot increase the preview resolution.</p>
+                            </details>
+                        {/if}
 						<p class="settings-hint">
 							{#if $renderMode === 'volume'}Volume uses the full applied preview to preserve a
-								continuous body. Adjust preview resolution to change geometry detail.{:else}The
-								transfer limit can sample the server preview. Display sampling and clipping can
-								further reduce visible points.{/if}
+								continuous body. Adjust preview resolution to change geometry detail.{:else if $previewState.regionActive}All prepared window points are transferred and displayed. Adjust the window or its resolution to change detail.{:else}Advanced transfer and display sampling can reduce visible points.{/if}
 						</p>
                         {#if $renderMode !== 'voxel'}<details class="advanced-appearance">
                             <summary>Lighting, clipping &amp; material</summary><Toolbar3D embedded />
@@ -881,9 +879,9 @@
 		gap: 0.8rem;
 		padding: 1rem;
 		border: 1px solid var(--border-subtle);
-		border-radius: 12px;
+		border-radius: var(--radius-sm);
 		background: var(--surface-1);
-		box-shadow: 0 8px 24px #0005;
+		box-shadow: var(--shadow-soft);
 		pointer-events: none;
 	}
 	.preview-transition div {
@@ -985,7 +983,7 @@
 		padding: 0.65rem 0.6rem;
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-md);
-		background: rgba(255, 255, 255, 0.025);
+		background: color-mix(in srgb, var(--text-1) 2.5%, transparent);
 		color: var(--text-2);
 		cursor: pointer;
 		transition:
@@ -993,14 +991,14 @@
 			border-color 0.16s;
 	}
 	.plane-button:hover {
-		background: rgba(87, 200, 182, 0.06);
+		background: color-mix(in srgb, var(--accent) 6%, transparent);
 		border-color: var(--border-interactive);
 	}
 	.plane-button.active {
-		background: linear-gradient(135deg, rgba(87, 200, 182, 0.13), rgba(87, 200, 182, 0.035));
-		border-color: rgba(87, 200, 182, 0.5);
+		background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 13%, transparent), color-mix(in srgb, var(--accent) 3.5%, transparent));
+		border-color: color-mix(in srgb, var(--accent) 50%, transparent);
 		color: var(--accent);
-		box-shadow: inset 0 1px rgba(87, 200, 182, 0.12);
+		box-shadow: inset 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
 	}
 	.plane-button svg {
 		width: 2.15rem;
@@ -1048,7 +1046,7 @@
 		font-size: 0.8rem;
 		line-height: 1.6;
 		color: var(--text-2);
-		background: rgba(87, 200, 182, 0.035);
+		background: color-mix(in srgb, var(--accent) 3.5%, transparent);
 	}
 	.mean-symbol {
 		color: var(--accent);
@@ -1068,8 +1066,7 @@
 		min-width: 0;
 		border-radius: var(--radius-lg);
 		border: 1px solid var(--border-subtle);
-		background:
-			radial-gradient(ellipse at 50% 10%, rgba(27, 43, 64, 0.3), transparent 75%), #070c14;
+		background: var(--surface-1);
 		overflow: hidden;
 	}
 	.surface-heading {
@@ -1078,8 +1075,8 @@
 		align-items: center;
 		gap: 0.75rem;
 		padding: 0.8rem 1rem;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-		background: rgba(255, 255, 255, 0.015);
+		border-bottom: 1px solid var(--border-subtle);
+		background: var(--surface-2);
 	}
 	.surface-heading__field {
 		display: flex;
@@ -1102,7 +1099,7 @@
 		height: 6px;
 		border-radius: 50%;
 		background: var(--accent);
-		box-shadow: 0 0 8px rgba(87, 200, 182, 0.3);
+		box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 30%, transparent);
 	}
 	.surface-heading__dot.offline {
 		background: var(--text-3);
@@ -1130,8 +1127,8 @@
 	}
 	.preview-wrapper__stats {
 		padding: 0.6rem 1rem;
-		border-top: 1px solid rgba(255, 255, 255, 0.055);
-		background: rgba(255, 255, 255, 0.018);
+		border-top: 1px solid var(--border-subtle);
+		background: var(--surface-2);
 		color: var(--text-3);
 		font-size: 0.69rem;
 		line-height: 1.8;
@@ -1157,7 +1154,7 @@
 	.studio-settings {
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-md);
-		background: rgba(255, 255, 255, 0.015);
+		background: var(--surface-2);
 		min-width: 0;
 	}
 	.studio-settings > summary {
@@ -1303,8 +1300,8 @@
 		gap: 0.8rem;
 		padding: 0.8rem 0.95rem;
 		border-radius: var(--radius-md);
-		border: 1px solid rgba(242, 180, 90, 0.28);
-		background: rgba(242, 180, 90, 0.06);
+		border: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+		background: color-mix(in srgb, var(--warn) 6%, transparent);
 	}
 	.preview-notice p {
 		margin: 0;
@@ -1326,7 +1323,7 @@
 	.preview-wrapper--fullscreen {
 		width: 100%;
 		height: 100vh;
-		background: #070c14;
+		background: var(--surface-1);
 	}
 	.preview-wrapper__titlebar {
 		display: flex;
@@ -1353,7 +1350,7 @@
 		width: 1.2rem;
 		height: 1.2rem;
 		cursor: nwse-resize;
-		background: linear-gradient(135deg, transparent 55%, rgba(107, 167, 255, 0.45) 55%);
+		background: linear-gradient(135deg, transparent 55%, color-mix(in srgb, var(--info) 45%, transparent) 55%);
 	}
 	.floating-section > summary {
 		padding: 0.65rem 1rem;

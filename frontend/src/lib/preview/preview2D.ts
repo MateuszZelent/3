@@ -211,7 +211,7 @@ function buildVisualMap(quantity: string, unit: string, min: number, max: number
 		align: 'right' as const,
 		padding: [8, 10, 8, 10],
 		textGap: 10,
-		backgroundColor: 'rgba(15, 23, 42, 0.76)',
+		backgroundColor: THEME.surface1,
 		borderColor: THEME.border,
 		borderWidth: 1,
 		text: [`${formatMagnitude(scale.max)}${unitSuffix}`, `${formatMagnitude(scale.min)}`],

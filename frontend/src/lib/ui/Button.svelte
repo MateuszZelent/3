@@ -99,18 +99,18 @@
 	.ui-button--solid {
 		background: var(--surface-3);
 		border-color: transparent;
-		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+		box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-1) 8%, transparent);
 	}
 
 	.ui-button--solid[data-tone='accent'],
 	.ui-button--solid[data-tone='success'] {
 		background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-		color: #08101d;
+		color: var(--on-accent);
 	}
 
 	.ui-button--solid[data-tone='info'] {
 		background: linear-gradient(135deg, var(--info), #5f87ff);
-		color: #08101d;
+		color: var(--on-accent);
 	}
 
 	.ui-button--solid[data-tone='warn'] {
@@ -125,7 +125,7 @@
 
 	.ui-button--outline {
 		border-color: var(--border);
-		background: rgba(255, 255, 255, 0.02);
+		background: color-mix(in srgb, var(--text-1) 2%, transparent);
 		color: var(--text-2);
 	}
 
@@ -133,7 +133,7 @@
 	.ui-button--ghost:hover:not(:disabled),
 	.ui-button--subtle:hover:not(:disabled) {
 		border-color: var(--border-interactive);
-		background: rgba(107, 167, 255, 0.08);
+		background: color-mix(in srgb, var(--info) 8%, transparent);
 		color: var(--text-1);
 	}
 
@@ -158,8 +158,8 @@
 	}
 
 	.ui-button--subtle {
-		background: rgba(255, 255, 255, 0.045);
-		border-color: rgba(255, 255, 255, 0.04);
+		background: color-mix(in srgb, var(--text-1) 4.5%, transparent);
+		border-color: color-mix(in srgb, var(--text-1) 4%, transparent);
 		color: var(--text-2);
 	}
 </style>

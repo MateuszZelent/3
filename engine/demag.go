@@ -6,6 +6,7 @@ import (
 	"github.com/mumax/3/cuda"
 	"github.com/mumax/3/data"
 	"github.com/mumax/3/mag"
+	"github.com/mumax/3/util"
 )
 
 // Demag variables
@@ -100,10 +101,14 @@ func SetMFull(dst *data.Slice) {
 // returns demag convolution, making sure it's initialized
 func demagConv() *cuda.DemagConvolution {
 	if conv_ == nil {
+		id := util.BeginDemagInitialization()
+		success := false
+		defer func() { util.EndDemagInitialization(id, success) }()
 		SetBusy(true)
 		defer SetBusy(false)
 		kernel := mag.DemagKernel(Mesh().Size(), Mesh().PBC(), Mesh().CellSize(), DemagAccuracy, *Flag_cachedir)
 		conv_ = cuda.NewDemag(Mesh().Size(), Mesh().PBC(), kernel, *Flag_selftest)
+		success = true
 	}
 	return conv_
 }

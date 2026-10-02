@@ -52,7 +52,7 @@
 		display: grid;
 		gap: 0.9rem;
 		border-bottom: 1px solid var(--border-subtle);
-		background: rgba(255, 255, 255, 0.015);
+		background: var(--surface-2);
 	}
 	.plane-window-controls__header {
 		display: flex;

@@ -7,6 +7,7 @@
 	import { postBreak, postRun } from '$api/outgoing/solver';
 	import Alert from '$lib/alerts/Alert.svelte';
 	import Console from '$lib/Console.svelte';
+	import DemagProgress from '$lib/DemagProgress.svelte';
 	import Header from '$lib/Header.svelte';
 	import Mesh from '$lib/Mesh.svelte';
 	import Metrics from '$lib/Metrics.svelte';
@@ -127,6 +128,8 @@
 		window.removeEventListener('keydown', handleShortcuts);
 	});
 </script>
+
+<DemagProgress />
 
 <Alert />
 

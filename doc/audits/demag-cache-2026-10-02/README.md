@@ -35,3 +35,7 @@ For a 500-cube nonperiodic model the spatial kernel pads to 1000 cubed:
 6 Float32 components occupy 24 GB (decimal) in the raw cache. Streaming removes
 an additional whole-file allocation of that size during loading, but does not
 remove the kernel itself, FFT buffers or the underlying storage I/O.
+
+The subsequent UI progress implementation and real-browser evidence are recorded
+in ../ui-preview-window-2026-10-02/README.md. Progress polling remains responsive
+while an engine-backed console request initializes the convolution.

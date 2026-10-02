@@ -82,7 +82,7 @@
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-lg);
 		background:
-			linear-gradient(180deg, rgba(21, 31, 51, 0.98), rgba(13, 22, 37, 0.98)),
+			linear-gradient(180deg, var(--surface-2), var(--surface-1)),
 			var(--surface-1);
 		box-shadow: var(--shadow-soft);
 		min-width: 0;
@@ -94,7 +94,7 @@
 		inset: 0;
 		border-radius: inherit;
 		padding: 1px;
-		background: linear-gradient(160deg, rgba(107, 167, 255, 0.2), transparent 45%, rgba(87, 200, 182, 0.16));
+		background: linear-gradient(160deg, color-mix(in srgb, var(--info) 20%, transparent), transparent 45%, color-mix(in srgb, var(--accent) 16%, transparent));
 		mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
 		mask-composite: exclude;
 		opacity: 0.8;
@@ -103,19 +103,19 @@
 
 	.ui-panel[data-tone='accent']::before,
 	.ui-panel[data-tone='success']::before {
-		background: linear-gradient(160deg, rgba(87, 200, 182, 0.34), transparent 56%);
+		background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 34%, transparent), transparent 56%);
 	}
 
 	.ui-panel[data-tone='info']::before {
-		background: linear-gradient(160deg, rgba(107, 167, 255, 0.36), transparent 56%);
+		background: linear-gradient(160deg, color-mix(in srgb, var(--info) 36%, transparent), transparent 56%);
 	}
 
 	.ui-panel[data-tone='warn']::before {
-		background: linear-gradient(160deg, rgba(242, 180, 90, 0.34), transparent 56%);
+		background: linear-gradient(160deg, color-mix(in srgb, var(--warn) 34%, transparent), transparent 56%);
 	}
 
 	.ui-panel[data-tone='danger']::before {
-		background: linear-gradient(160deg, rgba(255, 124, 124, 0.34), transparent 56%);
+		background: linear-gradient(160deg, color-mix(in srgb, var(--danger) 34%, transparent), transparent 56%);
 	}
 
 	.ui-panel__header {
@@ -171,7 +171,7 @@
 		height: 2rem;
 		border-radius: var(--radius-pill);
 		border: 1px solid var(--border-subtle);
-		background: rgba(255, 255, 255, 0.03);
+		background: color-mix(in srgb, var(--text-1) 3%, transparent);
 		color: var(--text-2);
 		cursor: pointer;
 		transition:
@@ -183,7 +183,7 @@
 	.ui-panel__collapse:hover {
 		border-color: var(--border-interactive);
 		color: var(--text-1);
-		background: rgba(107, 167, 255, 0.08);
+		background: color-mix(in srgb, var(--info) 8%, transparent);
 	}
 
 	.ui-panel__body {

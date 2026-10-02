@@ -1,0 +1,69 @@
+{
+  "reports": [
+    {
+      "label": "default",
+      "colors": {
+        "surface1": "#0f1728",
+        "surface2": "#141f33",
+        "wrapper": {
+          "background": "rgb(15, 23, 40)",
+          "image": "none",
+          "color": "rgb(237, 243, 251)"
+        },
+        "heading": {
+          "background": "rgb(20, 31, 51)",
+          "image": "none",
+          "color": "rgb(237, 243, 251)"
+        },
+        "window": {
+          "background": "rgb(15, 23, 40)",
+          "image": "none",
+          "color": "rgb(237, 243, 251)"
+        },
+        "settings": {
+          "background": "rgb(20, 31, 51)",
+          "image": "none",
+          "color": "rgb(237, 243, 251)"
+        },
+        "panel": {
+          "background": "rgb(15, 23, 40)",
+          "image": "linear-gradient(rgb(20, 31, 51), rgb(15, 23, 40)), none",
+          "color": "rgb(237, 243, 251)"
+        }
+      }
+    },
+    {
+      "label": "token-override",
+      "colors": {
+        "surface1": "#e8eef6",
+        "surface2": "#f5f7fa",
+        "wrapper": {
+          "background": "rgb(232, 238, 246)",
+          "image": "none",
+          "color": "rgb(23, 32, 51)"
+        },
+        "heading": {
+          "background": "rgb(245, 247, 250)",
+          "image": "none",
+          "color": "rgb(23, 32, 51)"
+        },
+        "window": {
+          "background": "rgb(232, 238, 246)",
+          "image": "none",
+          "color": "rgb(23, 32, 51)"
+        },
+        "settings": {
+          "background": "rgb(245, 247, 250)",
+          "image": "none",
+          "color": "rgb(23, 32, 51)"
+        },
+        "panel": {
+          "background": "rgb(232, 238, 246)",
+          "image": "linear-gradient(rgb(245, 247, 250), rgb(232, 238, 246)), none",
+          "color": "rgb(23, 32, 51)"
+        }
+      }
+    }
+  ],
+  "errors": []
+}

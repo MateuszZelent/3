@@ -46,6 +46,7 @@ func LogErr(err error, msg ...interface{}) {
 }
 
 func Log(msg ...interface{}) {
+	recordDemagLog(fmt.Sprintln(msg...))
 	log.Println(msg...)
 }
 
@@ -88,6 +89,7 @@ var (
 // Set progress bar to progress/total and display msg
 // if GUI is up and running.
 func Progress(progress, total int, msg string) {
+	recordDemagProgress(progress, total, msg)
 	progLock.Lock()
 	defer progLock.Unlock()
 	if progressHidden {

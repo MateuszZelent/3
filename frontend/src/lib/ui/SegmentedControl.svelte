@@ -58,7 +58,7 @@
 		padding: 0.24rem;
 		border-radius: var(--radius-pill);
 		border: 1px solid var(--border-subtle);
-		background: rgba(255, 255, 255, 0.03);
+		background: color-mix(in srgb, var(--text-1) 3%, transparent);
 	}
 
 	.ui-segmented[data-compact='true'] {
@@ -78,8 +78,8 @@
 	}
 
 	.ui-segmented__option[data-active='true'] {
-		background: linear-gradient(135deg, rgba(87, 200, 182, 0.95), rgba(56, 178, 162, 0.95));
-		color: #09101b;
+		background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 95%, transparent), color-mix(in srgb, var(--accent-strong) 95%, transparent));
+		color: var(--on-accent);
 	}
 
 	.ui-segmented__option:disabled {
