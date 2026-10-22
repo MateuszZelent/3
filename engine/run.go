@@ -190,6 +190,7 @@ func Steps(n int) {
 func RunWhile(condition func() bool) {
 	SanityCheck()
 	pause = false // may be set by <-Inject
+	defer func() { pause = true }()
 	const output = true
 	stepper.Free() // start from a clean state
 	runWhile(condition, output)
@@ -197,8 +198,10 @@ func RunWhile(condition func() bool) {
 }
 
 func runWhile(condition func() bool, output bool) {
+	CheckStop()
 	DoOutput() // allow t=0 output
 	for condition() && !pause {
+		CheckStop()
 		select {
 		default:
 			step(output)
@@ -249,6 +252,8 @@ func SanityCheck() {
 }
 
 func Exit() {
+	CheckStop()
 	Close()
+	CheckStop()
 	os.Exit(0)
 }

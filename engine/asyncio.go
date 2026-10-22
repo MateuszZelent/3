@@ -18,7 +18,7 @@ var (
 const maxOutputQueLen = 16 // number of outputs that can be queued for asynchronous I/O.
 
 func init() {
-	DeclFunc("Flush", drainOutput, "Flush all pending output to disk.")
+	DeclFunc("Flush", Flush, "Flush all pending output to disk.")
 
 	saveQue = make(chan func())
 	go runSaver()
@@ -38,8 +38,7 @@ func queOutput(f func()) {
 // Continuously executes tasks the from SaveQue channel.
 func runSaver() {
 	for f := range saveQue {
-		f()
-		queLen.Add(-1)
+		func() { defer queLen.Add(-1); defer captureOutputPanic(); f() }()
 	}
 }
 
@@ -50,12 +49,6 @@ func drainOutput() {
 		return
 	}
 	for queLen.Load() > 0 {
-		select {
-		default:
-			time.Sleep(1 * time.Millisecond) // other goroutine has the last job, wait for it to finish
-		case f := <-saveQue:
-			f()
-			queLen.Add(-1)
-		}
+		time.Sleep(time.Millisecond)
 	}
 }

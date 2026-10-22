@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	outputdir string // Output directory
-	InputFile string
+	outputdir   string // Output directory
+	InputFile   string
+	outputOwned bool // only the accepted output directory may be finalized
 )
 
 func OD() string {
@@ -51,12 +52,26 @@ func InitIO(inputfile, od string, force bool) {
 	}
 
 	if force {
-		httpfs.Remove(od)
+		CheckRecoverable(httpfs.Remove(od))
+	} else if entries, err := httpfs.ReadDir(od); err == nil {
+		for _, entry := range entries {
+			// The legacy server creates its capture stream before starting the
+			// worker. It is retained and is never one of our output writers.
+			if entry != "stdout.txt" {
+				panic(UserErr("output directory is not empty; choose a new -o directory, use -skip-exist, or explicitly use -f to replace it: " + od))
+			}
+		}
 	}
 
-	_ = httpfs.Mkdir(od)
+	if err := httpfs.Mkdir(od); err != nil {
+		if _, readErr := httpfs.ReadDir(od); readErr != nil {
+			CheckRecoverable(err)
+		}
+	}
+	outputOwned = true
 	initStructuredOutput()
 
 	initLog()
 	initBib()
+	startOutputFlusher()
 }

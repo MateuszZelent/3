@@ -1,0 +1,180 @@
+//mumax 3.12 [linux_amd64 go1.26.8(gc) CUDA-12.4]
+//mumax3 build: version=development-output-core-fix commit=0efd5400-dirty built=2026-10-21T22:11:37Z
+//CPU info: AMD Ryzen Threadripper 3960X 24-Core Processor, Cores: 20, MHz: 3800.041
+//GPU info: NVIDIA GeForce RTX 4080 SUPER(16375MB), CUDA Driver 13.4, cc=8.9, using cc=89 PTX
+//OS  info: Ubuntu 22.04.4 LTS, Hostname: 66f5597a3c60
+//Timestamp: 2026-10-21 22:14:05
+//(c) Arne Vansteenkiste, Dynamat LAB, Ghent University, Belgium
+//This is free software without any warranty. See license.txt
+//********************************************************************//
+//  If you use mumax in any work or publication,                      //
+//  we kindly ask you to cite the references in references.bib        //
+//********************************************************************//
+//output directory: /tmp/bubbleshift-final/
+//not starting GUI (-http="")
+SetMesh(128, 128, 1, 1e-9, 1e-9, 0.4e-9, 1, 1, 0)
+Msat = 580e3
+Aex = 15e-12
+enabledemag = false
+alpha = 0.1
+Ku1 = 0.59e6
+anisU = vector(0, 0, 1)
+Dind = 0.0034089785
+shiftregions = true
+maxregion := NREGION - 1
+seed := 17
+ext_makegrains(10e-9, maxregion, seed)
+for i := 0; i < maxRegion; i++ {
+	for j := i + 1; j < maxRegion; j++ {
+		ext_ScaleExchange(i, j, 0.5)
+	}
+}
+m = neelskyrmion(1, -1)
+run(5e-11)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+t = 0.
+minimize()
+setsolver(5)
+maxerr = 0.001
+ext_bubbleMz = -1.0
+ext_centerbubble()
+Xi = 0.2
+j = vector(5e12, 2e12, 0)
+run(1e-10)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+TOL := 1e-10
+expectv("position", ext_bubblepos.average(), vector(-5.15721817016602e-08, -4.135146331787111e-08, 0), TOL)
+//position[0] : -5.1571501362651925e-08 OK
+//position[1] : -4.136914319394334e-08 OK
+//position[2] : 0 OK
+//********************************************************************//
+//Please cite the following references, relevant for your simulation. //
+//See bibtex file in output folder for justification.                 //
+//********************************************************************//
+//   * Vansteenkiste et al., AIP Adv. 4, 107133 (2014).
+//   * Exl et al., J. Appl. Phys. 115, 17D118 (2014).
+//   * Leliaert et al., J. Appl. Phys. 115, 233903 (2014)
+//   * Mulkers et al., Phys. Rev. B 95, 144401 (2017).

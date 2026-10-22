@@ -87,7 +87,10 @@ func localAppend(fname string, data []byte, size int64) error {
 	}
 
 	_, err2 := f.Write(data)
-	return err2
+	if err2 != nil {
+		return err2
+	}
+	return f.Sync()
 }
 
 func localPut(fname string, data []byte) error {

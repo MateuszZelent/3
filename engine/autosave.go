@@ -17,6 +17,7 @@ func init() {
 
 // Periodically called by run loop to save everything that's needed at this time.
 func DoOutput() {
+	CheckRecoverable(OutputError())
 	for q, a := range output {
 		if a.needSave() {
 			a.save(q)

@@ -1,0 +1,210 @@
+//mumax 3.12 [linux_amd64 go1.26.8(gc) CUDA-12.4]
+//mumax3 build: version=development-output-core-fix commit=0efd5400-dirty built=2026-10-21T22:11:37Z
+//CPU info: AMD Ryzen Threadripper 3960X 24-Core Processor, Cores: 20, MHz: 3800.041
+//GPU info: NVIDIA GeForce RTX 4080 SUPER(16375MB), CUDA Driver 13.4, cc=8.9, using cc=89 PTX
+//OS  info: Ubuntu 22.04.4 LTS, Hostname: 66f5597a3c60
+//Timestamp: 2026-10-21 22:13:37
+//(c) Arne Vansteenkiste, Dynamat LAB, Ghent University, Belgium
+//This is free software without any warranty. See license.txt
+//********************************************************************//
+//  If you use mumax in any work or publication,                      //
+//  we kindly ask you to cite the references in references.bib        //
+//********************************************************************//
+//output directory: /tmp/skyrmion-final/
+//not starting GUI (-http="")
+SetGridSize(192, 160, 3)
+SetCellSize(1e-9, 1e-9, 1e-9)
+Msat = 800e3
+Aex = 13e-12
+SkyrmionTrack(1)
+TableAdd(ext_corepos)
+for polarity := -1; polarity <= 1; polarity += 2 {
+	SkyrmionPolarity = polarity
+	SkyrmionBackground = -polarity
+	SkyrmionReset()
+	for scale := 0.25; scale <= 4; scale += 0.25 {
+		m = NeelSkyrmion(1, polarity).Scale(scale, scale, 1).Transl(11.25e-9, -7.75e-9, 0)
+		p := ext_skyrmionpos.Get()
+		Expect("Neel X", p[0], 11.25e-9, 0.1e-9)
+		Expect("Neel Y", p[1], -7.75e-9, 0.1e-9)
+		Expect("valid Neel", ext_skyrmionvalid.Get(), 1, 0)
+		TableSave()
+		m = BlochSkyrmion(1, polarity).Scale(scale, scale, 1).Transl(11.25e-9, -7.75e-9, 0)
+		p = ext_skyrmionpos.Get()
+		Expect("Bloch X", p[0], 11.25e-9, 0.1e-9)
+		Expect("Bloch Y", p[1], -7.75e-9, 0.1e-9)
+		TableSave()
+	}
+}
+//Neel X : 1.1238308322413698e-08 OK
+//Neel Y : -7.761691677586303e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1238308322413698e-08 OK
+//Bloch Y : -7.761691677586303e-09 OK
+//Neel X : 1.1246706057292042e-08 OK
+//Neel Y : -7.753293938079727e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1246706061920274e-08 OK
+//Bloch Y : -7.75329394270796e-09 OK
+//Neel X : 1.125091799120826e-08 OK
+//Neel Y : -7.749082004602873e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.125091799539713e-08 OK
+//Bloch Y : -7.749082008791742e-09 OK
+//Neel X : 1.1250719014569551e-08 OK
+//Neel Y : -7.749280989229743e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250719010770258e-08 OK
+//Bloch Y : -7.749280985430448e-09 OK
+//Neel X : 1.1249374004073438e-08 OK
+//Neel Y : -7.750625993507699e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249374006492303e-08 OK
+//Bloch Y : -7.750625995926563e-09 OK
+//Neel X : 1.1249921020219892e-08 OK
+//Neel Y : -7.750078980130664e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249921019869336e-08 OK
+//Bloch Y : -7.750078979780106e-09 OK
+//Neel X : 1.1250469075402782e-08 OK
+//Neel Y : -7.749530925769104e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.12504690742309e-08 OK
+//Bloch Y : -7.749530924597219e-09 OK
+//Neel X : 1.1249838537076134e-08 OK
+//Neel Y : -7.750161456919049e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249838543080954e-08 OK
+//Bloch Y : -7.750161462923874e-09 OK
+//Neel X : 1.1249812418837172e-08 OK
+//Neel Y : -7.750187590213145e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.124981240978686e-08 OK
+//Bloch Y : -7.750187581162823e-09 OK
+//Neel X : 1.1250244755532759e-08 OK
+//Neel Y : -7.749755245884918e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250244754115092e-08 OK
+//Bloch Y : -7.749755244467234e-09 OK
+//Neel X : 1.1250018944342204e-08 OK
+//Neel Y : -7.749981052222685e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250018947777323e-08 OK
+//Bloch Y : -7.749981055657801e-09 OK
+//Neel X : 1.124981417018504e-08 OK
+//Neel Y : -7.750185828591645e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249814171408352e-08 OK
+//Bloch Y : -7.750185829814964e-09 OK
+//Neel X : 1.1250123459853248e-08 OK
+//Neel Y : -7.749876542160814e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250123457839184e-08 OK
+//Bloch Y : -7.749876540146768e-09 OK
+//Neel X : 1.1250092250803214e-08 OK
+//Neel Y : -7.749907751894516e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250092248105467e-08 OK
+//Bloch Y : -7.749907749196787e-09 OK
+//Neel X : 1.1249881047901447e-08 OK
+//Neel Y : -7.75011895412817e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249881045871819e-08 OK
+//Bloch Y : -7.750118952098535e-09 OK
+//Neel X : 1.1250044803552551e-08 OK
+//Neel Y : -7.749955196566988e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250044803433006e-08 OK
+//Bloch Y : -7.749955196447422e-09 OK
+//Neel X : 1.1238308322413698e-08 OK
+//Neel Y : -7.761691677586303e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1238308322413698e-08 OK
+//Bloch Y : -7.761691677586303e-09 OK
+//Neel X : 1.1246706057292042e-08 OK
+//Neel Y : -7.753293938079727e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1246706061920274e-08 OK
+//Bloch Y : -7.75329394270796e-09 OK
+//Neel X : 1.125091799120826e-08 OK
+//Neel Y : -7.749082004602873e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.125091799539713e-08 OK
+//Bloch Y : -7.749082008791742e-09 OK
+//Neel X : 1.1250719014569551e-08 OK
+//Neel Y : -7.749280989229743e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250719010770258e-08 OK
+//Bloch Y : -7.749280985430448e-09 OK
+//Neel X : 1.1249374004073438e-08 OK
+//Neel Y : -7.750625993507699e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249374006492303e-08 OK
+//Bloch Y : -7.750625995926563e-09 OK
+//Neel X : 1.1249921020219892e-08 OK
+//Neel Y : -7.750078980130664e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249921019869336e-08 OK
+//Bloch Y : -7.750078979780106e-09 OK
+//Neel X : 1.1250469075402782e-08 OK
+//Neel Y : -7.749530925769104e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.12504690742309e-08 OK
+//Bloch Y : -7.749530924597219e-09 OK
+//Neel X : 1.1249838537076134e-08 OK
+//Neel Y : -7.750161456919049e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249838543080954e-08 OK
+//Bloch Y : -7.750161462923874e-09 OK
+//Neel X : 1.1249812418837172e-08 OK
+//Neel Y : -7.750187590213145e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.124981240978686e-08 OK
+//Bloch Y : -7.750187581162823e-09 OK
+//Neel X : 1.1250244755532759e-08 OK
+//Neel Y : -7.749755245884918e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250244754115092e-08 OK
+//Bloch Y : -7.749755244467234e-09 OK
+//Neel X : 1.1250018944342204e-08 OK
+//Neel Y : -7.749981052222685e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250018947777323e-08 OK
+//Bloch Y : -7.749981055657801e-09 OK
+//Neel X : 1.124981417018504e-08 OK
+//Neel Y : -7.750185828591645e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249814171408352e-08 OK
+//Bloch Y : -7.750185829814964e-09 OK
+//Neel X : 1.1250123459853248e-08 OK
+//Neel Y : -7.749876542160814e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250123457839184e-08 OK
+//Bloch Y : -7.749876540146768e-09 OK
+//Neel X : 1.1250092250803214e-08 OK
+//Neel Y : -7.749907751894516e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250092248105467e-08 OK
+//Bloch Y : -7.749907749196787e-09 OK
+//Neel X : 1.1249881047901447e-08 OK
+//Neel Y : -7.75011895412817e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249881045871819e-08 OK
+//Bloch Y : -7.750118952098535e-09 OK
+//Neel X : 1.1250044803552551e-08 OK
+//Neel Y : -7.749955196566988e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250044803433006e-08 OK
+//Bloch Y : -7.749955196447422e-09 OK
+m = Uniform(0, 0, 1)
+Expect("no skyrmion", ext_skyrmionvalid.Get(), 0, 0)
+//no skyrmion : 0 OK
+Expect("no vortex", ext_corevalid.Get(), 0, 0)
+//no vortex : 0 OK
+TableSave()
+Flush()
+//********************************************************************//
+//Please cite the following references, relevant for your simulation. //
+//See bibtex file in output folder for justification.                 //
+//********************************************************************//
+//   * Vansteenkiste et al., AIP Adv. 4, 107133 (2014).

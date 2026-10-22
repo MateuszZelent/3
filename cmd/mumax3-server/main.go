@@ -18,14 +18,15 @@ import (
 )
 
 var (
-	flag_addr     = flag.String("l", ":35360", "Listen and serve at this network address")
-	flag_scan     = flag.String("scan", "192.168.0.1-128", "Scan these IP address for other servers")
-	flag_ports    = flag.String("ports", "35360-35361", "Scan these ports for other servers")
-	flag_timeout  = flag.Duration("timeout", 2*time.Second, "Portscan timeout")
-	flag_mumax    = flag.String("exec", "mumax3", "mumax3 executable")
-	flag_cachedir = flag.String("cache", "", "mumax3 kernel cache path")
-	flag_log      = flag.Bool("log", true, "log debug output")
-	flag_halflife = flag.Duration("halflife", 24*time.Hour, "share decay half-life")
+	flag_addr            = flag.String("l", ":35360", "Listen and serve at this network address")
+	flag_scan            = flag.String("scan", "192.168.0.1-128", "Scan these IP address for other servers")
+	flag_ports           = flag.String("ports", "35360-35361", "Scan these ports for other servers")
+	flag_timeout         = flag.Duration("timeout", 2*time.Second, "Portscan timeout")
+	flag_mumax           = flag.String("exec", "mumax3", "mumax3 executable")
+	flag_cachedir        = flag.String("cache", "", "mumax3 kernel cache path")
+	flag_log             = flag.Bool("log", true, "log debug output")
+	flag_halflife        = flag.Duration("halflife", 24*time.Hour, "share decay half-life")
+	flag_shutdownTimeout = flag.Duration("shutdown-timeout", 45*time.Second, "Grace period for a worker to persist output before a forced kill")
 )
 
 const (

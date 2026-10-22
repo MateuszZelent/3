@@ -102,13 +102,18 @@ func nop() {}
 func (g *guistate) RunInteractive() {
 	fmt.Println("//entering interactive mode")
 	closed := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	go func() {
-		if g.sessionTracker().Wait(context.Background()) {
+		if g.sessionTracker().Wait(ctx) {
 			close(closed)
 		}
 	}()
 	for {
+		CheckStop()
 		select {
+		case <-StopRequested():
+			CheckStop()
 		case f := <-Inject:
 			if f != nil {
 				f()
@@ -308,7 +313,7 @@ var (
 )
 
 func Break() {
-	Inject <- func() { pause = true }
+	InjectAndWait(func() { pause = true; Flush() })
 }
 
 // see prepareServer

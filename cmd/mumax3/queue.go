@@ -78,7 +78,7 @@ func stopRunning() {
 	if len(processes) == 0 {
 		return
 	}
-	time.AfterFunc(2*time.Second, func() {
+	time.AfterFunc(*engine.Flag_shutdownTimeout, func() {
 		runningMu.Lock()
 		defer runningMu.Unlock()
 		for _, process := range processes {
@@ -152,11 +152,17 @@ func RunQueue(files []string) int {
 		return 1
 	}
 	signals := make(chan os.Signal, 1)
+	var interrupted atomic.Int32
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	stopSignal := make(chan struct{})
 	go func() {
 		select {
 		case sig := <-signals:
+			code := int32(1)
+			if s, ok := sig.(syscall.Signal); ok {
+				code = 128 + int32(s)
+			}
+			interrupted.Store(code)
 			log.Printf("queue: received %v; stopping active workers", sig)
 			exitStatus.set(1)
 			s.Stop()
@@ -170,6 +176,9 @@ func RunQueue(files []string) int {
 	fmt.Println(numOK.get(), "OK, ", numSkipped.get(), "skipped, ", numFailed.get(), "failed")
 	signal.Stop(signals)
 	close(stopSignal)
+	if code := interrupted.Load(); code != 0 {
+		return int(code)
+	}
 	return int(exitStatus.get())
 }
 
@@ -667,7 +676,7 @@ func run(uid int, inFile string, gpu int, webAddr string, onStarted func(int), o
 	terminate := func() {
 		terminateOnce.Do(func() {
 			_ = signalWorkerTree(cmd, syscall.SIGTERM)
-			terminateTimer = time.AfterFunc(2*time.Second, cancel)
+			terminateTimer = time.AfterFunc(*engine.Flag_shutdownTimeout, cancel)
 		})
 	}
 	defer func() {

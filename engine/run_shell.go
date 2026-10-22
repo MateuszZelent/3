@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"github.com/mumax/3/util"
 	"os/exec"
 	"runtime"
 )
@@ -10,19 +11,21 @@ func init() {
 }
 
 func RunShell(command string) {
+	CheckStop()
 	if !*Flag_insecure {
 		panic(UserErr("RunShell is disabled; restart mumax3 with -insecure to enable host command execution"))
 	}
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd.exe", "/C", command)
+		cmd = util.CommandContext(SimulationContext(), "cmd.exe", "/C", command)
 	} else {
-		cmd = exec.Command("/bin/sh", "-c", command)
+		cmd = util.CommandContext(SimulationContext(), "/bin/sh", "-c", command)
 	}
 	output, err := cmd.CombinedOutput()
 	if len(output) > 0 {
 		LogOut(string(output))
 	}
+	CheckStop()
 	if err != nil {
 		panic(UserErr("RunShell: " + err.Error()))
 	}

@@ -12,13 +12,11 @@ package engine
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"sync"
 	"time"
 
 	"github.com/mumax/3/cuda/cu"
-	"github.com/mumax/3/timer"
 )
 
 const VERSION = "mumax 3.12"
@@ -48,18 +46,10 @@ func GetBusy() bool {
 	return busy
 }
 
-// Cleanly exits the simulation, assuring all output is flushed.
+// Close flushes and closes every output. CLI callers should use CloseWithError
+// to preserve the primary error and report cleanup failures with a nonzero exit.
 func Close() {
-	drainOutput()
-	closeStructuredOutput()
-	LogUsedRefs()
-	Table.flush()
-	closeLog()
-	if bibfile != nil {
-		bibfile.Close()
+	if err := CloseWithError(); err != nil {
+		panic(err)
 	}
-	if *Flag_sync {
-		timer.Print(os.Stdout)
-	}
-
 }

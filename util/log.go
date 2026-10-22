@@ -15,11 +15,26 @@ import (
 	"golang.org/x/term"
 )
 
+// FatalHandler lets an embedding engine unwind and finalize output before the
+// CLI exits. Standalone utilities retain log.Fatal's original behavior.
+var FatalHandler func(error)
+
+type FatalError struct{ Err error }
+
+func (e FatalError) Error() string { return e.Err.Error() }
+func (e FatalError) Unwrap() error { return e.Err }
+
 func Fatal(msg ...interface{}) {
+	if FatalHandler != nil {
+		FatalHandler(fmt.Errorf("%s", fmt.Sprint(msg...)))
+	}
 	log.Fatal(msg...)
 }
 
 func Fatalf(format string, msg ...interface{}) {
+	if FatalHandler != nil {
+		FatalHandler(fmt.Errorf(format, msg...))
+	}
 	log.Fatalf(format, msg...)
 }
 
@@ -27,6 +42,9 @@ func Fatalf(format string, msg ...interface{}) {
 func FatalErr(err interface{}) {
 	_, file, line, _ := runtime.Caller(1)
 	if err != nil {
+		if FatalHandler != nil {
+			FatalHandler(fmt.Errorf("%s:%d: %v", file, line, err))
+		}
 		log.Fatal(file, ":", line, err)
 	}
 }

@@ -21,9 +21,12 @@ func centerBubble() {
 	c := Mesh().CellSize()
 
 	position := bubblePos()
+	if math.IsNaN(position[X]) || math.IsNaN(position[Y]) {
+		return
+	}
 	var centerIdx [2]int
-	centerIdx[X] = int(math.Floor((position[X] - GetShiftPos()) / c[X]))
-	centerIdx[Y] = int(math.Floor((position[Y] - GetShiftYPos()) / c[Y]))
+	centerIdx[X] = int(math.Round((position[X] - GetShiftPos()) / c[X]))
+	centerIdx[Y] = int(math.Round((position[Y] - GetShiftYPos()) / c[Y]))
 
 	zero := data.Vector{0, 0, 0}
 	if ShiftMagL == zero || ShiftMagR == zero || ShiftMagD == zero || ShiftMagU == zero {

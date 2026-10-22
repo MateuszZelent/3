@@ -16,6 +16,7 @@ func (b *forStmt) Eval() interface{} {
 	loopNestingCount++
 	defer func() { loopNestingCount-- }()
 	for b.init.Eval(); b.cond.Eval().(bool); b.post.Eval() {
+		checkStatement()
 		b.body.Eval()
 	}
 	return nil // void

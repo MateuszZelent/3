@@ -3,7 +3,6 @@ package engine
 import (
 	"fmt"
 	"github.com/mumax/3/httpfs"
-	"github.com/mumax/3/util"
 	"io"
 	"os"
 	"sync"
@@ -56,7 +55,7 @@ func LogErr(msg ...interface{}) {
 }
 
 func log2File(msg string) {
-	if logfile != nil {
+	if logfile != nil && !logClosed {
 		fprintln(logfile, msg)
 	}
 }
@@ -73,9 +72,10 @@ func initLog() {
 	if err != nil {
 		panic(err)
 	}
-	util.FatalErr(err)
-	logfile.Write(([]byte)(hist))
-	logfile.Write([]byte{'\n'})
+	logClosed = false
+	_, err = fmt.Fprintln(logfile, hist)
+	CheckRecoverable(err)
+	CheckRecoverable(httpfs.Sync(logfile))
 }
 
 func log2GUI(msg string) {
@@ -110,12 +110,26 @@ func LogReleaseNotice(msg string) {
 	fmt.Println(str)
 }
 
-func closeLog() {
+func flushLog() error {
 	logMu.Lock()
 	defer logMu.Unlock()
-	logClosed = true
-	if logfile != nil {
-		logfile.Close()
-		logfile = nil
+	if logfile == nil || logClosed {
+		return nil
 	}
+	return httpfs.Sync(logfile)
+}
+
+func closeLog() error {
+	logMu.Lock()
+	defer logMu.Unlock()
+	if logClosed {
+		return nil
+	}
+	logClosed = true
+	if logfile == nil {
+		return nil
+	}
+	err := logfile.Close()
+	logfile = nil
+	return err
 }

@@ -1,0 +1,25 @@
+Extracted corePos/interpolate_maxpos/abs; CPU field stubs; no GPU
+grid=128x96x1 cell=1nm expected_center_nm=(11.25,-7.75)
+skyrmion w_nm=2 diameter_mz0_nm=3.330218 pol=-1 x_nm=NaN y_nm=NaN polarization=1 finite=false
+skyrmion w_nm=2 diameter_mz0_nm=3.330218 pol=1 x_nm=NaN y_nm=NaN polarization=-1 finite=false
+skyrmion w_nm=4 diameter_mz0_nm=6.660437 pol=-1 x_nm=NaN y_nm=NaN polarization=1 finite=false
+skyrmion w_nm=4 diameter_mz0_nm=6.660437 pol=1 x_nm=NaN y_nm=NaN polarization=-1 finite=false
+skyrmion w_nm=8 diameter_mz0_nm=13.320874 pol=-1 x_nm=NaN y_nm=NaN polarization=1 finite=false
+skyrmion w_nm=8 diameter_mz0_nm=13.320874 pol=1 x_nm=NaN y_nm=NaN polarization=-1 finite=false
+skyrmion w_nm=16 diameter_mz0_nm=26.641748 pol=-1 x_nm=NaN y_nm=NaN polarization=1 finite=false
+skyrmion w_nm=16 diameter_mz0_nm=26.641748 pol=1 x_nm=NaN y_nm=NaN polarization=-1 finite=false
+skyrmion w_nm=24 diameter_mz0_nm=39.962621 pol=-1 x_nm=NaN y_nm=NaN polarization=1 finite=false
+skyrmion w_nm=24 diameter_mz0_nm=39.962621 pol=1 x_nm=NaN y_nm=NaN polarization=-1 finite=false
+skyrmion w_nm=32 diameter_mz0_nm=53.283495 pol=-1 x_nm=11.125 y_nm=-7.875000000000001 polarization=-0.9999999403953552 finite=true
+skyrmion w_nm=32 diameter_mz0_nm=53.283495 pol=1 x_nm=11.125 y_nm=-7.875000000000001 polarization=0.9999999403953552 finite=true
+localized_vortex_like_peak x_nm=11.255843177437784 y_nm=-7.744156822562219 polarization=0.9922179579734802 finite=true
+flat_core_and_background x_nm=NaN y_nm=NaN polarization=1 finite=false
+uniform_background x_nm=NaN y_nm=NaN polarization=1 finite=false
+grid_2x2 panic=runtime error: index out of range [-1]
+
+Extracted httpfs writer and local filesystem functions; simulated log/table writes
+mode=clean signal=none exit=0 log_bytes=22 table=b'# t (s)\tmx ()\n0\t1\n'
+mode=fatal signal=none exit=1 log_bytes=0 table=b'# t (s)\tmx ()\n'
+mode=live signal=SIGINT exit=-2 log_bytes=0 table=b'# t (s)\tmx ()\n'
+mode=live signal=SIGTERM exit=-15 log_bytes=0 table=b'# t (s)\tmx ()\n'
+mode=flush signal=SIGTERM exit=-15 log_bytes=0 table=b'# t (s)\tmx ()\n'

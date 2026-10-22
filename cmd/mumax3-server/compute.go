@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/mumax/3/cuda/cu"
@@ -157,10 +158,20 @@ func Kill(id string) string {
 		return fmt.Sprintf("kill %v: job not running.", id)
 	}
 	job.Killed = true
-	err := job.Cmd.Process.Kill()
+	if job.Cmd.Process == nil {
+		return ""
+	} // Run observes the pending cancellation under the same lock.
+	err := util.SignalProcessGroup(job.Cmd, syscall.SIGTERM)
 	if err != nil {
 		return err.Error()
 	}
+	time.AfterFunc(*flag_shutdownTimeout, func() {
+		WLock()
+		defer WUnlock()
+		if Processes[id] == job {
+			_ = util.SignalProcessGroup(job.Cmd, syscall.SIGKILL)
+		}
+	})
 	return "" // OK
 }
 
@@ -173,6 +184,7 @@ func NewProcess(ID string, gpu int, webAddr string) *Process {
 	cacheFlag := fmt.Sprint("-cache=", *flag_cachedir)
 	forceFlag := "-f=0"
 	cmd := exec.Command(command, gpuFlag, httpFlag, cacheFlag, forceFlag, inputURL)
+	util.ConfigureProcessGroup(cmd)
 	outDir := util.NoExt(inputURL) + ".out"
 	if err := httpfs.Mkdir(outDir); err != nil {
 		SetJobError(ID, err)
@@ -218,6 +230,9 @@ func (p *Process) Run() {
 	httpfs.Put(p.OutputURL+"start", []byte(startTime.Format(time.UnixDate)))
 	WLock()
 	err1 := p.Cmd.Start()
+	if err1 == nil && p.Killed {
+		_ = util.SignalProcessGroup(p.Cmd, syscall.SIGTERM)
+	}
 	WUnlock()
 	if p.EventWriter != nil {
 		p.EventWriter.Close()
@@ -275,7 +290,10 @@ func (p *Process) Run() {
 	} else {
 		log.Println(p.Path, p.Args, err1, err2)
 	}
-	if p.Killed {
+	RLock()
+	killed := p.Killed
+	RUnlock()
+	if killed {
 		httpfs.Put(p.OutputURL+"killed", []byte(time.Now().Format(time.UnixDate)))
 	} else {
 		httpfs.Put(p.OutputURL+"exitstatus", []byte(fmt.Sprint(status)))

@@ -1,0 +1,6 @@
+npm notice run frontend@0.0.1 check
+npm notice run svelte-kit sync && svelte-check --tsconfig ./tsconfig.json
+Loading svelte-check in workspace: /home/kkingstoun/git/3/frontend
+Getting Svelte diagnostics...
+
+svelte-check found 0 errors and 0 warnings

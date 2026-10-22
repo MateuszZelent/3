@@ -1,37 +1,41 @@
-import { writable } from "svelte/store";
+import { writable } from 'svelte/store';
 
 export interface TablePlot {
-    autoSaveInterval: number;
-    columns: string[];
-    xColumn: string;
-    yColumn: string;
-    xColumnUnit: string;
-    yColumnUnit: string;
-    data: number[][];
-    xmin: number;
-    xmax: number;
-    ymin: number;
-    ymax: number;
-    maxPoints: number;
-    step: number;
-    corePos: number[][] | null;
+	autoSaveInterval: number;
+	columns: string[];
+	xColumn: string;
+	yColumn: string;
+	xColumnUnit: string;
+	yColumnUnit: string;
+	data: number[][];
+	xmin: number;
+	xmax: number;
+	ymin: number;
+	ymax: number;
+	maxPoints: number;
+	step: number;
+	corePos: number[][] | null;
 	coreEnabled: boolean;
+	coreMode?: string;
+	coreStatus?: string;
 }
 
 export const tablePlotState = writable<TablePlot>({
-    autoSaveInterval: 0,
-    columns: [],
-    xColumn: 't',
-    yColumn: 'mx',
-    xColumnUnit: 's',
-    yColumnUnit: '',
-    data: [],
-    xmin: 0,
-    xmax: 0,
-    ymin: 0,
-    ymax: 0,
-    maxPoints: 0,
-    step: 0,
-    corePos: null,
+	autoSaveInterval: 0,
+	columns: [],
+	xColumn: 't',
+	yColumn: 'mx',
+	xColumnUnit: 's',
+	yColumnUnit: '',
+	data: [],
+	xmin: 0,
+	xmax: 0,
+	ymin: 0,
+	ymax: 0,
+	maxPoints: 0,
+	step: 0,
+	corePos: null,
 	coreEnabled: false,
+	coreMode: '',
+	coreStatus: ''
 });

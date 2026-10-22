@@ -68,7 +68,7 @@ func WriteGroup(dir string) error {
 	if err := ensureDir(dir); err != nil {
 		return err
 	}
-	return httpfs.Put(join(dir, ".zgroup"), []byte(`{"zarr_format":2}`))
+	return httpfs.PutAtomic(join(dir, ".zgroup"), []byte(`{"zarr_format":2}`))
 }
 
 func ensureDir(dir string) error {
@@ -86,7 +86,7 @@ func WriteMetadata(dir string, metadata ArrayMetadata) error {
 	if err != nil {
 		return err
 	}
-	return httpfs.Put(join(dir, ".zarray"), b)
+	return httpfs.PutAtomic(join(dir, ".zarray"), b)
 }
 
 func ReadMetadata(dir string) (ArrayMetadata, error) {
@@ -106,7 +106,7 @@ func WriteAttributes(dir string, attrs Attributes) error {
 	if err != nil {
 		return err
 	}
-	return httpfs.Put(join(dir, ".zattrs"), b)
+	return httpfs.PutAtomic(join(dir, ".zattrs"), b)
 }
 
 // WriteObjectAttributes writes arbitrary group-level Zarr v2 attributes.
@@ -115,7 +115,7 @@ func WriteObjectAttributes(dir string, attrs map[string]any) error {
 	if err != nil {
 		return err
 	}
-	return httpfs.Put(join(dir, ".zattrs"), b)
+	return httpfs.PutAtomic(join(dir, ".zattrs"), b)
 }
 
 // WriteSeries writes a complete float64 one-dimensional Zarr array. Table
@@ -141,7 +141,7 @@ func WriteSeries(dir string, values []float64) error {
 	if err != nil {
 		return err
 	}
-	if err := httpfs.Put(join(dir, ".zarray"), b); err != nil {
+	if err := httpfs.PutAtomic(join(dir, ".zarray"), b); err != nil {
 		return err
 	}
 	raw := make([]byte, len(values)*8)
@@ -152,7 +152,7 @@ func WriteSeries(dir string, values []float64) error {
 	if err != nil {
 		return err
 	}
-	return httpfs.Put(join(dir, "0"), compressed)
+	return httpfs.PutAtomic(join(dir, "0"), compressed)
 }
 
 // WriteStep writes every spatial/component chunk for one time step and then
@@ -211,7 +211,7 @@ func WriteStep(dir string, step int, src *data.Slice, chunks [4]int) error {
 			compressed, err := zstd.CompressLevel(nil, raw, metadata.Compressor.Level)
 			if err == nil {
 				key := fmt.Sprintf("%d.%d.%d.%d.%d", step, j.iz, j.iy, j.ix, j.ic)
-				err = httpfs.Put(join(dir, key), compressed)
+				err = httpfs.PutAtomic(join(dir, key), compressed)
 			}
 			if err != nil {
 				select {

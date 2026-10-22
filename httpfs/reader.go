@@ -6,18 +6,21 @@ import (
 	"bufio"
 	"bytes"
 	"io"
+	"sync"
 )
 
 const BUFSIZE = 16 * 1024 * 1024 // bufio buffer size
 
 // create a file for writing, clobbers previous content if any.
 func Create(URL string) (WriteCloseFlusher, error) {
-	_ = Remove(URL)
+	if err := Remove(URL); err != nil {
+		return nil, err
+	}
 	err := Touch(URL)
 	if err != nil {
 		return nil, err
 	}
-	return &bufWriter{bufio.NewWriterSize(&appendWriter{URL, 0}, BUFSIZE)}, nil
+	return &bufWriter{buf: bufio.NewWriterSize(&appendWriter{URL, 0}, BUFSIZE)}, nil
 }
 
 func MustCreate(URL string) WriteCloseFlusher {
@@ -51,19 +54,37 @@ func MustOpen(URL string) io.ReadCloser {
 }
 
 type bufWriter struct {
-	buf *bufio.Writer
+	mu       sync.Mutex
+	buf      *bufio.Writer
+	closed   bool
+	closeErr error
 }
 
-func (w *bufWriter) Write(p []byte) (int, error) { return w.buf.Write(p) }
-func (w *bufWriter) Close() error {
-	err := w.buf.Flush()
-	w.buf = nil // Dangling pointer somewhere?
-	if err != nil {
-		return err
+func (w *bufWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return 0, io.ErrClosedPipe
 	}
-	return nil
+	return w.buf.Write(p)
 }
-func (w *bufWriter) Flush() error { return w.buf.Flush() }
+func (w *bufWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.closed {
+		w.closeErr = w.buf.Flush()
+		w.closed = true
+	}
+	return w.closeErr
+}
+func (w *bufWriter) Flush() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return io.ErrClosedPipe
+	}
+	return w.buf.Flush()
+}
 
 type appendWriter struct {
 	URL       string

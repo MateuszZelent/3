@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"github.com/mumax/3/coreposition"
 	"math"
 )
 
@@ -10,66 +11,40 @@ var (
 	BubbleSpeed    = NewScalarValue("ext_bubblespeed", "m/s", "Bubble velocity", bubbleSpeed)
 	BubbleMz       = 1.0
 	BackGroundTilt = 0.25
+	BubbleLayer    = -1
 )
 
 func init() {
+	DeclVar("ext_BubbleLayer", &BubbleLayer, "Bubble layer index; -1 averages connected layers")
 	DeclVar("ext_BubbleMz", &BubbleMz, "Center magnetization 1.0 or -1.0  (default = 1.0)")
 	DeclVar("ext_BackGroundTilt", &BackGroundTilt, "Size of in-plane component of background magnetization. All values below this one are rounded down to perfectly out-of-plane to improve position calculation  (default = 0.25)")
 }
 
 func bubblePos() []float64 {
-	m := M.Buffer()
-	n := Mesh().Size()
-	c := Mesh().CellSize()
-
-	g := geometry.Gpu()
-	var geo [][]float32
-	if !g.IsNil() {
-		geo = g.Comp(0).HostCopy().Scalars()[0] // geometry[Y, X]
+	if BubbleMz != 1 && BubbleMz != -1 {
+		panic(UserErr("ext_BubbleMz should be +1 or -1"))
 	}
-
-	mz := m.Comp(Z).HostCopy().Scalars()[0]
-
-	posx, posy := 0., 0.
-
-	if BubbleMz != -1.0 && BubbleMz != 1.0 {
-		panic("ext_BubbleMz should be 1.0 or -1.0")
-	}
-
-	{
-		var mag float64
-		var magsum float64
-		var weightedsumx float64
-		var weightedsumy float64
-
-		for ix := range mz[0] {
-			for iy := range mz {
-				mag = backgroundAdjust(mz[iy][ix]*float32(BubbleMz) + 1.) // 1/2 is divided out
-
-				// weight cells according to geometry: 0 weight outside
-				if !g.IsNil() {
-					mag *= float64(geo[iy][ix])
-				}
-
-				magsum += mag
-				weightedsumx += mag * float64(ix)
-				weightedsumy += mag * float64(iy)
-			}
-		}
-		posx = float64(weightedsumx / magsum)
-		posy = float64(weightedsumy / magsum)
-	}
-
-	return []float64{(posx-float64(n[X]/2))*c[X] + GetShiftPos(), (posy-float64(n[Y]/2))*c[Y] + GetShiftYPos(), 0.}
+	r := coreposition.Skyrmion(coreField(), coreposition.SkyrmionOptions{Polarity: int(BubbleMz), Layer: BubbleLayer, Background: -BubbleMz, Threshold: BackGroundTilt, HardThreshold: true})
+	return []float64{r.Position[X], r.Position[Y], 0}
 }
 
 var (
-	prevBpos = [2]float64{-1e99, -1e99}
-	bdist    = 0.0
+	prevBpos   = [2]float64{-1e99, -1e99}
+	bdist      = 0.0
+	bubbleLost bool
 )
 
 func bubbleDist() float64 {
 	pos := bubblePos()
+	if math.IsNaN(pos[X]) || math.IsNaN(pos[Y]) {
+		bubbleLost = true
+		return math.NaN()
+	}
+	if bubbleLost {
+		prevBpos = [2]float64{pos[X], pos[Y]}
+		bubbleLost = false
+		return bdist
+	}
 	if prevBpos == [2]float64{-1e99, -1e99} {
 		prevBpos = [2]float64{pos[X], pos[Y]}
 		return 0
@@ -80,17 +55,18 @@ func bubbleDist() float64 {
 	dy := pos[Y] - prevBpos[Y]
 	prevBpos = [2]float64{pos[X], pos[Y]}
 
+	pbc := Mesh().PBC()
 	// PBC wrap
-	if dx > w[X]/2 {
+	if pbc[X] > 0 && dx > w[X]/2 {
 		dx -= w[X]
 	}
-	if dx < -w[X]/2 {
+	if pbc[X] > 0 && dx < -w[X]/2 {
 		dx += w[X]
 	}
-	if dy > w[Y]/2 {
+	if pbc[Y] > 0 && dy > w[Y]/2 {
 		dy -= w[Y]
 	}
-	if dy < -w[Y]/2 {
+	if pbc[Y] > 0 && dy < -w[Y]/2 {
 		dy += w[Y]
 	}
 
@@ -99,12 +75,20 @@ func bubbleDist() float64 {
 }
 
 var (
-	prevBdist = 0.0
-	prevBt    = -999.0
+	prevBdist  = 0.0
+	prevBt     = -999.0
+	prevBspeed float64
 )
 
 func bubbleSpeed() float64 {
 	dist := bubbleDist()
+	if math.IsNaN(dist) {
+		prevBt = -999
+		return math.NaN()
+	}
+	if Time == prevBt {
+		return prevBspeed
+	}
 
 	if prevBt < 0 {
 		prevBdist = dist
@@ -116,6 +100,7 @@ func bubbleSpeed() float64 {
 
 	prevBt = Time
 	prevBdist = dist
+	prevBspeed = v
 
 	return v
 }

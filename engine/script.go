@@ -3,6 +3,8 @@ package engine
 // declare functionality for interpreted input scripts
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"github.com/mumax/3/httpfs"
 	"github.com/mumax/3/script"
 	"reflect"
@@ -12,6 +14,12 @@ func CompileFile(fname string) (*script.BlockStmt, error) {
 	bytes, err := httpfs.Read(fname)
 	if err != nil {
 		return nil, err
+	}
+	addStructuredMetadata("input_sha256", fmt.Sprintf("%x", sha256.Sum256(bytes)))
+	if outputOwned {
+		if err := flushRunMetadata(true); err != nil {
+			return nil, err
+		}
 	}
 	return World.Compile(string(bytes))
 }
@@ -97,6 +105,7 @@ type LValue interface {
 // evaluate code, exit on error (behavior for input files)
 func EvalFile(code *script.BlockStmt) {
 	for i := range code.Children {
+		CheckStop()
 		formatted := rmln(script.Format(code.Node[i]))
 		LogIn(formatted)
 		code.Children[i].Eval()

@@ -15,26 +15,28 @@ type action string
 
 // httpfs actions, handled at /actionName/ (e.g. /ls/, /mkdir/, ...)
 const (
-	APPEND action = "append"
-	LS     action = "ls"
-	MKDIR  action = "mkdir"
-	PUT    action = "put"
-	READ   action = "read"
-	RM     action = "rm"
-	TOUCH  action = "touch"
+	APPEND    action = "append"
+	LS        action = "ls"
+	MKDIR     action = "mkdir"
+	PUT       action = "put"
+	PUTATOMIC action = "putatomic"
+	READ      action = "read"
+	RM        action = "rm"
+	TOUCH     action = "touch"
 )
 
 // RegisterHandlers sets up the http handlers needed for the httpfs protocol (calling go's http.Handle).
 // After RegisterHandlers, http.ListenAndServe may be called.
 func RegisterHandlers() {
 	m := map[action]handlerFunc{
-		APPEND: handleAppend,
-		LS:     handleLs,
-		MKDIR:  handleMkdir,
-		PUT:    handlePut,
-		READ:   handleRead,
-		RM:     handleRemove,
-		TOUCH:  handleTouch,
+		APPEND:    handleAppend,
+		LS:        handleLs,
+		MKDIR:     handleMkdir,
+		PUT:       handlePut,
+		PUTATOMIC: handlePutAtomic,
+		READ:      handleRead,
+		RM:        handleRemove,
+		TOUCH:     handleTouch,
 	}
 	for k, v := range m {
 		http.HandleFunc("/"+string(k)+"/", newHandler(k, v))
@@ -57,6 +59,7 @@ func newHandler(prefix action, f handlerFunc) http.HandlerFunc {
 		if err != nil {
 			Log("httpfs err:", prefix, fname, ":", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 
 		err2 := f(fname, data, w, query)
@@ -82,6 +85,14 @@ func handleAppend(fname string, data []byte, w io.Writer, q url.Values) error {
 
 func handlePut(fname string, data []byte, w io.Writer, q url.Values) error {
 	return localPut(fname, data)
+}
+
+func handlePutAtomic(fname string, data []byte, w io.Writer, q url.Values) error {
+	if err := localPutAtomic(fname, data); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w, atomicAck)
+	return err
 }
 
 func handleLs(fname string, data []byte, w io.Writer, q url.Values) error {

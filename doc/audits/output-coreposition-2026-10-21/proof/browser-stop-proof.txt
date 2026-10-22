@@ -1,0 +1,3 @@
+Flag --time has been deprecated, use --timeout instead
+mumax-output-core-browser-2
+{'completion': 'interrupted', 'termination_reason': 'simulation interrupted by terminated', 'binary_sha256': 'c966e79a1d6fab628358ef4e67d22d319113b9f30c3997338f94cc2657d13301'}

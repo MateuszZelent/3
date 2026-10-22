@@ -1,6 +1,7 @@
 package webui
 
 import (
+	"math"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -29,6 +30,8 @@ type TablePlotState struct {
 	Step             int         `msgpack:"step"`
 	CorePos          [][]float64 `msgpack:"corePos"`
 	CoreEnabled      bool        `msgpack:"coreEnabled"`
+	CoreMode         string      `msgpack:"coreMode"`
+	CoreStatus       string      `msgpack:"coreStatus"`
 }
 
 func initTablePlotAPI(e *echo.Group, ws *WebSocketManager) *TablePlotState {
@@ -50,10 +53,11 @@ func initTablePlotAPI(e *echo.Group, ws *WebSocketManager) *TablePlotState {
 }
 
 func (t *TablePlotState) Update() {
-	t.CoreEnabled = engine.CoreTrackingEnabled
+	t.CoreMode, t.CoreStatus = engine.CoreTrackingStatus()
+	t.CoreEnabled = t.CoreMode != ""
 	t.AutoSaveInterval = engine.TableAutoSavePeriod()
 	t.previewColumns, t.previewUnits, t.previewData = engine.TablePreviewSnapshot(
-		[]string{t.XColumn, t.YColumn, "t", "ext_coreposx", "ext_coreposy"}, t.MaxPoints, t.Step)
+		[]string{t.XColumn, t.YColumn, "t", "ext_coreposx", "ext_coreposy", "ext_corevalid", "ext_skyrmionposx", "ext_skyrmionposy", "ext_skyrmionvalid"}, t.MaxPoints, t.Step)
 	t.Columns = t.previewColumns
 	t.XColumnUnit = t.GetUnit(t.XColumn)
 	t.YColumnUnit = t.GetUnit(t.YColumn)
@@ -76,62 +80,63 @@ func (t *TablePlotState) GetTablePlotData() {
 }
 
 func (t *TablePlotState) GetMinMaxXY() {
-	if len(t.Data) == 0 {
-		return
+	t.XMin, t.XMax, t.YMin, t.YMax = 0, 0, 0, 0
+	initialized := false
+	for _, row := range t.Data {
+		if len(row) < 2 || !finiteCoreValue(row[0]) || !finiteCoreValue(row[1]) {
+			continue
+		}
+		if !initialized {
+			t.XMin, t.XMax, t.YMin, t.YMax = row[0], row[0], row[1], row[1]
+			initialized = true
+			continue
+		}
+		t.XMin = math.Min(t.XMin, row[0])
+		t.XMax = math.Max(t.XMax, row[0])
+		t.YMin = math.Min(t.YMin, row[1])
+		t.YMax = math.Max(t.YMax, row[1])
 	}
-	// Initialize with the first valid data point
-	xmin, xmax := t.Data[0][0], t.Data[0][0]
-	ymin, ymax := t.Data[0][1], t.Data[0][1]
-	for _, i := range t.Data {
-		if len(i) < 2 {
-			continue // Skip this entry if it doesn't have enough elements
-		}
-		if i[0] < xmin {
-			xmin = i[0]
-		}
-		if i[0] > xmax {
-			xmax = i[0]
-		}
-		if i[1] < ymin {
-			ymin = i[1]
-		}
-		if i[1] > ymax {
-			ymax = i[1]
-		}
-	}
-	t.YMin = ymin
-	t.YMax = ymax
-	t.XMin = xmin
-	t.XMax = xmax
 }
 
 func (t *TablePlotState) GetCorePosData() {
-	if !t.ColumnExists("ext_coreposx") || !t.ColumnExists("ext_coreposy") || !t.ColumnExists("t") {
+	prefix, validColumn := "ext_corepos", "ext_corevalid"
+	if t.CoreMode == "skyrmion" || (t.CoreMode == "" && t.ColumnExists("ext_skyrmionposx")) {
+		prefix = "ext_skyrmionpos"
+		validColumn = "ext_skyrmionvalid"
+		t.CoreMode = "skyrmion"
+	}
+	if !t.ColumnExists(prefix+"x") || !t.ColumnExists(prefix+"y") || !t.ColumnExists("t") {
 		t.CorePos = nil
 		return
 	}
-	tData := t.GetColumnData("t")
-	xData := t.GetColumnData("ext_coreposx")
-	yData := t.GetColumnData("ext_coreposy")
-	n := len(tData)
-	if n > len(xData) {
-		n = len(xData)
-	}
-	if n > len(yData) {
-		n = len(yData)
-	}
-	if n > t.MaxPoints {
-		tData = tData[n-t.MaxPoints:]
-		xData = xData[n-t.MaxPoints:]
-		yData = yData[n-t.MaxPoints:]
-		n = t.MaxPoints
-	}
-	data := make([][]float64, n)
-	for i := 0; i < n; i++ {
-		data[i] = []float64{tData[i], xData[i], yData[i]}
+	times, xs, ys := t.GetColumnData("t"), t.GetColumnData(prefix+"x"), t.GetColumnData(prefix+"y")
+	valid := t.GetColumnData(validColumn)
+	hasValidity := t.ColumnExists(validColumn)
+	n := min(len(times), len(xs), len(ys))
+	start := max(0, n-max(t.MaxPoints, 0))
+	data := make([][]float64, 0, n-start)
+	for i := start; i < n; i++ {
+		ok := finiteCoreValue(times[i]) && finiteCoreValue(xs[i]) && finiteCoreValue(ys[i])
+		if hasValidity {
+			ok = ok && i < len(valid) && valid[i] == 1
+		}
+		if ok {
+			data = append(data, []float64{times[i], xs[i], ys[i], 1})
+		} else {
+			tm := times[i]
+			if !finiteCoreValue(tm) {
+				tm = 0
+			}
+			data = append(data, []float64{tm, 0, 0, 0})
+		}
 	}
 	t.CorePos = data
+	if len(data) > 0 && data[len(data)-1][3] == 0 && t.CoreStatus == "" {
+		t.CoreStatus = "core not localized"
+	}
 }
+
+func finiteCoreValue(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 
 func (t *TablePlotState) GetColumnData(column string) []float64 { return t.previewData[column] }
 
@@ -149,7 +154,10 @@ func (t *TablePlotState) GetUnit(name string) string {
 }
 
 func (t *TablePlotState) ColumnExists(name string) bool {
-	columns, _, _ := engine.TablePreviewSnapshot(nil, 0, 1)
+	columns := t.previewColumns
+	if columns == nil {
+		columns, _, _ = engine.TablePreviewSnapshot(nil, 0, 1)
+	}
 	for _, column := range columns {
 		if column == name {
 			return true

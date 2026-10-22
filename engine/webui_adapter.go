@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/mumax/3/data"
+	"github.com/mumax/3/util"
 )
 
 var (
@@ -22,6 +23,10 @@ func init() {
 func EvalTryRecover(code string) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
+			switch recovered.(type) {
+			case Interrupted, util.FatalError:
+				panic(recovered)
+			}
 			LogErr(recovered)
 		}
 	}()

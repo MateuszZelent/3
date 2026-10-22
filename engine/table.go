@@ -7,14 +7,13 @@ import (
 	"github.com/mumax/3/httpfs"
 	"github.com/mumax/3/script"
 	"github.com/mumax/3/timer"
-	"github.com/mumax/3/util"
 	"io"
+	"strings"
 	"sync"
-	"time"
 )
 
 var Table = *newTable("table") // output handle for tabular data (average magnetization etc.)
-const TableAutoflushRate = 5   // auto-flush table every X seconds
+const TableAutoflushRate = 1   // wall-clock seconds between buffered output checkpoints
 
 func init() {
 	DeclFunc("TableAdd", TableAdd, "Add quantity as a column to the data table.")
@@ -30,33 +29,42 @@ type DataTable struct {
 	output interface {
 		io.Writer
 		Flush() error
+		Close() error
 	}
 	info
 	outputs []Quantity
 	autosave
 	flushlock sync.Mutex
+	closed    bool
 }
 
 func (t *DataTable) Write(p []byte) (int, error) {
 	n, err := t.output.Write(p)
-	util.FatalErr(err)
+	CheckRecoverable(err)
 	return n, err
 }
 
 func (t *DataTable) Flush() error {
-	if t.output == nil {
+	t.flushlock.Lock()
+	defer t.flushlock.Unlock()
+	return t.flushLocked()
+}
+
+func (t *DataTable) flushLocked() error {
+	if t.output == nil || t.closed {
 		return nil
 	}
+	return t.output.Flush()
+}
 
-	if cuda.Synchronous {
-		timer.Start("io")
+func (t *DataTable) close() error {
+	t.flushlock.Lock()
+	defer t.flushlock.Unlock()
+	if t.output == nil || t.closed {
+		return nil
 	}
-	err := t.output.Flush()
-	if cuda.Synchronous {
-		timer.Stop("io")
-	}
-	util.FatalErr(err)
-	return err
+	t.closed = true
+	return t.output.Close()
 }
 
 func newTable(name string) *DataTable {
@@ -66,15 +74,23 @@ func newTable(name string) *DataTable {
 }
 
 func TableAdd(col Quantity) {
-	if NameOf(col) == NameOf(CorePos) {
-		CoreTrackingEnabled = true
+	name := NameOf(col)
+	if name == NameOf(CorePos) || name == NameOf(SkyrmionPos) || name == NameOf(CoreValid) || name == NameOf(SkyrmionValid) || name == NameOf(SkyrmionPolarization) {
 		for _, output := range Table.outputs {
-			if NameOf(output) == NameOf(CorePos) {
+			if NameOf(output) == name {
 				return
 			}
 		}
+
 	}
+
 	Table.Add(col)
+	if name == NameOf(CorePos) {
+		setCoreMode("vortex")
+	}
+	if name == NameOf(SkyrmionPos) {
+		setCoreMode("skyrmion")
+	}
 }
 
 func TableAddAs(col Quantity, name string) {
@@ -127,7 +143,23 @@ func TableAutoSave(period float64) {
 
 func (t *DataTable) Add(output Quantity) {
 	if t.inited() {
-		util.Fatal("data table add ", NameOf(output), ": need to add quantity before table is output the first time")
+		panic(UserErr(fmt.Sprint("data table add ", NameOf(output), ": add quantities before the first table row")))
+	}
+	columns := map[string]bool{"t": true}
+	for _, q := range append(append([]Quantity(nil), t.outputs...), output) {
+		if strings.IndexFunc(UnitOf(q), func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
+			panic(UserErr("invalid table unit for " + NameOf(q)))
+		}
+		for c := 0; c < q.NComp(); c++ {
+			name := NameOf(q)
+			if q.NComp() > 1 {
+				name += compname[c]
+			}
+			if name == "" || strings.IndexFunc(name, func(r rune) bool { return r == '/' || r == 92 || r < 32 || r == 127 }) >= 0 || strings.HasPrefix(name, ".") || columns[name] {
+				panic(UserErr("invalid or duplicate table column: " + name))
+			}
+			columns[name] = true
+		}
 	}
 	t.outputs = append(t.outputs, output)
 }
@@ -139,27 +171,37 @@ func (t *DataTable) Save() {
 	if cuda.Synchronous {
 		timer.Start("io")
 	}
+	if t.closed {
+		panic(UserErr("table is closed"))
+	}
 	t.init()
 	columns := []string{"t"}
 	units := []string{"s"}
 	values := []float64{Time}
-	fprint(t, Time)
+	beginCoreSample()
+	defer endCoreSample()
+	var row strings.Builder
+	fmt.Fprint(&row, Time)
 	for _, o := range t.outputs {
 		vec := AverageOf(o)
 		for component, v := range vec {
-			fprint(t, "\t", float32(v))
+			fmt.Fprint(&row, "\t", float32(v))
 			name := NameOf(o)
 			if o.NComp() > 1 {
 				name += compname[component]
 			}
 			columns = append(columns, name)
-			units = append(units, UnitOf(o))
+			units = append(units, tableComponentUnit(o, component))
 			values = append(values, v)
 		}
 	}
-	fprintln(t)
+	fmt.Fprintln(&row)
+	fprint(t, row.String())
 	recordTableHistory(columns, units, values)
-	//t.flush()
+	if t.count <= 0 || tableHistory.needsFlush() {
+		CheckRecoverable(t.flushLocked())
+		CheckRecoverable(tableHistory.flushStructured())
+	}
 	t.count++
 
 	if cuda.Synchronous {
@@ -168,6 +210,11 @@ func (t *DataTable) Save() {
 }
 
 func (t *DataTable) Println(msg ...interface{}) {
+	t.flushlock.Lock()
+	defer t.flushlock.Unlock()
+	if t.closed {
+		panic(UserErr("table is closed"))
+	}
 	t.init()
 	fprintln(t, msg...)
 }
@@ -182,7 +229,7 @@ func (t *DataTable) init() {
 		return
 	}
 	f, err := httpfs.Create(OD() + t.name + ".txt")
-	util.FatalErr(err)
+	CheckRecoverable(err)
 	t.output = f
 
 	// write header
@@ -192,43 +239,29 @@ func (t *DataTable) init() {
 			fprint(t, "\t", NameOf(o), " (", UnitOf(o), ")")
 		} else {
 			for c := 0; c < o.NComp(); c++ {
-				fprint(t, "\t", NameOf(o)+string('x'+c), " (", UnitOf(o), ")")
+				fprint(t, "\t", NameOf(o)+string('x'+c), " (", tableComponentUnit(o, c), ")")
 			}
 		}
 	}
 	fprintln(t)
-	t.Flush()
-
-	// periodically flush so GUI shows graph,
-	// but don't flush after every output for performance
-	// (httpfs flush is expensive)
-	go func() {
-		for {
-			time.Sleep(TableAutoflushRate * time.Second)
-			Table.flush()
-		}
-	}()
+	CheckRecoverable(t.flushLocked())
 }
 
 func (t *DataTable) inited() bool {
 	return t.output != nil
 }
 
-func (t *DataTable) flush() {
-	t.flushlock.Lock()
-	defer t.flushlock.Unlock()
-	t.Flush()
-}
+func (t *DataTable) flush() { CheckRecoverable(t.Flush()) }
 
 // Safe fmt.Fprint, will fail on error
 func fprint(out io.Writer, x ...interface{}) {
 	_, err := fmt.Fprint(out, x...)
-	util.FatalErr(err)
+	CheckRecoverable(err)
 }
 
 // Safe fmt.Fprintln, will fail on error
 func fprintln(out io.Writer, x ...interface{}) {
 	_, err := fmt.Fprintln(out, x...)
-	util.FatalErr(err)
+	CheckRecoverable(err)
 
 }

@@ -16,6 +16,16 @@ type BlockStmt struct {
 	Node     []ast.Node
 }
 
+// BeforeStatement is an optional host cancellation checkpoint. The host sets
+// it during initialization, before any interpreter execution starts.
+var BeforeStatement func()
+
+func checkStatement() {
+	if BeforeStatement != nil {
+		BeforeStatement()
+	}
+}
+
 // does not enter scope because it does not necessarily need to (e.g. for, if).
 func (w *World) compileBlockStmt_noScope(n *ast.BlockStmt) *BlockStmt {
 	b := &BlockStmt{}
@@ -32,6 +42,7 @@ func (b *BlockStmt) append(s Expr, n ast.Node) {
 
 func (b *BlockStmt) Eval() interface{} {
 	for _, s := range b.Children {
+		checkStatement()
 		s.Eval()
 	}
 	return nil

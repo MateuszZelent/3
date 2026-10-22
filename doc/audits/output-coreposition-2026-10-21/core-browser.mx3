@@ -1,0 +1,8 @@
+SetGridSize(192,160,1)
+SetCellSize(1e-9,1e-9,1e-9)
+Msat=800e3
+Aex=13e-12
+m=NeelSkyrmion(1,1).Transl(11.25e-9,-7.75e-9,0)
+SkyrmionTrack(1)
+TableSave()
+Flush()

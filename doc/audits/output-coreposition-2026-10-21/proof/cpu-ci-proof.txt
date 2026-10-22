@@ -1,0 +1,11 @@
+ok  	github.com/mumax/3/engine	6.213s
+ok  	github.com/mumax/3/coreposition	(cached)
+ok  	github.com/mumax/3/tabular	4.274s
+ok  	github.com/mumax/3/hdf5	(cached)
+ok  	github.com/mumax/3/zarr	(cached)
+ok  	github.com/mumax/3/httpfs	(cached)
+ok  	github.com/mumax/3/script	(cached)
+ok  	github.com/mumax/3/util	(cached)
+ok  	github.com/mumax/3/webui	2.606s
+ok  	github.com/mumax/3/cmd/mumax3	77.240s
+ok  	github.com/mumax/3/cmd/mumax3-server	1.041s

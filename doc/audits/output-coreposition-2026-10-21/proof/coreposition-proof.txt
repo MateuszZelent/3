@@ -1,0 +1,73 @@
+//mumax 3.12 [linux_amd64 go1.26.8(gc) CUDA-12.4]
+//mumax3 build: version=development-output-core-fix commit=0efd5400-dirty built=2026-10-21T22:11:37Z
+//CPU info: AMD Ryzen Threadripper 3960X 24-Core Processor, Cores: 20, MHz: 3800.041
+//GPU info: NVIDIA GeForce RTX 4080 SUPER(16375MB), CUDA Driver 13.4, cc=8.9, using cc=89 PTX
+//OS  info: Ubuntu 22.04.4 LTS, Hostname: 66f5597a3c60
+//Timestamp: 2026-10-21 22:13:44
+//(c) Arne Vansteenkiste, Dynamat LAB, Ghent University, Belgium
+//This is free software without any warranty. See license.txt
+//********************************************************************//
+//  If you use mumax in any work or publication,                      //
+//  we kindly ask you to cite the references in references.bib        //
+//********************************************************************//
+//output directory: /tmp/vortex-final/
+//not starting GUI (-http="")
+setgridsize(128, 64, 2)
+setcellsize(1e-9, 2e-9, 1e-9)
+Msat = 800e3
+Aex = 13e-12
+alpha = 3
+m = vortex(-1, -1).transl(20e-9, 30e-9, 0)
+pos := ext_corepos.get()
+expect("coreX", pos[0], 20e-9, 0.1e-9)
+//coreX : 2.0000000000000004e-08 OK
+expect("coreY", pos[1], 30e-9, 0.1e-9)
+//coreY : 3.0000000000000004e-08 OK
+expect("polarization", pos[2], -0.5, 0.3)
+//polarization : -0.626069188117981 OK
+m = vortex(1, 1)
+alpha = 3
+tableadd(ext_corepos)
+steps(100)
+//Demag cache: checking /tmp/amumax_kernels/128_64_2_0_0_0_1.000000e-09_2.000000e-09_1.000000e-09_6.cache2
+//Demag cache miss; calculating kernel
+//Calculating demag kernel: mesh [128 64 2] padded [256 128 3] PBC [0 0 0] accuracy 6
+
+Calculating demag kernel [                                                ]   0%
+Calculating demag kernel [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag kernel calculation completed in 35ms
+//Demag cache write: 2.2 MiB
+
+Demag cache write [                                                       ]   0%
+Demag cache write [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag cache write: 100% (2.2 / 2.2 MiB), elapsed 10ms
+//Demag cache: synchronizing file to storage /tmp/amumax_kernels/128_64_2_0_0_0_1.000000e-09_2.000000e-09_1.000000e-09_6.cache2
+
+Synchronizing demag cache [                                               ]   0%
+Synchronizing demag cache [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag cache write completed in 22ms
+//Cached kernel: /tmp/amumax_kernels/128_64_2_0_0_0_1.000000e-09_2.000000e-09_1.000000e-09_6.cache2
+//Demag GPU: allocating buffers and creating FFT plans for [256 128 3]
+//Demag GPU: FFT plans ready; transforming kernel components
+
+Demag kernel GPU FFT [                                                    ]   0%//Demag GPU: transforming component 00 (1/6)
+//Demag GPU: transforming component 01 (2/6)
+//Demag GPU: transforming component 02 (3/6)
+//Demag GPU: transforming component 11 (4/6)
+//Demag GPU: transforming component 12 (5/6)
+//Demag GPU: transforming component 22 (6/6)
+
+Demag kernel GPU FFT [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag GPU initialization completed in 166ms
+pos = ext_corepos.get()
+expect("coreX", pos[0], 0e-9, 0.1e-9)
+//coreX : 5.717179508347116e-13 OK
+expect("coreY", pos[1], 0e-9, 0.1e-9)
+//coreY : 3.049160970343952e-13 OK
+expect("polarization", pos[2], 0.7, 0.3)
+//polarization : 0.9659746289253235 OK
+//********************************************************************//
+//Please cite the following references, relevant for your simulation. //
+//See bibtex file in output folder for justification.                 //
+//********************************************************************//
+//   * Vansteenkiste et al., AIP Adv. 4, 107133 (2014).

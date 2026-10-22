@@ -1,0 +1,1 @@
+{"result": "PASS", "zarr": "2.18.3", "h5py": "3.16.0", "formats": ["zarr", "hdf5"], "committed_rows": 3, "field_frames_after_repeated_flush": 3, "writer_close_called": false}

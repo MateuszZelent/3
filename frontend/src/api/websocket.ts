@@ -364,7 +364,9 @@ export function parseMsgpack(data: ArrayBuffer) {
 			columns: msg.tablePlot.columns ?? [],
 			data: msg.tablePlot.data ?? [],
 			corePos: msg.tablePlot.corePos ?? null,
-			coreEnabled: msg.tablePlot.coreEnabled ?? false
+			coreEnabled: msg.tablePlot.coreEnabled ?? false,
+ coreMode: msg.tablePlot.coreMode ?? "",
+ coreStatus: msg.tablePlot.coreStatus ?? ""
 		});
 		scheduleTableRender();
 	}

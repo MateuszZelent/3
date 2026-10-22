@@ -1,0 +1,31 @@
+// Static and breathing textures: both polarities, Neel/Bloch, sixteen scales.
+SetGridSize(192,160,3)
+SetCellSize(1e-9,1e-9,1e-9)
+Msat=800e3
+Aex=13e-12
+SkyrmionTrack(1)
+TableAdd(ext_corepos)
+for polarity := -1; polarity <= 1; polarity += 2 {
+    SkyrmionPolarity=polarity
+    SkyrmionBackground=-polarity
+    SkyrmionReset()
+    for scale := 0.25; scale <= 4; scale += 0.25 {
+        m=NeelSkyrmion(1,polarity).Scale(scale,scale,1).Transl(11.25e-9,-7.75e-9,0)
+        p:=ext_skyrmionpos.Get()
+        Expect("Neel X",p[0],11.25e-9,0.1e-9)
+        Expect("Neel Y",p[1],-7.75e-9,0.1e-9)
+        Expect("valid Neel",ext_skyrmionvalid.Get(),1,0)
+        TableSave()
+        m=BlochSkyrmion(1,polarity).Scale(scale,scale,1).Transl(11.25e-9,-7.75e-9,0)
+        p=ext_skyrmionpos.Get()
+        Expect("Bloch X",p[0],11.25e-9,0.1e-9)
+        Expect("Bloch Y",p[1],-7.75e-9,0.1e-9)
+        TableSave()
+    }
+}
+// No core is an explicit invalid result, not a plausible center.
+m=Uniform(0,0,1)
+Expect("no skyrmion",ext_skyrmionvalid.Get(),0,0)
+Expect("no vortex",ext_corevalid.Get(),0,0)
+TableSave()
+Flush()

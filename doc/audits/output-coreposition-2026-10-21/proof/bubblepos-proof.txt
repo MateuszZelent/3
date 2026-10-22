@@ -1,0 +1,123 @@
+//mumax 3.12 [linux_amd64 go1.26.8(gc) CUDA-12.4]
+//mumax3 build: version=development-output-core-fix commit=0efd5400-dirty built=2026-10-21T22:11:37Z
+//CPU info: AMD Ryzen Threadripper 3960X 24-Core Processor, Cores: 20, MHz: 3800.041
+//GPU info: NVIDIA GeForce RTX 4080 SUPER(16375MB), CUDA Driver 13.4, cc=8.9, using cc=89 PTX
+//OS  info: Ubuntu 22.04.4 LTS, Hostname: 66f5597a3c60
+//Timestamp: 2026-10-21 22:13:47
+//(c) Arne Vansteenkiste, Dynamat LAB, Ghent University, Belgium
+//This is free software without any warranty. See license.txt
+//********************************************************************//
+//  If you use mumax in any work or publication,                      //
+//  we kindly ask you to cite the references in references.bib        //
+//********************************************************************//
+//output directory: /tmp/bubble-final/
+//not starting GUI (-http="")
+SetMesh(128, 128, 1, 1e-9, 1e-9, 0.4e-9, 1, 0, 0)
+Msat = 580e3
+Aex = 15e-12
+enabledemag = true
+alpha = 0.1
+Ku1 = 0.59e6 + 4*pi*1e-7*0.5*580e3*580e3
+anisU = vector(0, 0, 1)
+Dind = 0.0034089785
+shiftregions = false
+m = neelskyrmion(1, -1).transl(-30e-9, 0e-9, 0)
+minimize()
+//Demag cache: checking /tmp/amumax_kernels/128_128_1_1_0_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+//Demag cache miss; calculating kernel
+//Calculating demag kernel: mesh [128 128 1] padded [128 256 1] PBC [1 0 0] accuracy 6
+
+Calculating demag kernel [                                                ]   0%
+Calculating demag kernel [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag kernel calculation completed in 66ms
+//Demag cache write: 0.5 MiB
+
+Demag cache write [                                                       ]   0%
+Demag cache write [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag cache write: 100% (0.5 / 0.5 MiB), elapsed 1ms
+//Demag cache: synchronizing file to storage /tmp/amumax_kernels/128_128_1_1_0_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+
+Synchronizing demag cache [                                               ]   0%
+Synchronizing demag cache [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag cache write completed in 79ms
+//Cached kernel: /tmp/amumax_kernels/128_128_1_1_0_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+//Demag GPU: allocating buffers and creating FFT plans for [128 256 1]
+//Demag GPU: FFT plans ready; transforming kernel components
+
+Demag kernel GPU FFT [                                                    ]   0%//Demag GPU: transforming component 00 (1/4)
+//Demag GPU: transforming component 01 (2/4)
+//Demag GPU: transforming component 11 (3/4)
+//Demag GPU: transforming component 22 (4/4)
+
+Demag kernel GPU FFT [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag GPU initialization completed in 210ms
+ext_bubbleMz = -1.0
+ext_backgroundtilt = 0.25
+TOL := 1e-9
+expectv("position", ext_bubblepos.average(), vector(-3e-08, 0, 0), TOL)
+//position[0] : -3.0000007676240357e-08 OK
+//position[1] : -4.295447807633834e-15 OK
+//position[2] : 0 OK
+SetGeom(Square(30e-9).transl(30e-9, 0e-9, 0).inverse())
+
+Initializing geometry [                                                   ]   0%
+Initializing geometry [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+expectv("position", ext_bubblepos.average(), vector(-3e-08, 0, 0), TOL)
+//position[0] : -3.0000007681873893e-08 OK
+//position[1] : -4.289219117376381e-15 OK
+//position[2] : 0 OK
+SetGeom(Universe())
+
+Initializing geometry [                                                   ]   0%
+Initializing geometry [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+SetMesh(128, 128, 1, 1e-9, 1e-9, 0.4e-9, 0, 1, 0)
+//resizing...
+m = neelskyrmion(1, -1).transl(0e-9, -30e-9, 0)
+minimize()
+//Demag cache: checking /tmp/amumax_kernels/128_128_1_0_1_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+//Demag cache miss; calculating kernel
+//Calculating demag kernel: mesh [128 128 1] padded [256 128 1] PBC [0 1 0] accuracy 6
+
+Calculating demag kernel [                                                ]   0%
+Calculating demag kernel [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag kernel calculation completed in 69ms
+//Demag cache write: 0.5 MiB
+
+Demag cache write [                                                       ]   0%
+Demag cache write [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag cache write: 100% (0.5 / 0.5 MiB), elapsed 2ms
+//Demag cache: synchronizing file to storage /tmp/amumax_kernels/128_128_1_0_1_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+
+Synchronizing demag cache [                                               ]   0%
+Synchronizing demag cache [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag cache write completed in 135ms
+//Cached kernel: /tmp/amumax_kernels/128_128_1_0_1_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+//Demag GPU: allocating buffers and creating FFT plans for [256 128 1]
+//Demag GPU: FFT plans ready; transforming kernel components
+
+Demag kernel GPU FFT [                                                    ]   0%//Demag GPU: transforming component 00 (1/4)
+//Demag GPU: transforming component 01 (2/4)
+//Demag GPU: transforming component 11 (3/4)
+//Demag GPU: transforming component 22 (4/4)
+
+Demag kernel GPU FFT [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+//Demag GPU initialization completed in 529ms
+expectv("position", ext_bubblepos.average(), vector(0, -3e-08, 0), TOL)
+//position[0] : -6.230204645793117e-15 OK
+//position[1] : -3.00000067078857e-08 OK
+//position[2] : 0 OK
+SetGeom(Square(30e-9).transl(0e-9, 30e-9, 0).inverse())
+
+Initializing geometry [                                                   ]   0%
+Initializing geometry [⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿] 100%
+expectv("position", ext_bubblepos.average(), vector(0, -3e-08, 0), TOL)
+//position[0] : -6.237520347088092e-15 OK
+//position[1] : -3.000000670308968e-08 OK
+//position[2] : 0 OK
+//********************************************************************//
+//Please cite the following references, relevant for your simulation. //
+//See bibtex file in output folder for justification.                 //
+//********************************************************************//
+//   * Mulkers et al., Phys. Rev. B 95, 144401 (2017).
+//   * Vansteenkiste et al., AIP Adv. 4, 107133 (2014).
+//   * Exl et al., J. Appl. Phys. 115, 17D118 (2014).

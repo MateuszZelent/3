@@ -63,6 +63,200 @@ Map `/proxy/35367` to the queue and `/proxy/35368`, `/proxy/35369`, etc. to
 the worker ports. Do not expose the UI to untrusted networks: it has no
 authentication; put it behind an authenticated proxy or a VPN.
 
+## Śledzenie rdzenia w tabeli i WebUI: vortex / skyrmion
+
+Widget **Plots → Core Position** pokazuje próbki z tabeli bieżącej symulacji.
+Typ detektora wybiera skrypt MX3. W UI wyświetlany jest tryb `Vortex` albo
+`Skyrmion` i status lokalizacji; obecnie nie ma przełącznika zmieniającego detektor.
+Instrukcja dotyczy implementacji opisanej w [raporcie naprawy](doc/audits/output-coreposition-2026-10-21/IMPLEMENTATION.md).
+Używaj binarium z tą implementacją; starsze wydania mogą nie udostępniać nowych funkcji.
+
+### Wielkość MX3 a nazwy kolumn
+
+`ext_corepos` jest zarejestrowaną **wielkością wektorową** MX3. Wywołanie
+`TableAdd(ext_corepos)` rozbija ją na trzy kolumny: `ext_coreposx`,
+`ext_coreposy`, `ext_coreposz`. Te nazwy kolumn nie rejestrują samodzielnych
+wielkości w interpreterze.
+
+```go
+// Poprawnie: dodanie całej wielkości do tabeli.
+TableAdd(ext_corepos)
+
+// Niepoprawnie jako odwołanie do wbudowanej wielkości MX3:
+// TableAdd(ext_coreposx)
+// TableAdd(ext_coreposy)
+```
+
+Zalecane `CoreTrack()` dodaje `ext_corepos` i `ext_corevalid` oraz ustawia tryb
+widgetu na vortex. `SkyrmionTrack(p)` dodaje osobne wielkości skyrmionu,
+validity i polaryzację oraz ustawia tryb skyrmionu.
+Sam `TableAdd(ext_corepos)` też uruchamia tryb vortex, ale nie dodaje kolumny
+`ext_corevalid`; widget odrzuca wówczas nieważne pozycje na podstawie NaN/Inf.
+
+| Wywołanie | Powstające kolumny | Znaczenie |
+| --- | --- | --- |
+| `CoreTrack()` | `ext_coreposx`, `ext_coreposy`, `ext_coreposz`, `ext_corevalid` | X/Y w metrach; legacy Z to bezwymiarowa polaryzacja rdzenia, a nie położenie Z; validity 1 albo 0 |
+| `SkyrmionTrack(1)` lub `SkyrmionTrack(-1)` | `ext_skyrmionposx`, `ext_skyrmionposy`, `ext_skyrmionposz`, `ext_skyrmionvalid`, `ext_skyrmionpol` | X/Y/Z w metrach, ważność oraz osobna bezwymiarowa polaryzacja |
+
+Tabela ma ponadto czas `t` i domyślne kolumny średniej magnetyzacji `mx`, `my`, `mz`.
+`TableAdd`, `CoreTrack` i `SkyrmionTrack` definiują kolumny — próbkowanie włącza
+osobne `TableAutoSave(period)` albo jawne `TableSave()`.
+
+### Przykład vortex: plik vortex-demo.mx3
+
+```go
+SetGridSize(128, 128, 1)
+SetCellSize(2e-9, 2e-9, 2e-9)
+Msat = 800e3
+Aex = 13e-12
+alpha = 0.1
+m = Vortex(1, 1)
+
+CoreTrack()
+CoreLayer = -1           // najsilniejszy rdzeń spośród warstw
+TableAutoSave(1e-12)     // okres próbkowania: 1 ps czasu symulacji
+TableSave()             // pierwsza próbka także bez uruchamiania solvera
+Flush()
+```
+
+Uruchom w trybie interaktywnym, aby po wykonaniu skryptu otworzyć widget:
+
+```sh
+mumax3 -i -http=127.0.0.1:35367 -o vortex-demo.zarr vortex-demo.mx3
+```
+
+Otwórz adres wypisany przez program i wybierz **Plots → Core Position**.
+Jedna próbka pokazuje pozycję, a kolejne próbki powstaną podczas `Run(...)`
+lub `Steps(...)`. W pliku można dopisać np. `Run(100e-12)` przed końcowym
+`Flush()`, aby obserwować 100 ps dynamiki.
+
+Flaga CLI `-core` włącza to samo śledzenie vortex co `CoreTrack()`.
+Nadal wymaga próbkowania tabeli; nie wybiera automatycznie detektora skyrmionu.
+
+### Przykład skyrmionu: plik skyrmion-demo.mx3
+
+```go
+SetGridSize(192, 160, 1)
+SetCellSize(1e-9, 1e-9, 1e-9)
+Msat = 800e3
+Aex = 13e-12
+alpha = 0.1
+m = NeelSkyrmion(1, 1).Transl(11.25e-9, -7.75e-9, 0)
+
+SkyrmionTrack(1)         // oczekiwany znak mz rdzenia; nie chiralność
+SkyrmionSeedX = 11.25e-9
+SkyrmionSeedY = -7.75e-9
+SkyrmionLayer = -1
+TableAutoSave(1e-12)
+TableSave()
+Flush()
+```
+
+```sh
+mumax3 -i -http=127.0.0.1:35367 -o skyrmion-demo.zarr skyrmion-demo.mx3
+```
+
+Ten przykład tworzy i lokalizuje konfigurację statyczną. Stabilny skyrmion
+podczas dynamiki wymaga właściwego modelu fizycznego i parametrów materiału,
+np. odpowiednich oddziaływań, anizotropii i pola. Funkcja śledzenia nie stabilizuje
+tekstury. Dla rdzenia skierowanego w −Z użyj `SkyrmionTrack(-1)` i konfiguracji
+magnetyzacji z taką polaryzacją.
+
+### Wybór konkretnego obiektu i parametrów
+
+**Vortex:** detektor wybiera najsilniejszy zlokalizowany pik `|mz|` w geometrii.
+`CoreLayer = -1` przeszukuje wszystkie warstwy, a indeks `0, 1, ...` wybiera
+jedną warstwę. Przy kilku wirach nie ma identyfikatora obiektu ani kojarzenia
+z poprzednią pozycją; zmiana najsilniejszego piku może zmienić śledzony wir.
+
+**Skyrmion:** rozdzielane są spójne rdzenie o oczekiwanym znaku `mz`. Pierwszy
+wybierany jest najbliżej `(SkyrmionSeedX, SkyrmionSeedY)`, domyślnie `(0, 0)`.
+Następne próbki odnoszą się do poprzedniej poprawnej pozycji.
+
+| Parametr | Domyślnie | Jak używać |
+| --- | --- | --- |
+| `SkyrmionPolarity` | argument `SkyrmionTrack(p)` | `+1` lub `-1`: znak magnetyzacji rdzenia |
+| `SkyrmionBackground` | `-p` | Tło `mz` o znaku przeciwnym do rdzenia; własną wartość ustaw po `SkyrmionTrack(p)` |
+| `SkyrmionThreshold` | `0.1` | Odcinany kontrast tła, bezwymiarowy; wymagane `0 <= threshold < 1` |
+| `SkyrmionSeedX`, `SkyrmionSeedY` | `0`, `0` m | Początkowy punkt wyboru w układzie laboratoryjnym |
+| `SkyrmionSearchRadius` | `0` m | Zero: cała domena; dodatni promień: obszar wokół bieżącego punktu odniesienia |
+| `SkyrmionMaxDisplacement` | `0` m | Zero: automatyczny limit na podstawie rozmiaru poprzedniego rdzenia i komórki; dodatnia wartość: jawny limit ruchu między próbkami, także odległości pierwszego rdzenia od ziarna |
+| `SkyrmionLayer` | `-1` | Agregacja połączonych warstw; indeks `0, 1, ...` wybiera jedną warstwę |
+
+Po utracie lokalizacji poprzednia poprawna pozycja pozostaje odniesieniem.
+`SkyrmionReset()` usuwa to skojarzenie: kolejna próbka ponownie wybiera obiekt
+względem ziarna. Nie usuwa dotychczasowej historii tabeli.
+To skojarzenie przestrzenne, bez trwałych identyfikatorów cząstek; dobierz okres
+próbkowania i limit ruchu tak, aby sąsiednie obiekty nie mogły być mylone.
+Obszar poszukiwania musi obejmować cały rdzeń i otaczające tło.
+
+### Skąd widget dostaje dane
+
+```mermaid
+flowchart LR
+    A[TableSave lub próbka autosave] --> B[Detektor wylicza próbkę]
+    B --> C[Wspólny wiersz DataTable]
+    C --> D[Bufory i flush: table.txt oraz Zarr/HDF5]
+    C --> E[Historia tabeli w RAM]
+    E --> F[TablePreviewSnapshot]
+    F --> G[WebSocket: tablePlot.corePos]
+    G --> H[Widget Core Position]
+```
+
+`TablePlotState.GetCorePosData()` pobiera `t`, kolumny X/Y wybranego detektora
+i jego validity. WebSocket przesyła wiersze `[t, x, y, valid]`, tryb i status.
+Frontend przelicza współrzędne na nm i liczy metryki trajektorii.
+`tablePlot.corePos` jest polem komunikatu UI, a nie funkcją MX3 ani osobnym
+plikiem. Widget nie odczytuje `table.txt`/Zarr i nie uruchamia własnego detektora
+na GPU. Otwieranie widgetu nie tworzy nowych próbek.
+
+W zwykłym **Table Plot** można wybrać np. `t` i `ext_coreposx` do wykresu X(t).
+Zakładka **Core Position** niezależnie pobiera X i Y po ich standardowych nazwach;
+zmiana osi zwykłego wykresu nie zmienia rodzaju detektora. `TableAddAs(...)`
+z innymi nazwami może zapisać poprawne dane, których widget nie rozpozna.
+Samo `TableAdd(ext_bubblepos)` także nie włącza tego widgetu jako detektora skyrmionu.
+
+`Max points` i `Step` ograniczają/przerzedzają podgląd obu wykresów. Nie zmieniają
+próbek zapisanych na dysku. `Orbit window` ogranicza odcinek używany do metryk.
+Zbyt rzadki podgląd może uniemożliwić wiarygodne wyznaczenie częstotliwości.
+`Orbit radius` jest promieniem ruchu środka, **nie promieniem rdzenia**.
+Przy pojedynczym punkcie, nieruchomym rdzeniu lub niewystarczającej orbicie
+częstotliwość `—` jest prawidłowym wynikiem.
+
+### Kolejność operacji i rozwiązywanie problemów
+
+1. Zdefiniuj geometrię, materiał i magnetyzację.
+2. Wybierz jeden detektor przez `CoreTrack()` albo `SkyrmionTrack(p)` i ustaw parametry.
+3. Zrób to przed pierwszym `TableSave()`, pierwszą automatyczną próbką lub `TablePrint()` inicjalizującym tabelę. Schemat otwartej tabeli jest stały.
+4. Włącz `TableAutoSave(period)` lub wykonuj `TableSave()`. Okres jest w sekundach czasu symulacji; pauza nie generuje automatycznie nowych próbek.
+5. Użyj `Flush()`, gdy potrzebujesz utrwalenia istniejących próbek. Flush nie dopisuje próbki. Bufory są też opróżniane okresowo według czasu rzeczywistego.
+6. Otwórz **Plots → Core Position** i sprawdź tryb oraz status.
+
+| Objaw | Co sprawdzić |
+| --- | --- |
+| `undefined: ext_coreposx` | W MX3 użyj `CoreTrack()` lub `TableAdd(ext_corepos)`. Sufiks X jest nazwą wynikowej kolumny |
+| Brak zakładki lub danych | Czy wybrano detektor, powstała pierwsza próbka i są standardowe nazwy kolumn? Samo `Save(m)` / `AutoSave(m, ...)` zapisuje pola, nie tabelę |
+| Błąd dodawania kolumn po uruchomieniu | Przenieś wybór detektora przed inicjalizację tabeli i uruchom nowy przebieg |
+| Widać niewłaściwy tryb | `-core` oznacza vortex. Używaj jednego helpera; jeśli oba zostaną włączone przed pierwszą próbką, ostatnie wywołanie helpera wybiera tryb widgetu |
+| `valid=0`, brak metryk | Sprawdź polaryzację, tło, rozdzielczość, warstwę, geometrię, brzeg/ROI i limit ruchu. Nieważna pozycja ma NaN w tabeli; UI oznacza przerwę i nie łączy jej w trajektorię |
+| Wykres jest nowszy niż plik | UI korzysta z historii w RAM. `Flush()` utrwala już zapisane próbki; nie zmienia ich liczby |
+
+Pełny zapis jest w `table.txt` i — dla odpowiedniego formatu — w `table/`.
+Podgląd UI jest ograniczony do końcowego okna historii. Zatwierdzoną tabelę
+strukturalną można wyeksportować bezpośrednio:
+
+```sh
+mumax3 table skyrmion-demo.zarr/table > skyrmion-table.txt
+```
+
+Test vortex na GPU obejmuje translację, obie polaryzacje i 100 kroków dynamiki;
+testy skyrmionu obejmują 64 konfiguracje rozmiaru/polaryzacji/profilu. Testy
+przeglądarkowe sprawdziły skyrmion, utratę/odzyskanie, reconnect i Break.
+Zakres testów, logi i ograniczenia są w [raporcie naprawy](doc/audits/output-coreposition-2026-10-21/IMPLEMENTATION.md).
+Przykłady z tego README uruchomiono również bezpośrednio na GPU: vortex,
+skyrmion i wariant `TableAdd(ext_corepos)` przeszły; `TableAdd(ext_coreposx)`
+zakończył się oczekiwanym błędem kompilacji. [Wyniki i nazwy uzyskanych kolumn](doc/audits/output-coreposition-2026-10-21/proof/readme-usage-proof.json).
+
 ## Contributing
 
 Contributions are gratefully accepted. To contribute code, fork our GitHub repo and send a pull request.

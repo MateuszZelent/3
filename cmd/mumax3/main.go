@@ -49,13 +49,18 @@ func init() {
 		fmt.Fprintln(flag.CommandLine.Output(), buildSummary())
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [options] [mx3 paths...]\n", os.Args[0])
 		fmt.Fprintf(flag.CommandLine.Output(), "       %s template [--flat] [--run] TEMPLATE.mx3\n\nOptions:\n", os.Args[0])
+		fmt.Fprintln(flag.CommandLine.Output(), "       mumax3 table TABLE_DIRECTORY  (stream committed scalar rows to stdout)")
 		flag.PrintDefaults()
 	}
 }
 
 var flag_checkUpdates = flag.Bool("check-updates", true, "Check for newer releases in the background (cached; never blocks the solver)")
 
-func main() {
+func runCLI() {
+	if len(os.Args) > 1 && os.Args[1] == "table" {
+		runTableCommand(os.Args[2:])
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "template" {
 		runTemplateCommand(os.Args[2:])
 		return
@@ -76,7 +81,7 @@ func main() {
 	}
 	if err := validateCLIConfiguration(); err != nil {
 		fmt.Fprintln(os.Stderr, "invalid configuration:", err)
-		os.Exit(2)
+		panic(exitCode(2))
 	}
 	configureInteractiveTimeout()
 	util.SetProgressHidden(*engine.Flag_hideprogress)
@@ -86,10 +91,10 @@ func main() {
 	}
 	if *flag_update || *flag_updateVersion != "" || *flag_updateList {
 		if *flag_updateList && *flag_updateVersion != "" {
-			log.Fatal("-update-list and -update-version cannot be combined")
+			util.Fatal("-update-list and -update-version cannot be combined")
 		}
 		if err := runUpdateCommand(); err != nil {
-			log.Fatal(err)
+			util.Fatal(err)
 		}
 		return
 	}
@@ -105,7 +110,7 @@ func main() {
 	case "h5", "hdf5":
 		engine.StorageFormat = engine.StorageFormatHDF5
 	default:
-		log.Fatalf("invalid -storage-format %q (want ovf, zarr, or h5)", *engine.Flag_storage)
+		util.Fatalf("invalid -storage-format %q (want ovf, zarr, or h5)", *engine.Flag_storage)
 	}
 
 	if *flag_checkUpdates && !*flag_test && !*flag_vet && (flag.NArg() > 0 || *engine.Flag_interactive) {
@@ -118,12 +123,14 @@ func main() {
 	// single-file path initializes the assigned device here.
 	if flag.NArg() > 1 {
 		if status := RunQueue(flag.Args()); status != 0 {
-			os.Exit(status)
+			panic(exitCode(status))
 		}
 		return
 	}
 
+	stopSimulationSignals = engine.InstallSignalHandlers()
 	cuda.Init(*engine.Flag_gpu)
+	engine.CheckStop()
 	engine.SetStructuredGPUInfo(cuda.GPUInfo)
 	printVersion()
 
@@ -131,10 +138,8 @@ func main() {
 	// used by bootstrap launcher to test cuda
 	// successful exit means cuda was initialized fine
 	if *flag_test {
-		os.Exit(0)
+		panic(exitCode(0))
 	}
-
-	defer engine.Close() // flushes pending output, if any
 
 	if *flag_vet {
 		vet()
@@ -152,6 +157,9 @@ func main() {
 }
 
 func validateCLIConfiguration() error {
+	if *engine.Flag_shutdownTimeout <= 0 {
+		return fmt.Errorf("-shutdown-timeout must be positive")
+	}
 	if *engine.Flag_interactive && *engine.Flag_port == "" {
 		return fmt.Errorf("-i/--interactive requires an enabled WebUI; remove -i or set -http")
 	}
@@ -259,11 +267,11 @@ func runTemplateCommand(args []string) {
 	_ = flags.Parse(args)
 	if flags.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "usage: mumax3 template [--flat] [--run] TEMPLATE.mx3")
-		os.Exit(2)
+		panic(exitCode(2))
 	}
 	files, err := mx3template.Generate(flags.Arg(0), mx3template.Options{Flat: *flat})
 	if err != nil {
-		log.Fatal(err)
+		util.Fatal(err)
 	}
 	for _, filename := range files {
 		fmt.Println(filename)
@@ -273,7 +281,7 @@ func runTemplateCommand(args []string) {
 			command := exec.Command(os.Args[0], "--webui-disable", filename)
 			command.Stdout, command.Stderr, command.Stdin = os.Stdout, os.Stderr, os.Stdin
 			if err := command.Run(); err != nil {
-				log.Fatal(err)
+				util.Fatal(err)
 			}
 		}
 	}
@@ -349,37 +357,72 @@ func runScript(fname string) {
 }
 
 func runGoFile(fname string) {
-	// pass through flags
-	flags := []string{"run", fname}
-	seen := make(map[string]bool)
+	// Build first, then own the actual simulation process rather than a transient
+	// `go run` parent that can exit before its child has finalized output.
+	dir, err := os.MkdirTemp("", "mumax3-go-*")
+	util.FatalErr(err)
+	defer os.RemoveAll(dir)
+	binary := path.Join(dir, "simulation")
+	if runtime.GOOS == "windows" {
+		binary += ".exe"
+	}
+	build := util.CommandContext(engine.SimulationContext(), "go", "build", "-o", binary, fname)
+	build.Stdout = os.Stdout
+	build.Stderr = os.Stderr
+	err = build.Run()
+	engine.CheckStop()
+	util.FatalErr(err)
+	args := []string{}
+	seen := map[string]bool{}
 	flag.Visit(func(f *flag.Flag) {
 		canonical := engine.CanonicalFlagName(f.Name)
-		if canonical != "o" && !seen[canonical] {
+		if engine.IsEngineFlag(canonical) && !seen[canonical] {
 			seen[canonical] = true
-			flags = append(flags, fmt.Sprintf("-%v=%v", canonical, f.Value))
+			args = append(args, fmt.Sprintf("-%s=%s", canonical, f.Value))
 		}
 	})
-
-	if *engine.Flag_od != "" {
-		flags = append(flags, fmt.Sprintf("-o=%v", *engine.Flag_od))
-	}
-
-	cmd := exec.Command("go", flags...)
+	cmd := exec.Command(binary, args...)
+	cmd.Env = append(os.Environ(), "MUMAX_GO_INPUT="+fname)
 	if fdText := os.Getenv(events.EnvFD); fdText != "" {
 		if fd, err := strconv.Atoi(fdText); err == nil && fd >= 0 {
 			if eventFile := os.NewFile(uintptr(fd), "mumax-event"); eventFile != nil {
 				cmd.ExtraFiles = []*os.File{eventFile}
-				cmd.Env = append(os.Environ(), events.EnvFD+"=3")
+				cmd.Env = append(cmd.Env, events.EnvFD+"=3")
 			}
 		}
 	}
-	log.Println("go", flags)
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
-	err := cmd.Run()
+	log.Println(binary, args)
+	util.FatalErr(cmd.Start())
+	done := make(chan struct{})
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		select {
+		case <-done:
+			return
+		case <-engine.StopRequested():
+			_ = cmd.Process.Signal(engine.StopReason().Signal)
+			timer := time.NewTimer(*engine.Flag_shutdownTimeout)
+			defer timer.Stop()
+			select {
+			case <-done:
+			case <-timer.C:
+				_ = cmd.Process.Kill()
+			}
+		}
+	}()
+	err = cmd.Wait()
+	close(done)
+	<-watchDone
+	engine.CheckStop()
 	if err != nil {
-		os.Exit(1)
+		if exit, ok := err.(*exec.ExitError); ok {
+			panic(exitCode(exit.ExitCode()))
+		}
+		util.FatalErr(err)
 	}
 }
 
@@ -392,12 +435,12 @@ func goServeGUI() string {
 	if *engine.Flag_legacygui {
 		host, port, basePath, err := parseWebUIAddress(*engine.Flag_port)
 		if err != nil {
-			log.Fatal(err)
+			util.Fatal(err)
 		}
 		addr := engine.GoServe(net.JoinHostPort(host, strconv.Itoa(port)), basePath)
 		host, actualPort, _, err := parseWebUIAddress(addr)
 		if err != nil {
-			log.Fatal(err)
+			util.Fatal(err)
 		}
 		basePath = webui.RetargetBasePath(basePath, port, actualPort)
 		browserHost := host
@@ -410,11 +453,11 @@ func goServeGUI() string {
 	}
 	host, port, basePath, err := parseWebUIAddress(*engine.Flag_port)
 	if err != nil {
-		log.Fatal(err)
+		util.Fatal(err)
 	}
 	actualPort, err := webui.Start(host, port, basePath, *engine.Flag_tunnel, *engine.Flag_webdebug)
 	if err != nil {
-		log.Fatal(err)
+		util.Fatal(err)
 	}
 	basePath = webui.RetargetBasePath(basePath, port, actualPort)
 	browserHost := host

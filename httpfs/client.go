@@ -12,9 +12,12 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 )
 
 var wd = "" // working directory, see SetWD
+
+var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 // SetWD sets a "working directory" for the client side,
 // prefixed to all relative local paths passed to client functions (Mkdir, Touch, Remove, ...).
@@ -174,9 +177,12 @@ func httpRemove(URL string) error {
 // do a http request.
 func do(a action, URL string, body []byte, query url.Values) (resp []byte, err error) {
 	u, err := url.Parse(URL)
+	if err != nil {
+		return nil, err
+	}
 	u.Path = string(a) + path.Clean("/"+u.Path)
 	u.RawQuery = query.Encode()
-	response, errR := http.Post(u.String(), "data", bytes.NewReader(body))
+	response, errR := httpClient.Post(u.String(), "data", bytes.NewReader(body))
 	if errR != nil {
 		return nil, mkErr(a, URL, errR)
 	}

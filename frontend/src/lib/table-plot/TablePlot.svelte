@@ -32,8 +32,13 @@
 	let coreAspectEqual = $state(true);
 	let coreOrbitNs = $state(2);
 	let coreMetrics = $state<CoreMetrics>({
-		radiusNm: 0, centerXNm: 0, centerYNm: 0,
-		frequencyGHz: 0, totalPoints: 0, orbitPoints: 0, hasData: false,
+		radiusNm: 0,
+		centerXNm: 0,
+		centerYNm: 0,
+		frequencyGHz: null,
+		totalPoints: 0,
+		orbitPoints: 0,
+		hasData: false
 	});
 
 	let autosaveDraft = $state('');
@@ -44,17 +49,23 @@
 	const columnOptions = $derived(
 		$tablePlotState.columns.map((column) => ({ value: column, label: column }))
 	);
+	const corePrefix = $derived(
+		(
+			$tablePlotState.coreMode
+				? $tablePlotState.coreMode === 'skyrmion'
+				: $tablePlotState.columns.includes('ext_skyrmionposx')
+		)
+			? 'ext_skyrmionpos'
+			: 'ext_corepos'
+	);
 	const coreEnabled = $derived(
 		$tablePlotState.coreEnabled ||
-			($tablePlotState.columns.includes('ext_coreposx') &&
-				$tablePlotState.columns.includes('ext_coreposy'))
+			($tablePlotState.columns.includes(corePrefix + 'x') &&
+				$tablePlotState.columns.includes(corePrefix + 'y'))
 	);
 
 	$effect(() => {
-		if (
-			(activeTab === 'spectrum' || activeTab === 'spectrogram') &&
-			!$fftState.enabled
-		) {
+		if ((activeTab === 'spectrum' || activeTab === 'spectrogram') && !$fftState.enabled) {
 			activeTab = 'table';
 		}
 		if (activeTab === 'corepos' && !coreEnabled) {
@@ -99,7 +110,7 @@
 	});
 
 	$effect(() => {
-		if ($tablePlotState.data.length > 0 && activeTab === 'corepos') {
+		if ($tablePlotState.corePos && activeTab === 'corepos') {
 			requestAnimationFrame(() => {
 				plotCorePosition();
 				coreMetrics = getMetrics();
@@ -325,46 +336,48 @@
 				/>
 			</div>
 			<!-- Segment progress – always visible while accumulating -->
-		{@const pct = Math.round($fftState.segProgress * 100)}
-		{@const hasData = $fftState.spectrogram && $fftState.spectrogram.length > 0}
-		<div class="seg-progress" class:seg-progress--standalone={!hasData}>
-			<div class="seg-progress__row">
-				<span class="seg-progress__label">
-					{#if hasData}
-						Segment {$fftState.totalSegments + 1}
-					{:else}
-						Accumulating first segment…
-					{/if}
-				</span>
-				<span class="seg-progress__right">
-					<span class="seg-progress__time">{$fftState.segElapsedNs.toFixed(1)} / {$fftState.segDurationNs.toFixed(1)} ns</span>
-					<span class="seg-progress__pct">{pct}%</span>
-				</span>
+			{@const pct = Math.round($fftState.segProgress * 100)}
+			{@const hasData = $fftState.spectrogram && $fftState.spectrogram.length > 0}
+			<div class="seg-progress" class:seg-progress--standalone={!hasData}>
+				<div class="seg-progress__row">
+					<span class="seg-progress__label">
+						{#if hasData}
+							Segment {$fftState.totalSegments + 1}
+						{:else}
+							Accumulating first segment…
+						{/if}
+					</span>
+					<span class="seg-progress__right">
+						<span class="seg-progress__time"
+							>{$fftState.segElapsedNs.toFixed(1)} / {$fftState.segDurationNs.toFixed(1)} ns</span
+						>
+						<span class="seg-progress__pct">{pct}%</span>
+					</span>
+				</div>
+				<div class="seg-progress__track">
+					<div class="seg-progress__fill" style:width={`${pct}%`}></div>
+					<div class="seg-progress__glow" style:width={`${pct}%`}></div>
+				</div>
+				{#if hasData}
+					<span class="seg-progress__count">{$fftState.totalSegments} segments completed</span>
+				{/if}
 			</div>
-			<div class="seg-progress__track">
-				<div class="seg-progress__fill" style:width={`${pct}%`}></div>
-				<div class="seg-progress__glow" style:width={`${pct}%`}></div>
-			</div>
-			{#if hasData}
-				<span class="seg-progress__count">{$fftState.totalSegments} segments completed</span>
-			{/if}
-		</div>
 
-		{#if hasData}
-			<div id="fft-spectrogram" class="plots__canvas"></div>
-		{/if}
+			{#if hasData}
+				<div id="fft-spectrogram" class="plots__canvas"></div>
+			{/if}
 		{/if}
 	</div>
 
 	<!-- Core Position tab -->
 	<div style:display={activeTab === 'corepos' ? 'block' : 'none'}>
-		{#if !$tablePlotState.columns.includes('ext_coreposx') || !$tablePlotState.columns.includes('ext_coreposy')}
+		{#if !$tablePlotState.columns.includes(corePrefix + 'x') || !$tablePlotState.columns.includes(corePrefix + 'y')}
 			<EmptyState
 				title="Core position data unavailable"
-				description="Add ext_coreposx and ext_coreposy to your table output using TableAdd(ext_coreposx) and TableAdd(ext_coreposy)."
+				description="Use CoreTrack() for a vortex or SkyrmionTrack(polarity) for a skyrmion, before the first table row. Set polarity to +1 or -1 and enable TableAutoSave(period)."
 				tone="warn"
 			/>
-		{:else if $tablePlotState.data.length === 0}
+		{:else if !$tablePlotState.corePos?.length}
 			<EmptyState
 				title="No table data yet"
 				description="Use TableSave() or set a non-zero autosave interval."
@@ -373,6 +386,10 @@
 		{:else}
 			<!-- Inline controls -->
 			<div class="cp__controls">
+				<StatusBadge
+					label={`${corePrefix === 'ext_skyrmionpos' ? 'Skyrmion' : 'Vortex'} · ${$tablePlotState.coreStatus || (coreMetrics.hasData ? 'tracking' : 'waiting for valid samples')}`}
+					tone={coreMetrics.hasData ? 'success' : 'warn'}
+				/>
 				<div class="cp__group">
 					<span class="cp__label">Orbit window</span>
 					<div class="cp__seg">
@@ -380,8 +397,8 @@
 							<button
 								class="cp__seg-btn"
 								class:cp__seg-btn--active={coreOrbitNs === ns}
-								onclick={() => handleOrbitWindow(ns)}
-							>{ns} ns</button>
+								onclick={() => handleOrbitWindow(ns)}>{ns} ns</button
+							>
 						{/each}
 					</div>
 				</div>
@@ -389,8 +406,8 @@
 					class="cp__seg-btn"
 					class:cp__seg-btn--active={coreAspectEqual}
 					onclick={handleAspectToggle}
-					title="Equal aspect ratio"
-				>1∶1</button>
+					title="Equal aspect ratio">1∶1</button
+				>
 			</div>
 
 			<div id="core-position-plot" class="plots__canvas"></div>
@@ -401,12 +418,18 @@
 					<div class="cp__metric cp__metric--primary">
 						<span class="cp__metric-value">{coreMetrics.radiusNm.toFixed(2)}</span>
 						<span class="cp__metric-unit">nm</span>
-						<span class="cp__metric-label">Orbit radius</span>
+						<span class="cp__metric-label" title="Radius of the trajectory, not the magnetic core"
+							>Orbit radius</span
+						>
 					</div>
 					<div class="cp__metric">
-						<span class="cp__metric-value">{coreMetrics.frequencyGHz.toFixed(3)}</span>
+						<span class="cp__metric-value"
+							>{coreMetrics.frequencyGHz === null ? '—' : coreMetrics.frequencyGHz.toFixed(3)}</span
+						>
 						<span class="cp__metric-unit">GHz</span>
-						<span class="cp__metric-label">Frequency</span>
+						<span class="cp__metric-label" title="Angle-based estimate for a sampled complete orbit"
+							>Estimated frequency</span
+						>
 					</div>
 					<div class="cp__metric">
 						<span class="cp__metric-value">{coreMetrics.centerXNm.toFixed(2)}</span>
@@ -626,7 +649,9 @@
 		font-weight: 600;
 		font-family: var(--font-mono);
 		cursor: pointer;
-		transition: background 0.15s, color 0.15s;
+		transition:
+			background 0.15s,
+			color 0.15s;
 	}
 
 	.cp__seg-btn:hover {

@@ -20,7 +20,9 @@ func create(filename string) (*writer, error) {
 	if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
 		return nil, fmt.Errorf("hdf5: mkdir: %w", err)
 	}
-	file, err := shdf5.CreateForWrite(filename, shdf5.CreateTruncate)
+	// v0 exposes root symbol-table addresses on reopen. The pinned pure-Go
+	// library cannot append new datasets after reopening its v2 root group.
+	file, err := shdf5.CreateForWrite(filename, shdf5.CreateTruncate, shdf5.WithSuperblockVersion(shdf5.SuperblockV0))
 	if err != nil {
 		return nil, fmt.Errorf("hdf5: create %s: %w", filename, err)
 	}
@@ -36,9 +38,21 @@ func (w *writer) close() error {
 	return err
 }
 
+func (w *writer) ensureOpen() error {
+	if w.file != nil {
+		return nil
+	}
+	f, err := shdf5.OpenForWrite(w.filename, shdf5.OpenReadWrite)
+	if err != nil {
+		return err
+	}
+	w.file = f
+	return nil
+}
+
 func (w *writer) writeArray(path string, tensors [][][][]float32, size [3]int, ncomp int) error {
-	if w.file == nil {
-		return fmt.Errorf("hdf5: %s is closed", w.filename)
+	if err := w.ensureOpen(); err != nil {
+		return err
 	}
 	nx, ny, nz := size[0], size[1], size[2]
 	flat := make([]float32, nx*ny*nz*ncomp)
@@ -65,6 +79,9 @@ func (w *writer) writeArray(path string, tensors [][][][]float32, size [3]int, n
 }
 
 func (w *writer) writeFloat64(path string, values []float64) error {
+	if err := w.ensureOpen(); err != nil {
+		return err
+	}
 	dataset, err := w.file.CreateDataset(path, shdf5.Float64, []uint64{uint64(len(values))})
 	if err != nil {
 		return fmt.Errorf("hdf5: create dataset %s: %w", path, err)
@@ -147,6 +164,23 @@ func (mw *MultiWriter) Close() error {
 	for name, w := range mw.writers {
 		if err := w.close(); err != nil {
 			result = errors.Join(result, fmt.Errorf("hdf5: close %s: %w", name, err))
+		}
+	}
+	return result
+}
+
+// Flush finalizes HDF5 headers and syncs files without ending the multi-writer
+// session. The next write reopens the existing file instead of truncating it.
+func (mw *MultiWriter) Flush() error {
+	mw.mu.Lock()
+	defer mw.mu.Unlock()
+	if mw.closed {
+		return nil
+	}
+	var result error
+	for name, w := range mw.writers {
+		if err := w.close(); err != nil {
+			result = errors.Join(result, fmt.Errorf("hdf5 flush %s: %w", name, err))
 		}
 	}
 	return result

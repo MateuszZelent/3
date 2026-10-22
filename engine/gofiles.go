@@ -4,9 +4,11 @@ package engine
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mumax/3/cuda"
@@ -39,6 +41,7 @@ var (
 	Flag_webuiPublicURL     = flag.String("webui-public-url", "", "Explicit public WebUI URL template; use {port} for the actual worker port")
 	Flag_webuiTrustedProxy  = flag.String("webui-trusted-proxy", "127.0.0.0/8,::1/128", "Comma-separated proxy IPs/CIDRs allowed to supply Forwarded headers")
 	Flag_insecure           = flag.Bool("insecure", false, "Allow unsafe mx3 operations such as RunShell")
+	Flag_shutdownTimeout    = flag.Duration("shutdown-timeout", 45*time.Second, "Grace period for workers to persist output before a forced kill")
 )
 
 func init() {
@@ -52,7 +55,12 @@ func init() {
 	flag.StringVar(Flag_tunnel, "t", *Flag_tunnel, "Alias for -tunnel")
 	flag.StringVar(Flag_port, "webui-addr", *Flag_port, "Alias for -http")
 	flag.BoolVar(Flag_debug, "d", *Flag_debug, "Alias for -debug")
+	flag.VisitAll(func(f *flag.Flag) { engineFlagNames[CanonicalFlagName(f.Name)] = true })
 }
+
+var engineFlagNames = make(map[string]bool)
+
+func IsEngineFlag(name string) bool { return engineFlagNames[CanonicalFlagName(name)] }
 
 var flagAliases = map[string]string{
 	"c": "cache", "g": "gpu", "interactive": "i", "output-dir": "o",
@@ -91,8 +99,35 @@ func FlagPassed(name string) bool {
 func InitAndClose() func() {
 
 	flag.Parse()
+	util.SetProgressHidden(*Flag_hideprogress)
+	switch strings.ToLower(*Flag_storage) {
+	case "ovf":
+		StorageFormat = StorageFormatOVF
+	case "zarr":
+		StorageFormat = StorageFormatZarr
+	case "h5", "hdf5":
+		StorageFormat = StorageFormatHDF5
+	default:
+		panic(UserErr("invalid storage format: " + *Flag_storage))
+	}
+	if *Flag_core {
+		EnableCoreTracking()
+	}
+	FftEnabled = *Flag_fft
+	if *Flag_webuidisable {
+		*Flag_port = ""
+	}
+	stopSignals := InstallSignalHandlers()
+	initialized := false
+	defer func() {
+		if !initialized {
+			_ = CloseWithError()
+			stopSignals()
+		}
+	}()
 
 	cuda.Init(*Flag_gpu)
+	SetStructuredGPUInfo(cuda.GPUInfo)
 	cuda.Synchronous = *Flag_sync
 
 	od := *Flag_od
@@ -104,13 +139,40 @@ func InitAndClose() func() {
 		od = path.Base(os.Args[0]) + extension
 	}
 	inFile := util.NoExt(od)
+	if source := os.Getenv("MUMAX_GO_INPUT"); source != "" {
+		inFile = source
+	}
 	InitIO(inFile, od, *Flag_forceclean)
 
 	if *Flag_port != "" {
 		GoServe(*Flag_port)
 	}
 
+	initialized = true
 	return func() {
-		Close()
+		p := recover()
+		if p == nil {
+			if reason := StopReason(); reason != nil {
+				p = *reason
+			}
+		}
+		if p != nil {
+			if _, interrupted := p.(Interrupted); !interrupted {
+				RecordRunError(fmt.Errorf("%v", p))
+			}
+		}
+		err := CloseWithError()
+		stopSignals()
+		if interrupted, ok := p.(Interrupted); ok {
+			fmt.Fprintln(os.Stderr, interrupted)
+			os.Exit(interrupted.ExitCode())
+		}
+		if p != nil {
+			panic(p)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "output finalization:", err)
+			os.Exit(1)
+		}
 	}
 }

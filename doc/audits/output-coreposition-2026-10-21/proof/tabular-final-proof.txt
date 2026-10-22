@@ -1,0 +1,1 @@
+ok  	github.com/mumax/3/tabular	14.972s

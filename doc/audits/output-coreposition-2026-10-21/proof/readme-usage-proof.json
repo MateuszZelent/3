@@ -1,0 +1,71 @@
+{
+  "binary_sha256": "c966e79a1d6fab628358ef4e67d22d319113b9f30c3997338f94cc2657d13301",
+  "verification": "Actual GPU execution of README examples; legacy vector path; rejection of missing scalar identifier",
+  "reports": [
+    {
+      "example": "vortex-demo",
+      "result": "PASS",
+      "mode": "vortex",
+      "rows": 1,
+      "columns": [
+        "t",
+        "mx",
+        "my",
+        "mz",
+        "ext_coreposx",
+        "ext_coreposy",
+        "ext_coreposz",
+        "ext_corevalid"
+      ],
+      "position_nm": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "example": "skyrmion-demo",
+      "result": "PASS",
+      "mode": "skyrmion",
+      "rows": 1,
+      "columns": [
+        "t",
+        "mx",
+        "my",
+        "mz",
+        "ext_skyrmionposx",
+        "ext_skyrmionposy",
+        "ext_skyrmionposz",
+        "ext_skyrmionvalid",
+        "ext_skyrmionpol"
+      ],
+      "position_nm": [
+        11.250719014569553,
+        -7.749280989229741
+      ]
+    },
+    {
+      "example": "legacy-vector",
+      "result": "PASS",
+      "mode": "vortex",
+      "rows": 1,
+      "columns": [
+        "t",
+        "mx",
+        "my",
+        "mz",
+        "ext_coreposx",
+        "ext_coreposy",
+        "ext_coreposz"
+      ],
+      "position_nm": [
+        0.0,
+        0.0
+      ]
+    },
+    {
+      "example": "TableAdd(ext_coreposx)",
+      "result": "EXPECTED_COMPILE_ERROR",
+      "error": "undefined: ext_coreposx"
+    }
+  ]
+}

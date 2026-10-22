@@ -1,0 +1,40 @@
+=== RUN   TestRuntimeOutputSignals
+=== RUN   TestRuntimeOutputSignals/run-2
+=== RUN   TestRuntimeOutputSignals/run-15
+=== RUN   TestRuntimeOutputSignals/loop-2
+=== RUN   TestRuntimeOutputSignals/loop-15
+=== RUN   TestRuntimeOutputSignals/relax-2
+=== RUN   TestRuntimeOutputSignals/relax-15
+=== RUN   TestRuntimeOutputSignals/minimize-2
+=== RUN   TestRuntimeOutputSignals/minimize-15
+=== RUN   TestRuntimeOutputSignals/shell-2
+=== RUN   TestRuntimeOutputSignals/shell-15
+--- PASS: TestRuntimeOutputSignals (15.34s)
+    --- PASS: TestRuntimeOutputSignals/run-2 (1.93s)
+    --- PASS: TestRuntimeOutputSignals/run-15 (1.56s)
+    --- PASS: TestRuntimeOutputSignals/loop-2 (1.80s)
+    --- PASS: TestRuntimeOutputSignals/loop-15 (1.28s)
+    --- PASS: TestRuntimeOutputSignals/relax-2 (1.53s)
+    --- PASS: TestRuntimeOutputSignals/relax-15 (1.55s)
+    --- PASS: TestRuntimeOutputSignals/minimize-2 (1.48s)
+    --- PASS: TestRuntimeOutputSignals/minimize-15 (1.58s)
+    --- PASS: TestRuntimeOutputSignals/shell-2 (1.37s)
+    --- PASS: TestRuntimeOutputSignals/shell-15 (1.26s)
+=== RUN   TestRuntimeGoInputSignal
+--- PASS: TestRuntimeGoInputSignal (3.87s)
+=== RUN   TestRuntimeStorageFormatsAndFlush
+=== RUN   TestRuntimeStorageFormatsAndFlush/zarr
+=== RUN   TestRuntimeStorageFormatsAndFlush/hdf5
+=== RUN   TestRuntimeStorageFormatsAndFlush/ovf
+--- PASS: TestRuntimeStorageFormatsAndFlush (5.88s)
+    --- PASS: TestRuntimeStorageFormatsAndFlush/zarr (1.85s)
+    --- PASS: TestRuntimeStorageFormatsAndFlush/hdf5 (2.32s)
+    --- PASS: TestRuntimeStorageFormatsAndFlush/ovf (1.71s)
+=== RUN   TestRuntimeQueueSignalPersistsWorker
+=== RUN   TestRuntimeQueueSignalPersistsWorker/interrupt
+=== RUN   TestRuntimeQueueSignalPersistsWorker/terminated
+--- PASS: TestRuntimeQueueSignalPersistsWorker (9.48s)
+    --- PASS: TestRuntimeQueueSignalPersistsWorker/interrupt (4.42s)
+    --- PASS: TestRuntimeQueueSignalPersistsWorker/terminated (5.06s)
+PASS
+ok  	github.com/mumax/3/cmd/mumax3	34.589s
