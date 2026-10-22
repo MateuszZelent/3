@@ -1,0 +1,7 @@
+{
+  "version": "v3.12.21-20261022-candidate",
+  "binary_sha256": "f71f0e0a8763fcaf5ee403907829bae1e84d9fd733461691036bc56ea87c7921",
+  "go": "1.26.10",
+  "upstream_commit": "54efa12420b2c8d55fc08085b20b3822c8ad67d7",
+  "run_completion_after_sigterm": "interrupted"
+}

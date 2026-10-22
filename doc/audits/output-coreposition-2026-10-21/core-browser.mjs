@@ -1,13 +1,14 @@
 import { chromium } from '../../../frontend/node_modules/playwright/index.mjs';
 import { decode } from '../../../frontend/node_modules/@msgpack/msgpack/dist.esm/index.mjs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 
 const url = process.env.CORE_URL;
 if (!url) throw Error('Set CORE_URL to the interactive test solver');
 const output = process.env.CORE_OUTPUT_DIR || fileURLToPath(new URL('../../../build/core-browser-output/', import.meta.url));
-const artifacts = fileURLToPath(new URL('./', import.meta.url));
+const artifacts = (process.env.CORE_ARTIFACT_DIR || fileURLToPath(new URL('./', import.meta.url))).replace(/\/?$/, '/');
+await mkdir(artifacts, { recursive: true });
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } });
 const errors = [], reports = [];

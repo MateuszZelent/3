@@ -1,0 +1,40 @@
+{
+  "reports": [
+    {
+      "phase": "core-valid",
+      "valid": true,
+      "points": 2,
+      "status": "tracking",
+      "canvasColors": 112
+    },
+    {
+      "phase": "core-invalid",
+      "valid": false,
+      "points": 3,
+      "status": "no resolved core and opposite background",
+      "canvasColors": 105
+    },
+    {
+      "phase": "core-recovered",
+      "valid": true,
+      "points": 4,
+      "status": "tracking",
+      "canvasColors": 78
+    },
+    {
+      "phase": "core-reconnected",
+      "valid": true,
+      "points": 4,
+      "status": "tracking",
+      "canvasColors": 78
+    },
+    {
+      "phase": "break",
+      "committedRows": 5,
+      "textRows": 5,
+      "flushedBeforeResponse": true
+    }
+  ],
+  "connections": 2,
+  "errors": []
+}

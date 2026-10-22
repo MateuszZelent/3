@@ -98,7 +98,7 @@ Backend przeszedł testy z `-race` dla engine, coreposition, tabular, hdf5, zarr
 
 Weryfikacja błędów storage używa deterministycznego wstrzykiwania awarii; nie zapełniano dysku użytkownika i nie testowano fizycznego zaniku zasilania. Nie wykonano nowej pełnej kompilacji wszystkich wariantów kerneli CUDA ani zdalnego pipeline GitHub Actions. Testy GPU używały istniejących kerneli i nowo zbudowanego backendu. Nie wykonano wdrożenia ani długiego fizycznego przebiegu oddychania LLG; zmiana szerokości profilu jest sprawdzana bez zmiany środka w kolejnych konfiguracjach.
 
-**Otwarte bramki wydania niezależne od usterek audytu:** `npm audit --audit-level=low` zgłasza 12 podatności (5 moderate, 7 high) w niezmienionym drzewie zależności; `govulncheck -mode=binary` zgłasza 11 podatności standardowej biblioteki użytego Go 1.26.8. Wyniki są zachowane w logach. Nie wykonywano szerokiej migracji zależności ani toolchainu w tej poprawce. Testy funkcjonalne są zielone, ale nie jest to deklaracja przejścia bramek bezpieczeństwa ani gotowe opublikowane wydanie.
+**Stan bramek przy pierwotnej weryfikacji:** `npm audit --audit-level=low` zgłaszał 12 podatności (5 moderate, 7 high) w niezmienionym drzewie zależności; `govulncheck -mode=binary` zgłaszał 11 podatności standardowej biblioteki użytego Go 1.26.8. Te historyczne wyniki pozostają w logach. W kolejnym etapie przygotowania wydania zaktualizowano zależności i Go do 1.26.10 oraz ponowiono testy; aktualne wyniki są w [kwalifikacji release](../../release-output-core-2026-10-22.md).
 
 Historyczny `reproduce.py` odczytuje zamrożone źródła audytowanego SHA, aby nadal reprodukować pierwotne usterki po zmianie implementacji. Jego ponowne uruchomienie potwierdziło historyczne wyniki.
 

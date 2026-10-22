@@ -1,0 +1,35 @@
+
+==========
+== CUDA ==
+==========
+
+CUDA Version 12.4.0
+
+Container image Copyright (c) 2016-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+This container image and its contents are governed by the NVIDIA Deep Learning Container License.
+By pulling and using the container, you accept the terms and conditions of this license:
+https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license
+
+A copy of this license is made available in this container at /NGC-DL-CONTAINER-LICENSE for your convenience.
+
+WARNING: The NVIDIA Driver was not detected.  GPU functionality will not be available.
+   Use the NVIDIA Container Toolkit to start this container with GPU support; see
+   https://docs.nvidia.com/datacenter/cloud-native/ .
+
+ok  	github.com/mumax/3/webui	2.685s
+ok  	github.com/mumax/3/cmd/mumax3	73.794s
+ok  	github.com/mumax/3/cmd/mumax3-server	1.034s
+go: writing stat cache: open /deps/cache/download/github.com/mumax/3/@v/v0.0.0-20261022054512-a8698d1197d1.info30885743.tmp: read-only file system
+go: writing stat cache: open /deps/cache/download/golang.org/x/vuln/@v/v1.9.0.info789287783.tmp: read-only file system
+go: writing go.mod cache: open /deps/cache/download/golang.org/x/vuln/@v/v1.9.0.mod199549523.tmp: read-only file system
+=== Symbol Results ===
+
+No vulnerabilities found.
+
+Your code is affected by 0 vulnerabilities.
+This scan also found 0 vulnerabilities in packages you import and 1
+vulnerability in modules you require, but your code doesn't appear to call these
+vulnerabilities.
+Use '-show verbose' for more details.
+f71f0e0a8763fcaf5ee403907829bae1e84d9fd733461691036bc56ea87c7921  build/mumax3-release-candidate

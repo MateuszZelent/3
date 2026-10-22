@@ -1,0 +1,29 @@
+
+==========
+== CUDA ==
+==========
+
+CUDA Version 12.4.0
+
+Container image Copyright (c) 2016-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+This container image and its contents are governed by the NVIDIA Deep Learning Container License.
+By pulling and using the container, you accept the terms and conditions of this license:
+https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license
+
+A copy of this license is made available in this container at /NGC-DL-CONTAINER-LICENSE for your convenience.
+
+WARNING: The NVIDIA Driver was not detected.  GPU functionality will not be available.
+   Use the NVIDIA Container Toolkit to start this container with GPU support; see
+   https://docs.nvidia.com/datacenter/cloud-native/ .
+
+go version go1.26.10 linux/amd64
+ok  	github.com/mumax/3/updater	1.135s
+ok  	github.com/mumax/3/engine	6.413s
+ok  	github.com/mumax/3/coreposition	1.236s
+ok  	github.com/mumax/3/tabular	7.740s
+ok  	github.com/mumax/3/hdf5	4.043s
+ok  	github.com/mumax/3/zarr	1.251s
+ok  	github.com/mumax/3/httpfs	88.805s
+ok  	github.com/mumax/3/script	1.030s
+ok  	github.com/mumax/3/util	1.029s

@@ -1,0 +1,475 @@
+
+==========
+== CUDA ==
+==========
+
+CUDA Version 12.4.0
+
+Container image Copyright (c) 2016-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+This container image and its contents are governed by the NVIDIA Deep Learning Container License.
+By pulling and using the container, you accept the terms and conditions of this license:
+https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license
+
+A copy of this license is made available in this container at /NGC-DL-CONTAINER-LICENSE for your convenience.
+
+=== RUN   TestRuntimeOutputSignals
+=== RUN   TestRuntimeOutputSignals/run-2
+=== RUN   TestRuntimeOutputSignals/run-15
+=== RUN   TestRuntimeOutputSignals/loop-2
+=== RUN   TestRuntimeOutputSignals/loop-15
+=== RUN   TestRuntimeOutputSignals/relax-2
+=== RUN   TestRuntimeOutputSignals/relax-15
+=== RUN   TestRuntimeOutputSignals/minimize-2
+=== RUN   TestRuntimeOutputSignals/minimize-15
+=== RUN   TestRuntimeOutputSignals/shell-2
+=== RUN   TestRuntimeOutputSignals/shell-15
+=== RUN   TestRuntimeOutputSignals/interactive-2
+=== RUN   TestRuntimeOutputSignals/interactive-15
+--- PASS: TestRuntimeOutputSignals (18.29s)
+    --- PASS: TestRuntimeOutputSignals/run-2 (1.88s)
+    --- PASS: TestRuntimeOutputSignals/run-15 (1.55s)
+    --- PASS: TestRuntimeOutputSignals/loop-2 (1.33s)
+    --- PASS: TestRuntimeOutputSignals/loop-15 (1.39s)
+    --- PASS: TestRuntimeOutputSignals/relax-2 (1.42s)
+    --- PASS: TestRuntimeOutputSignals/relax-15 (1.73s)
+    --- PASS: TestRuntimeOutputSignals/minimize-2 (1.37s)
+    --- PASS: TestRuntimeOutputSignals/minimize-15 (1.44s)
+    --- PASS: TestRuntimeOutputSignals/shell-2 (1.21s)
+    --- PASS: TestRuntimeOutputSignals/shell-15 (1.12s)
+    --- PASS: TestRuntimeOutputSignals/interactive-2 (2.69s)
+    --- PASS: TestRuntimeOutputSignals/interactive-15 (1.17s)
+=== RUN   TestRuntimeGoInputSignal
+--- PASS: TestRuntimeGoInputSignal (7.63s)
+=== RUN   TestRuntimeStorageFormatsAndFlush
+=== RUN   TestRuntimeStorageFormatsAndFlush/zarr
+=== RUN   TestRuntimeStorageFormatsAndFlush/hdf5
+=== RUN   TestRuntimeStorageFormatsAndFlush/ovf
+--- PASS: TestRuntimeStorageFormatsAndFlush (4.36s)
+    --- PASS: TestRuntimeStorageFormatsAndFlush/zarr (2.02s)
+    --- PASS: TestRuntimeStorageFormatsAndFlush/hdf5 (1.49s)
+    --- PASS: TestRuntimeStorageFormatsAndFlush/ovf (0.85s)
+=== RUN   TestRuntimeQueueSignalPersistsWorker
+=== RUN   TestRuntimeQueueSignalPersistsWorker/interrupt
+=== RUN   TestRuntimeQueueSignalPersistsWorker/terminated
+--- PASS: TestRuntimeQueueSignalPersistsWorker (3.73s)
+    --- PASS: TestRuntimeQueueSignalPersistsWorker/interrupt (2.02s)
+    --- PASS: TestRuntimeQueueSignalPersistsWorker/terminated (1.71s)
+PASS
+ok  	github.com/mumax/3/cmd/mumax3	34.140s
+//mumax 3.12 [linux_amd64 go1.26.10(gc) CUDA-12.4]
+//mumax3 build: version=v3.12.21-20261022-candidate commit=a8698d11-dirty built=unknown
+//CPU info: AMD Ryzen Threadripper 3960X 24-Core Processor, Cores: 20, MHz: 3800.041
+//GPU info: NVIDIA GeForce RTX 4080 SUPER(16375MB), CUDA Driver 13.4, cc=8.9, using cc=89 PTX
+//OS  info: Ubuntu 22.04.4 LTS, Hostname: cd34b22e133b
+//Timestamp: 2026-10-22 05:58:07
+//(c) Arne Vansteenkiste, Dynamat LAB, Ghent University, Belgium
+//This is free software without any warranty. See license.txt
+//********************************************************************//
+//  If you use mumax in any work or publication,                      //
+//  we kindly ask you to cite the references in references.bib        //
+//********************************************************************//
+//output directory: /tmp/skyrmion-release/
+SetGridSize(192, 160, 3)
+SetCellSize(1e-9, 1e-9, 1e-9)
+//not starting GUI (-http="")
+Msat = 800e3
+Aex = 13e-12
+SkyrmionTrack(1)
+TableAdd(ext_corepos)
+for polarity := -1; polarity <= 1; polarity += 2 {
+	SkyrmionPolarity = polarity
+	SkyrmionBackground = -polarity
+	SkyrmionReset()
+	for scale := 0.25; scale <= 4; scale += 0.25 {
+		m = NeelSkyrmion(1, polarity).Scale(scale, scale, 1).Transl(11.25e-9, -7.75e-9, 0)
+		p := ext_skyrmionpos.Get()
+		Expect("Neel X", p[0], 11.25e-9, 0.1e-9)
+		Expect("Neel Y", p[1], -7.75e-9, 0.1e-9)
+		Expect("valid Neel", ext_skyrmionvalid.Get(), 1, 0)
+		TableSave()
+		m = BlochSkyrmion(1, polarity).Scale(scale, scale, 1).Transl(11.25e-9, -7.75e-9, 0)
+		p = ext_skyrmionpos.Get()
+		Expect("Bloch X", p[0], 11.25e-9, 0.1e-9)
+		Expect("Bloch Y", p[1], -7.75e-9, 0.1e-9)
+		TableSave()
+	}
+}
+//Neel X : 1.1238308322413698e-08 OK
+//Neel Y : -7.761691677586303e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1238308322413698e-08 OK
+//Bloch Y : -7.761691677586303e-09 OK
+//Neel X : 1.1246706057292042e-08 OK
+//Neel Y : -7.753293938079727e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1246706061920274e-08 OK
+//Bloch Y : -7.75329394270796e-09 OK
+//Neel X : 1.125091799120826e-08 OK
+//Neel Y : -7.749082004602873e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.125091799539713e-08 OK
+//Bloch Y : -7.749082008791742e-09 OK
+//Neel X : 1.1250719014569551e-08 OK
+//Neel Y : -7.749280989229743e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250719010770258e-08 OK
+//Bloch Y : -7.749280985430448e-09 OK
+//Neel X : 1.1249374004073438e-08 OK
+//Neel Y : -7.750625993507699e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249374006492303e-08 OK
+//Bloch Y : -7.750625995926563e-09 OK
+//Neel X : 1.1249921020219892e-08 OK
+//Neel Y : -7.750078980130664e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249921019869336e-08 OK
+//Bloch Y : -7.750078979780106e-09 OK
+//Neel X : 1.1250469075402782e-08 OK
+//Neel Y : -7.749530925769104e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.12504690742309e-08 OK
+//Bloch Y : -7.749530924597219e-09 OK
+//Neel X : 1.1249838537076134e-08 OK
+//Neel Y : -7.750161456919049e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249838543080954e-08 OK
+//Bloch Y : -7.750161462923874e-09 OK
+//Neel X : 1.1249812418837172e-08 OK
+//Neel Y : -7.750187590213145e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.124981240978686e-08 OK
+//Bloch Y : -7.750187581162823e-09 OK
+//Neel X : 1.1250244755532759e-08 OK
+//Neel Y : -7.749755245884918e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250244754115092e-08 OK
+//Bloch Y : -7.749755244467234e-09 OK
+//Neel X : 1.1250018944342204e-08 OK
+//Neel Y : -7.749981052222685e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250018947777323e-08 OK
+//Bloch Y : -7.749981055657801e-09 OK
+//Neel X : 1.124981417018504e-08 OK
+//Neel Y : -7.750185828591645e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249814171408352e-08 OK
+//Bloch Y : -7.750185829814964e-09 OK
+//Neel X : 1.1250123459853248e-08 OK
+//Neel Y : -7.749876542160814e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250123457839184e-08 OK
+//Bloch Y : -7.749876540146768e-09 OK
+//Neel X : 1.1250092250803214e-08 OK
+//Neel Y : -7.749907751894516e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250092248105467e-08 OK
+//Bloch Y : -7.749907749196787e-09 OK
+//Neel X : 1.1249881047901447e-08 OK
+//Neel Y : -7.75011895412817e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249881045871819e-08 OK
+//Bloch Y : -7.750118952098535e-09 OK
+//Neel X : 1.1250044803552551e-08 OK
+//Neel Y : -7.749955196566988e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250044803433006e-08 OK
+//Bloch Y : -7.749955196447422e-09 OK
+//Neel X : 1.1238308322413698e-08 OK
+//Neel Y : -7.761691677586303e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1238308322413698e-08 OK
+//Bloch Y : -7.761691677586303e-09 OK
+//Neel X : 1.1246706057292042e-08 OK
+//Neel Y : -7.753293938079727e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1246706061920274e-08 OK
+//Bloch Y : -7.75329394270796e-09 OK
+//Neel X : 1.125091799120826e-08 OK
+//Neel Y : -7.749082004602873e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.125091799539713e-08 OK
+//Bloch Y : -7.749082008791742e-09 OK
+//Neel X : 1.1250719014569551e-08 OK
+//Neel Y : -7.749280989229743e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250719010770258e-08 OK
+//Bloch Y : -7.749280985430448e-09 OK
+//Neel X : 1.1249374004073438e-08 OK
+//Neel Y : -7.750625993507699e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249374006492303e-08 OK
+//Bloch Y : -7.750625995926563e-09 OK
+//Neel X : 1.1249921020219892e-08 OK
+//Neel Y : -7.750078980130664e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249921019869336e-08 OK
+//Bloch Y : -7.750078979780106e-09 OK
+//Neel X : 1.1250469075402782e-08 OK
+//Neel Y : -7.749530925769104e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.12504690742309e-08 OK
+//Bloch Y : -7.749530924597219e-09 OK
+//Neel X : 1.1249838537076134e-08 OK
+//Neel Y : -7.750161456919049e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249838543080954e-08 OK
+//Bloch Y : -7.750161462923874e-09 OK
+//Neel X : 1.1249812418837172e-08 OK
+//Neel Y : -7.750187590213145e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.124981240978686e-08 OK
+//Bloch Y : -7.750187581162823e-09 OK
+//Neel X : 1.1250244755532759e-08 OK
+//Neel Y : -7.749755245884918e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250244754115092e-08 OK
+//Bloch Y : -7.749755244467234e-09 OK
+//Neel X : 1.1250018944342204e-08 OK
+//Neel Y : -7.749981052222685e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250018947777323e-08 OK
+//Bloch Y : -7.749981055657801e-09 OK
+//Neel X : 1.124981417018504e-08 OK
+//Neel Y : -7.750185828591645e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249814171408352e-08 OK
+//Bloch Y : -7.750185829814964e-09 OK
+//Neel X : 1.1250123459853248e-08 OK
+//Neel Y : -7.749876542160814e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250123457839184e-08 OK
+//Bloch Y : -7.749876540146768e-09 OK
+//Neel X : 1.1250092250803214e-08 OK
+//Neel Y : -7.749907751894516e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250092248105467e-08 OK
+//Bloch Y : -7.749907749196787e-09 OK
+//Neel X : 1.1249881047901447e-08 OK
+//Neel Y : -7.75011895412817e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1249881045871819e-08 OK
+//Bloch Y : -7.750118952098535e-09 OK
+//Neel X : 1.1250044803552551e-08 OK
+//Neel Y : -7.749955196566988e-09 OK
+//valid Neel : 1 OK
+//Bloch X : 1.1250044803433006e-08 OK
+//Bloch Y : -7.749955196447422e-09 OK
+m = Uniform(0, 0, 1)
+Expect("no skyrmion", ext_skyrmionvalid.Get(), 0, 0)
+//no skyrmion : 0 OK
+Expect("no vortex", ext_corevalid.Get(), 0, 0)
+//no vortex : 0 OK
+TableSave()
+Flush()
+//********************************************************************//
+//Please cite the following references, relevant for your simulation. //
+//See bibtex file in output folder for justification.                 //
+//********************************************************************//
+//   * Vansteenkiste et al., AIP Adv. 4, 107133 (2014).
+//mumax 3.12 [linux_amd64 go1.26.10(gc) CUDA-12.4]
+//mumax3 build: version=v3.12.21-20261022-candidate commit=a8698d11-dirty built=unknown
+//CPU info: AMD Ryzen Threadripper 3960X 24-Core Processor, Cores: 20, MHz: 3800.041
+//GPU info: NVIDIA GeForce RTX 4080 SUPER(16375MB), CUDA Driver 13.4, cc=8.9, using cc=89 PTX
+//OS  info: Ubuntu 22.04.4 LTS, Hostname: cd34b22e133b
+//Timestamp: 2026-10-22 05:58:14
+//(c) Arne Vansteenkiste, Dynamat LAB, Ghent University, Belgium
+//This is free software without any warranty. See license.txt
+//********************************************************************//
+//  If you use mumax in any work or publication,                      //
+//  we kindly ask you to cite the references in references.bib        //
+//********************************************************************//
+//output directory: /tmp/vortex-release/
+//not starting GUI (-http="")
+setgridsize(128, 64, 2)
+setcellsize(1e-9, 2e-9, 1e-9)
+Msat = 800e3
+Aex = 13e-12
+alpha = 3
+m = vortex(-1, -1).transl(20e-9, 30e-9, 0)
+pos := ext_corepos.get()
+expect("coreX", pos[0], 20e-9, 0.1e-9)
+//coreX : 2.0000000000000004e-08 OK
+expect("coreY", pos[1], 30e-9, 0.1e-9)
+//coreY : 3.0000000000000004e-08 OK
+expect("polarization", pos[2], -0.5, 0.3)
+//polarization : -0.626069188117981 OK
+m = vortex(1, 1)
+alpha = 3
+tableadd(ext_corepos)
+steps(100)
+//Demag cache: checking /tmp/amumax_kernels/128_64_2_0_0_0_1.000000e-09_2.000000e-09_1.000000e-09_6.cache2
+//Demag cache miss; calculating kernel
+//Calculating demag kernel: mesh [128 64 2] padded [256 128 3] PBC [0 0 0] accuracy 6
+//Demag kernel calculation completed in 90ms
+//Demag cache write: 2.2 MiB
+//Demag cache write: 100% (2.2 / 2.2 MiB), elapsed 4ms
+//Demag cache: synchronizing file to storage /tmp/amumax_kernels/128_64_2_0_0_0_1.000000e-09_2.000000e-09_1.000000e-09_6.cache2
+//Demag cache write completed in 44ms
+//Cached kernel: /tmp/amumax_kernels/128_64_2_0_0_0_1.000000e-09_2.000000e-09_1.000000e-09_6.cache2
+//Demag GPU: allocating buffers and creating FFT plans for [256 128 3]
+//Demag GPU: FFT plans ready; transforming kernel components
+//Demag GPU: transforming component 00 (1/6)
+//Demag GPU: transforming component 01 (2/6)
+//Demag GPU: transforming component 02 (3/6)
+//Demag GPU: transforming component 11 (4/6)
+//Demag GPU: transforming component 12 (5/6)
+//Demag GPU: transforming component 22 (6/6)
+//Demag GPU initialization completed in 166ms
+pos = ext_corepos.get()
+expect("coreX", pos[0], 0e-9, 0.1e-9)
+//coreX : 5.717179508347116e-13 OK
+expect("coreY", pos[1], 0e-9, 0.1e-9)
+//coreY : 3.049160970343952e-13 OK
+expect("polarization", pos[2], 0.7, 0.3)
+//polarization : 0.9659746289253235 OK
+//********************************************************************//
+//Please cite the following references, relevant for your simulation. //
+//See bibtex file in output folder for justification.                 //
+//********************************************************************//
+//   * Vansteenkiste et al., AIP Adv. 4, 107133 (2014).
+//mumax 3.12 [linux_amd64 go1.26.10(gc) CUDA-12.4]
+//mumax3 build: version=v3.12.21-20261022-candidate commit=a8698d11-dirty built=unknown
+//CPU info: AMD Ryzen Threadripper 3960X 24-Core Processor, Cores: 20, MHz: 3800.041
+//GPU info: NVIDIA GeForce RTX 4080 SUPER(16375MB), CUDA Driver 13.4, cc=8.9, using cc=89 PTX
+//OS  info: Ubuntu 22.04.4 LTS, Hostname: cd34b22e133b
+//Timestamp: 2026-10-22 05:58:15
+//(c) Arne Vansteenkiste, Dynamat LAB, Ghent University, Belgium
+//This is free software without any warranty. See license.txt
+//********************************************************************//
+//  If you use mumax in any work or publication,                      //
+//  we kindly ask you to cite the references in references.bib        //
+//********************************************************************//
+//output directory: /tmp/bubble-release/
+//not starting GUI (-http="")
+SetMesh(128, 128, 1, 1e-9, 1e-9, 0.4e-9, 1, 0, 0)
+Msat = 580e3
+Aex = 15e-12
+enabledemag = true
+alpha = 0.1
+Ku1 = 0.59e6 + 4*pi*1e-7*0.5*580e3*580e3
+anisU = vector(0, 0, 1)
+Dind = 0.0034089785
+shiftregions = false
+m = neelskyrmion(1, -1).transl(-30e-9, 0e-9, 0)
+minimize()
+//Demag cache: checking /tmp/amumax_kernels/128_128_1_1_0_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+//Demag cache miss; calculating kernel
+//Calculating demag kernel: mesh [128 128 1] padded [128 256 1] PBC [1 0 0] accuracy 6
+//Demag kernel calculation completed in 73ms
+//Demag cache write: 0.5 MiB
+//Demag cache write: 100% (0.5 / 0.5 MiB), elapsed 1ms
+//Demag cache: synchronizing file to storage /tmp/amumax_kernels/128_128_1_1_0_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+//Demag cache write completed in 10ms
+//Cached kernel: /tmp/amumax_kernels/128_128_1_1_0_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+//Demag GPU: allocating buffers and creating FFT plans for [128 256 1]
+//Demag GPU: FFT plans ready; transforming kernel components
+//Demag GPU: transforming component 00 (1/4)
+//Demag GPU: transforming component 01 (2/4)
+//Demag GPU: transforming component 11 (3/4)
+//Demag GPU: transforming component 22 (4/4)
+//Demag GPU initialization completed in 129ms
+ext_bubbleMz = -1.0
+ext_backgroundtilt = 0.25
+TOL := 1e-9
+expectv("position", ext_bubblepos.average(), vector(-3e-08, 0, 0), TOL)
+//position[0] : -3.000004933404929e-08 OK
+//position[1] : 3.506786674631684e-14 OK
+//position[2] : 0 OK
+SetGeom(Square(30e-9).transl(30e-9, 0e-9, 0).inverse())
+expectv("position", ext_bubblepos.average(), vector(-3e-08, 0, 0), TOL)
+//position[0] : -3.00000493383182e-08 OK
+//position[1] : 3.506740149598251e-14 OK
+//position[2] : 0 OK
+SetGeom(Universe())
+SetMesh(128, 128, 1, 1e-9, 1e-9, 0.4e-9, 0, 1, 0)
+//resizing...
+m = neelskyrmion(1, -1).transl(0e-9, -30e-9, 0)
+minimize()
+//Demag cache: checking /tmp/amumax_kernels/128_128_1_0_1_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+//Demag cache miss; calculating kernel
+//Calculating demag kernel: mesh [128 128 1] padded [256 128 1] PBC [0 1 0] accuracy 6
+//Demag kernel calculation completed in 72ms
+//Demag cache write: 0.5 MiB
+//Demag cache write: 100% (0.5 / 0.5 MiB), elapsed 1ms
+//Demag cache: synchronizing file to storage /tmp/amumax_kernels/128_128_1_0_1_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+//Demag cache write completed in 9ms
+//Cached kernel: /tmp/amumax_kernels/128_128_1_0_1_0_1.000000e-09_1.000000e-09_4.000000e-10_6.cache2
+//Demag GPU: allocating buffers and creating FFT plans for [256 128 1]
+//Demag GPU: FFT plans ready; transforming kernel components
+//Demag GPU: transforming component 00 (1/4)
+//Demag GPU: transforming component 01 (2/4)
+//Demag GPU: transforming component 11 (3/4)
+//Demag GPU: transforming component 22 (4/4)
+//Demag GPU initialization completed in 137ms
+expectv("position", ext_bubblepos.average(), vector(0, -3e-08, 0), TOL)
+//position[0] : -9.077688103897434e-15 OK
+//position[1] : -3.000000784242521e-08 OK
+//position[2] : 0 OK
+SetGeom(Square(30e-9).transl(0e-9, 30e-9, 0).inverse())
+expectv("position", ext_bubblepos.average(), vector(0, -3e-08, 0), TOL)
+//position[0] : -9.072343850294771e-15 OK
+//position[1] : -3.0000007837780776e-08 OK
+//position[2] : 0 OK
+//********************************************************************//
+//Please cite the following references, relevant for your simulation. //
+//See bibtex file in output folder for justification.                 //
+//********************************************************************//
+//   * Vansteenkiste et al., AIP Adv. 4, 107133 (2014).
+//   * Exl et al., J. Appl. Phys. 115, 17D118 (2014).
+//   * Mulkers et al., Phys. Rev. B 95, 144401 (2017).
+//mumax 3.12 [linux_amd64 go1.26.10(gc) CUDA-12.4]
+//mumax3 build: version=v3.12.21-20261022-candidate commit=a8698d11-dirty built=unknown
+//CPU info: AMD Ryzen Threadripper 3960X 24-Core Processor, Cores: 20, MHz: 3800.041
+//GPU info: NVIDIA GeForce RTX 4080 SUPER(16375MB), CUDA Driver 13.4, cc=8.9, using cc=89 PTX
+//OS  info: Ubuntu 22.04.4 LTS, Hostname: cd34b22e133b
+//Timestamp: 2026-10-22 05:58:32
+//(c) Arne Vansteenkiste, Dynamat LAB, Ghent University, Belgium
+//This is free software without any warranty. See license.txt
+//********************************************************************//
+//  If you use mumax in any work or publication,                      //
+//  we kindly ask you to cite the references in references.bib        //
+//********************************************************************//
+//output directory: /tmp/bubbleshift-release/
+//not starting GUI (-http="")
+SetMesh(128, 128, 1, 1e-9, 1e-9, 0.4e-9, 1, 1, 0)
+Msat = 580e3
+Aex = 15e-12
+enabledemag = false
+alpha = 0.1
+Ku1 = 0.59e6
+anisU = vector(0, 0, 1)
+Dind = 0.0034089785
+shiftregions = true
+maxregion := NREGION - 1
+seed := 17
+ext_makegrains(10e-9, maxregion, seed)
+for i := 0; i < maxRegion; i++ {
+	for j := i + 1; j < maxRegion; j++ {
+		ext_ScaleExchange(i, j, 0.5)
+	}
+}
+m = neelskyrmion(1, -1)
+run(5e-11)
+t = 0.
+minimize()
+setsolver(5)
+maxerr = 0.001
+ext_bubbleMz = -1.0
+ext_centerbubble()
+Xi = 0.2
+j = vector(5e12, 2e12, 0)
+run(1e-10)
+TOL := 1e-10
+expectv("position", ext_bubblepos.average(), vector(-5.15721817016602e-08, -4.135146331787111e-08, 0), TOL)
+//position[0] : -5.15714892314969e-08 OK
+//position[1] : -4.13693527438001e-08 OK
+//position[2] : 0 OK
+//********************************************************************//
+//Please cite the following references, relevant for your simulation. //
+//See bibtex file in output folder for justification.                 //
+//********************************************************************//
+//   * Vansteenkiste et al., AIP Adv. 4, 107133 (2014).
+//   * Exl et al., J. Appl. Phys. 115, 17D118 (2014).
+//   * Leliaert et al., J. Appl. Phys. 115, 233903 (2014)
+//   * Mulkers et al., Phys. Rev. B 95, 144401 (2017).

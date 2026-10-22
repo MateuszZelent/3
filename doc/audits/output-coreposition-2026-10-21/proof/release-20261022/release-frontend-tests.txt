@@ -1,0 +1,10 @@
+npm notice run frontend@0.0.1 test:unit
+npm notice run vitest run
+
+ RUN  v4.1.12 /home/kkingstoun/git/3/frontend
+
+
+ Test Files  10 passed (10)
+      Tests  47 passed (47)
+   Start at  07:51:29
+   Duration  1.19s (transform 1.41s, setup 0ms, import 3.79s, tests 178ms, environment 1ms)
