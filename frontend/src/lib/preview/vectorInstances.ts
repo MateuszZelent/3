@@ -72,7 +72,10 @@ export class VectorMesh extends THREE.Mesh<THREE.InstancedBufferGeometry, THREE.
 					`#include <beginnormal_vertex>\nobjectNormal = previewNormal(objectNormal);`
 				)
 				.replace('#include <begin_vertex>', `vec3 transformed = previewTransform(position);`)
-				.replace('#include <color_vertex>', `#include <color_vertex>\nvColor = previewPalette();`);
+				.replace(
+					'#include <color_vertex>',
+					`#include <color_vertex>\nvColor.rgb = previewPalette();`
+				);
 		};
 		material.customProgramCacheKey = () => 'preview-vector-v3';
 	}

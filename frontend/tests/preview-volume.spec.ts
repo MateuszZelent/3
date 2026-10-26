@@ -5,8 +5,16 @@ test('volume sampling exposes Z and preserves a cube at unequal preview sizes', 
 }) => {
 	const errors: string[] = [];
 	page.on('pageerror', (error) => errors.push(error.message));
-	await page.routeWebSocket(/\/ws/,socket=>socket.close());
- await page.route('**/api/preview/*', async (route) => {
+	page.on('console', (message) => {
+		if (message.type() === 'error') errors.push(message.text());
+	});
+	await page.route('**/api/demag/progress', (route) =>
+		route.fulfill({
+			json: { id: 0, active: false, failed: false, stage: '', percent: 0, startedAt: 0, logs: [] }
+		})
+	);
+	await page.routeWebSocket(/\/ws/, (socket) => socket.close());
+	await page.route('**/api/preview/*', async (route) => {
 		const data = route.request().postDataJSON();
 		await page.evaluate(async (data) => {
 			const path = '/src/api/incoming/preview.ts';
