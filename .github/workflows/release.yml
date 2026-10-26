@@ -70,6 +70,12 @@ jobs:
           rm -rf ../webui/static
           cp -R dist ../webui/static
 
+      - name: Test the production frontend in Chromium
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium --only-shell
+          npm run test:production
+
       - name: Build release assets in the CUDA container
         env:
           BUILD_VERSION: ${{ github.ref_name }}

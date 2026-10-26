@@ -47,6 +47,12 @@ jobs:
           npm run test:unit
           npm run build
 
+      - name: Test the production frontend in Chromium
+        working-directory: frontend
+        run: |
+          npx playwright install --with-deps chromium --only-shell
+          npm run test:production
+
       - name: Embed frontend in the web UI
         run: |
           rm -rf webui/static
