@@ -2,13 +2,16 @@
 package zarr
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 
@@ -118,41 +121,13 @@ func WriteObjectAttributes(dir string, attrs map[string]any) error {
 	return httpfs.PutAtomic(join(dir, ".zattrs"), b)
 }
 
-// WriteSeries writes a complete float64 one-dimensional Zarr array. Table
-// columns are finalized through this path.
+// WriteSeries is retired because replacing both .zarray and its single chunk
+// cannot be made atomic for ordinary Zarr readers. Use tabular.Writer, whose
+// manifest commits a consistent prefix of all columns.
+//
+// Deprecated: use tabular.Writer.
 func WriteSeries(dir string, values []float64) error {
-	if len(values) == 0 {
-		return nil
-	}
-	if err := ensureDir(dir); err != nil {
-		return err
-	}
-	metadata := SeriesMetadata{
-		Chunks:     [1]int{len(values)},
-		Compressor: &Compressor{ID: "zstd", Level: 1},
-		Dtype:      "<f8",
-		FillValue:  0,
-		Filters:    nil,
-		Order:      "C",
-		Shape:      [1]int{len(values)},
-		ZarrFormat: 2,
-	}
-	b, err := json.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := httpfs.PutAtomic(join(dir, ".zarray"), b); err != nil {
-		return err
-	}
-	raw := make([]byte, len(values)*8)
-	for i, value := range values {
-		binary.LittleEndian.PutUint64(raw[i*8:(i+1)*8], math.Float64bits(value))
-	}
-	compressed, err := zstd.CompressLevel(nil, raw, metadata.Compressor.Level)
-	if err != nil {
-		return err
-	}
-	return httpfs.PutAtomic(join(dir, "0"), compressed)
+	return fmt.Errorf("zarr.WriteSeries is retired; use tabular.Writer for committed tables")
 }
 
 // WriteStep writes every spatial/component chunk for one time step and then
@@ -169,12 +144,41 @@ func WriteStep(dir string, step int, src *data.Slice, chunks [4]int) error {
 	}
 
 	metadata := DefaultMetadata(src.Size(), src.NComp(), step+1, chunks)
-	if old, err := ReadMetadata(dir); err == nil {
-		if old.Chunks != metadata.Chunks || old.Shape[1] != metadata.Shape[1] || old.Shape[2] != metadata.Shape[2] || old.Shape[3] != metadata.Shape[3] || old.Shape[4] != metadata.Shape[4] {
-			return fmt.Errorf("zarr: dataset shape or chunks changed: old shape=%v chunks=%v, new shape=%v chunks=%v", old.Shape, old.Chunks, metadata.Shape, metadata.Chunks)
+	old, readErr := ReadMetadata(dir)
+	if readErr != nil {
+		// Older HTTP servers do not expose a typed ENOENT. A directory listing
+		// lets us distinguish a genuinely absent .zarray from unreadable or
+		// malformed metadata without silently replacing the latter.
+		entries, listErr := httpfs.ReadDir(dir)
+		if listErr != nil {
+			return fmt.Errorf("zarr: inspect existing metadata for %s: %w", dir, errors.Join(readErr, listErr))
+		}
+		for _, entry := range entries {
+			if entry == ".zarray" {
+				return fmt.Errorf("zarr: read existing metadata for %s: %w", dir, readErr)
+			}
+		}
+		if step != 0 {
+			return fmt.Errorf("zarr: first step must be 0, got %d", step)
+		}
+	} else {
+		if old.Chunks != metadata.Chunks || old.Shape[1] != metadata.Shape[1] || old.Shape[2] != metadata.Shape[2] || old.Shape[3] != metadata.Shape[3] || old.Shape[4] != metadata.Shape[4] || old.Dtype != metadata.Dtype || old.Order != metadata.Order || old.ZarrFormat != metadata.ZarrFormat || old.Filters != nil || old.Compressor == nil || *old.Compressor != *metadata.Compressor {
+			return fmt.Errorf("zarr: dataset schema changed: old shape=%v chunks=%v, new shape=%v chunks=%v", old.Shape, old.Chunks, metadata.Shape, metadata.Chunks)
+		}
+		if old.Shape[0] != step {
+			return fmt.Errorf("zarr: expected next step %d, got %d", old.Shape[0], step)
 		}
 	}
+	_, err := writeStepChunks(dir, step, src, chunks, metadata)
+	if err != nil {
+		return err
+	}
+	return WriteMetadata(dir, metadata)
+}
 
+// writeStepChunks persists all chunks before publishing any logical metadata.
+// Each checksum covers the exact compressed bytes that a reader will retrieve.
+func writeStepChunks(dir string, step int, src *data.Slice, chunks [4]int, metadata ArrayMetadata) ([]ChunkRecord, error) {
 	tensors := src.Tensors()
 	nx, ny, nz := src.Size()[0], src.Size()[1], src.Size()[2]
 	cx, cy, cz, cc := chunks[0], chunks[1], chunks[2], chunks[3]
@@ -183,6 +187,10 @@ func WriteStep(dir string, step int, src *data.Slice, chunks [4]int) error {
 	type job struct{ ix, iy, iz, ic int }
 	jobs := make(chan job)
 	errCh := make(chan error, 1)
+	cancelled := make(chan struct{})
+	var cancelOnce sync.Once
+	var recordsMu sync.Mutex
+	records := make([]ChunkRecord, 0, ncx*ncy*ncz*ncc)
 	workerCount := min(runtime.GOMAXPROCS(0), ncx*ncy*ncz*ncc)
 	var wg sync.WaitGroup
 	worker := func() {
@@ -208,29 +216,39 @@ func WriteStep(dir string, step int, src *data.Slice, chunks [4]int) error {
 					}
 				}
 			}
+			key := fmt.Sprintf("%d.%d.%d.%d.%d", step, j.iz, j.iy, j.ix, j.ic)
 			compressed, err := zstd.CompressLevel(nil, raw, metadata.Compressor.Level)
 			if err == nil {
-				key := fmt.Sprintf("%d.%d.%d.%d.%d", step, j.iz, j.iy, j.ix, j.ic)
 				err = httpfs.PutAtomic(join(dir, key), compressed)
 			}
 			if err != nil {
 				select {
-				case errCh <- err:
+				case errCh <- fmt.Errorf("zarr: write %s/%s: %w", dir, key, err):
 				default:
 				}
+				cancelOnce.Do(func() { close(cancelled) })
 				return
 			}
+			digest := sha256.Sum256(compressed)
+			recordsMu.Lock()
+			records = append(records, ChunkRecord{Key: key, Size: len(compressed), SHA256: hex.EncodeToString(digest[:])})
+			recordsMu.Unlock()
 		}
 	}
 	wg.Add(workerCount)
 	for i := 0; i < workerCount; i++ {
 		go worker()
 	}
+dispatch:
 	for iz := 0; iz < ncz; iz++ {
 		for iy := 0; iy < ncy; iy++ {
 			for ix := 0; ix < ncx; ix++ {
 				for ic := 0; ic < ncc; ic++ {
-					jobs <- job{ix: ix, iy: iy, iz: iz, ic: ic}
+					select {
+					case jobs <- job{ix: ix, iy: iy, iz: iz, ic: ic}:
+					case <-cancelled:
+						break dispatch
+					}
 				}
 			}
 		}
@@ -239,16 +257,46 @@ func WriteStep(dir string, step int, src *data.Slice, chunks [4]int) error {
 	wg.Wait()
 	select {
 	case err := <-errCh:
-		return err
+		return nil, err
 	default:
 	}
-	return WriteMetadata(dir, metadata)
+	sort.Slice(records, func(i, j int) bool { return records[i].Key < records[j].Key })
+	return records, nil
 }
 
 // ReadStep reconstructs a full data.Slice from all chunks for one time step.
 func ReadStep(dir string, step int) (*data.Slice, error) {
-	metadata, err := ReadMetadata(dir)
-	if err != nil {
+	var metadata ArrayMetadata
+	var expectedChunks map[string]ChunkRecord
+	commit, err := ReadCommit(dir)
+	if err == nil {
+		metadata = commit.Metadata
+		if step < 0 || step >= commit.CommittedSteps {
+			return nil, fmt.Errorf("zarr: step %d outside committed prefix [0,%d)", step, commit.CommittedSteps)
+		}
+		frames, frameErr := ReadCommittedFrames(dir, commit)
+		if frameErr != nil {
+			return nil, frameErr
+		}
+		expectedChunks = make(map[string]ChunkRecord, len(frames[step].Chunks))
+		for _, chunk := range frames[step].Chunks {
+			expectedChunks[chunk.Key] = chunk
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		entries, listErr := httpfs.ReadDir(dir)
+		if listErr != nil {
+			return nil, listErr
+		}
+		for _, entry := range entries {
+			if entry == ".frames" {
+				return nil, fmt.Errorf("zarr: missing commit for recorded dataset %s", dir)
+			}
+		}
+		metadata, err = ReadMetadata(dir)
+		if err != nil {
+			return nil, err
+		}
+	} else {
 		return nil, err
 	}
 	if step < 0 || step >= metadata.Shape[0] {
@@ -271,6 +319,14 @@ func ReadStep(dir string, step int) (*data.Slice, error) {
 					if err != nil {
 						dst.Free()
 						return nil, err
+					}
+					if expectedChunks != nil {
+						expected, ok := expectedChunks[key]
+						digest := sha256.Sum256(compressed)
+						if !ok || expected.Size != len(compressed) || expected.SHA256 != hex.EncodeToString(digest[:]) {
+							dst.Free()
+							return nil, fmt.Errorf("zarr: committed chunk %s failed integrity verification", key)
+						}
 					}
 					raw, err := zstd.Decompress(nil, compressed)
 					if err != nil {
@@ -314,6 +370,17 @@ func validateMetadata(metadata ArrayMetadata) error {
 		if value <= 0 {
 			return fmt.Errorf("zarr: chunks[%d] must be positive", i)
 		}
+	}
+	if metadata.Chunks[0] != 1 || metadata.Shape[0] < 0 {
+		return errors.New("zarr: invalid time shape or chunk size")
+	}
+	for i := 1; i < len(metadata.Shape); i++ {
+		if metadata.Shape[i] <= 0 || metadata.Chunks[i] > metadata.Shape[i] {
+			return fmt.Errorf("zarr: invalid shape[%d] or chunk", i)
+		}
+	}
+	if metadata.Dtype != "<f4" || metadata.Order != "C" || metadata.Filters != nil || metadata.Compressor == nil || metadata.Compressor.ID != "zstd" {
+		return errors.New("zarr: unsupported array schema")
 	}
 	return nil
 }

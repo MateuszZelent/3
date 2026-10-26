@@ -11,9 +11,10 @@ import (
 )
 
 var (
-	outputdir   string // Output directory
-	InputFile   string
-	outputOwned bool // only the accepted output directory may be finalized
+	outputdir         string // Output directory
+	InputFile         string
+	outputOwned       bool // only the accepted output directory may be finalized
+	outputLockRelease func() error
 )
 
 func OD() string {
@@ -50,6 +51,15 @@ func InitIO(inputfile, od string, force bool) {
 			util.FatalErr(err)
 		}
 	}
+	var lockErr error
+	outputLockRelease, lockErr = httpfs.AcquireOutputLock(od)
+	CheckRecoverable(lockErr)
+	defer func() {
+		if !outputOwned && outputLockRelease != nil {
+			_ = outputLockRelease()
+			outputLockRelease = nil
+		}
+	}()
 
 	if force {
 		CheckRecoverable(httpfs.Remove(od))

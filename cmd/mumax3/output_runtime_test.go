@@ -133,7 +133,7 @@ TableSave()
 					t.Fatalf("table lost: %+v %v", m, readErr)
 				}
 				assertTextMatchesStructured(t, output, m, v)
-				attrs, readErr := os.ReadFile(filepath.Join(output, ".zattrs"))
+				attrs, readErr := os.ReadFile(filepath.Join(output, "run.json"))
 				if readErr != nil {
 					t.Fatal(readErr)
 				}
@@ -267,7 +267,7 @@ func main(){
 		t.Fatalf("Go table lost: %+v %v", m, err)
 	}
 	assertTextMatchesStructured(t, output, m, values)
-	meta, err := os.ReadFile(filepath.Join(output, ".zattrs"))
+	meta, err := os.ReadFile(filepath.Join(output, "run.json"))
 	if err != nil || !bytes.Contains(meta, []byte(`"completion": "interrupted"`)) {
 		t.Fatalf("Go termination metadata: %s %v", meta, err)
 	}

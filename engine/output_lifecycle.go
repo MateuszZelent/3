@@ -169,6 +169,10 @@ func CloseWithError() error {
 		}
 		appendFinalOutputError(result)
 		appendFinalOutputError(outputAttempt("run metadata", finalizeStructuredMetadata))
+		if outputLockRelease != nil {
+			appendFinalOutputError(outputAttempt("output lock", outputLockRelease))
+			outputLockRelease = nil
+		}
 		outputLifecycle.mu.Lock()
 		outputLifecycle.closed = true
 		outputLifecycle.mu.Unlock()

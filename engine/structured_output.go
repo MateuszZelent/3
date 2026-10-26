@@ -104,6 +104,9 @@ type structuredDataset struct {
 	requested  Chunking
 	chunkSizes [4]int
 	format     StorageFormatType
+	// Only the asynchronous output consumer accesses these fields.
+	committed int
+	failed    error
 }
 
 type structuredOutputState struct {
@@ -168,11 +171,25 @@ func writeRunMetadataLocked() error {
 	if err != nil {
 		return err
 	}
-	result := httpfs.PutAtomic(OD()+"run.json", b)
 	if StorageFormat == StorageFormatZarr {
-		result = errors.Join(result, httpfs.PutAtomic(OD()+".zattrs", b))
+		projection := make(map[string]any, len(structuredOutput.metadata)+1)
+		for key, value := range structuredOutput.metadata {
+			if key != "completion" && key != "termination_reason" {
+				projection[key] = value
+			}
+		}
+		projection["run_status_file"] = "run.json"
+		attrs, marshalErr := json.MarshalIndent(projection, "", "  ")
+		if marshalErr != nil {
+			return marshalErr
+		}
+		if err := httpfs.PutAtomic(OD()+".zattrs", attrs); err != nil {
+			return err
+		}
 	}
-	return result
+	// run.json is the authoritative state and is published only after its
+	// Zarr projection succeeds. A failed projection cannot claim success here.
+	return httpfs.PutAtomic(OD()+"run.json", b)
 }
 
 func SetStructuredGPUInfo(info string) {
@@ -282,7 +299,7 @@ func getOrCreateStructuredDataset(quantity Quantity, name string, requested Chun
 	structuredOutput.datasets[name] = dataset
 	if format == StorageFormatZarr {
 		dir := OD() + name
-		CheckRecoverable(httpfs.Remove(dir))
+		// Never delete an existing dataset or a parent group on name collision.
 		CheckRecoverable(httpfs.Mkdir(dir))
 	}
 	return dataset
@@ -291,28 +308,30 @@ func getOrCreateStructuredDataset(quantity Quantity, name string, requested Chun
 func (dataset *structuredDataset) save() {
 	dataset.times = append(dataset.times, Time)
 	step := len(dataset.times) - 1
-	times := append([]float64(nil), dataset.times...)
+	timestamp := Time
 	buffer := ValueOf(dataset.quantity)
 	defer cuda.Recycle(buffer)
 	host := buffer.HostCopy()
 	queOutput(func() {
 		defer host.Free()
+		if dataset.failed != nil {
+			return
+		}
 		var err error
 		switch dataset.format {
 		case StorageFormatZarr:
 			dir := OD() + dataset.name
-			err = zarr.WriteStep(dir, step, host, dataset.chunkSizes)
-			if err == nil {
-				err = zarr.WriteAttributes(dir, zarr.Attributes{Times: times, Name: dataset.name, Unit: UnitOf(dataset.quantity)})
-			}
+			err = zarr.WriteCommittedStep(dir, step, host, dataset.chunkSizes, timestamp, dataset.name, UnitOf(dataset.quantity))
 		case StorageFormatHDF5:
 			err = structuredOutput.hdf5.SaveArray(dataset.name, step, host.Tensors(), host.Size(), host.NComp())
 		default:
 			err = fmt.Errorf("structured save requested with format %d", dataset.format)
 		}
 		if err != nil {
+			dataset.failed = err
 			panic(err)
 		}
+		dataset.committed++
 	})
 }
 
@@ -330,10 +349,15 @@ func closeStructuredOutput() (result error) {
 		return nil
 	}
 
+	for _, dataset := range structuredOutput.datasets {
+		if dataset.format == StorageFormatZarr && dataset.committed > 0 {
+			result = errors.Join(result, zarr.PublishProjection(OD()+dataset.name))
+		}
+	}
 	if structuredOutput.hdf5 != nil {
 		for _, dataset := range structuredOutput.datasets {
-			if dataset.format == StorageFormatHDF5 && len(dataset.times) > 0 {
-				result = errors.Join(result, structuredOutput.hdf5.SaveTimestamps(dataset.name, dataset.times))
+			if dataset.format == StorageFormatHDF5 && dataset.committed > 0 {
+				result = errors.Join(result, structuredOutput.hdf5.SaveTimestamps(dataset.name, dataset.times[:dataset.committed]))
 			}
 		}
 		result = errors.Join(result, structuredOutput.hdf5.Close())
