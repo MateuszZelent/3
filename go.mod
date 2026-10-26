@@ -6,7 +6,7 @@ require (
 	github.com/DataDog/zstd v1.5.7
 	github.com/gorilla/websocket v1.5.3
 	github.com/kevinburke/ssh_config v1.4.0
-	github.com/labstack/echo/v4 v4.15.3
+	github.com/labstack/echo/v4 v4.16.1
 	github.com/scigolib/hdf5 v0.13.14
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/vmihailenco/msgpack/v5 v5.4.1
@@ -18,7 +18,7 @@ require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/labstack/gommon v0.5.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
-	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
