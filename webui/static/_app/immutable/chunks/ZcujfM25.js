@@ -1,0 +1,1 @@
+import{a as e}from"./YH5BCEEJ.js";var t=e({autoSaveInterval:0,columns:[],xColumn:`t`,yColumn:`mx`,xColumnUnit:`s`,yColumnUnit:``,data:[],xmin:0,xmax:0,ymin:0,ymax:0,maxPoints:0,step:0,corePos:null,coreEnabled:!1,coreMode:``,coreStatus:``});export{t};

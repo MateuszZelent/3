@@ -39,6 +39,15 @@ export class VectorMesh extends THREE.Mesh<THREE.InstancedBufferGeometry, THREE.
 			new THREE.BufferAttribute(new Float32Array(base.attributes.position.count * 3).fill(1), 3)
 		);
 		super(geometry, material);
+		// Three.js now defines Mesh.count; preserve the existing WebGL instance-count API.
+		Object.defineProperty(this, 'count', {
+			configurable: true,
+			enumerable: true,
+			get: () => this.geometry.instanceCount,
+			set: (value: number) => {
+				this.geometry.instanceCount = value;
+			}
+		});
 		this.offsets = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3).setUsage(
 			THREE.DynamicDrawUsage
 		);
@@ -66,12 +75,6 @@ export class VectorMesh extends THREE.Mesh<THREE.InstancedBufferGeometry, THREE.
 				.replace('#include <color_vertex>', `#include <color_vertex>\nvColor = previewPalette();`);
 		};
 		material.customProgramCacheKey = () => 'preview-vector-v3';
-	}
-	get count() {
-		return this.geometry.instanceCount;
-	}
-	set count(value: number) {
-		this.geometry.instanceCount = value;
 	}
 	setBounds(center: THREE.Vector3, radius: number) {
 		this.baseBounds.set(center, radius);

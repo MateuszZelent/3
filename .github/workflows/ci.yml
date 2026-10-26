@@ -22,7 +22,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: "24.19.0"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -41,7 +41,8 @@ jobs:
       - name: Build and test frontend
         working-directory: frontend
         run: |
-          npm ci
+          npm install --global --ignore-scripts npm@12.2.1
+          npm ci --ignore-scripts
           npm audit --audit-level=low
           npm run check
           npm run test:unit
@@ -52,6 +53,7 @@ jobs:
         run: |
           npx playwright install --with-deps chromium --only-shell
           npm run test:production
+          npx playwright test tests/preview-volume.spec.ts --project=chromium
 
       - name: Embed frontend in the web UI
         run: |
@@ -71,5 +73,5 @@ jobs:
               go test -race -vet=off ./engine ./coreposition ./tabular ./hdf5 ./zarr ./httpfs ./script ./util
               go test -race -vet=off ./webui ./cmd/mumax3 ./cmd/mumax3-server
               go build ./cmd/mumax3
-              go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -mode=binary mumax3
+              go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 -mode=binary mumax3
             '
