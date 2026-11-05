@@ -1,19 +1,40 @@
 <script lang="ts">
+	import { setAlert } from '$lib/alerts/alert';
 	type Props = {
 		label: string;
 		checked?: boolean;
-		onchange?: (next: boolean) => void;
+		onchange?: (next: boolean) => unknown;
+		disabled?: boolean;
 	};
 
-	let { label, checked = false, onchange }: Props = $props();
+	let { label, checked = false, onchange, disabled = false }: Props = $props();
+	let pending = $state(false);
 
-	function handleChange(event: Event) {
-		onchange?.((event.currentTarget as HTMLInputElement).checked);
+	async function handleChange(event: Event) {
+		const control = event.currentTarget as HTMLInputElement;
+		if (pending || disabled) {
+			control.checked = checked;
+			return;
+		}
+		pending = true;
+		try {
+			const result = await onchange?.(control.checked);
+			if (
+				result === false ||
+				(result && typeof result === 'object' && 'ok' in result && result.ok === false)
+			)
+				control.checked = checked;
+		} catch (error) {
+			control.checked = checked;
+			setAlert(error instanceof Error ? error.message : 'Unable to apply setting');
+		} finally {
+			pending = false;
+		}
 	}
 </script>
 
 <label class="ui-toggle">
-	<input type="checkbox" checked={checked} onchange={handleChange} />
+	<input type="checkbox" {checked} disabled={disabled || pending} onchange={handleChange} />
 	<span class="ui-toggle__track" aria-hidden="true">
 		<span class="ui-toggle__thumb"></span>
 	</span>
@@ -27,6 +48,10 @@
 		gap: 0.75rem;
 		cursor: pointer;
 		color: var(--text-2);
+	}
+	.ui-toggle:has(input:disabled) {
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
 
 	.ui-toggle input {

@@ -17,4 +17,4 @@
 	);
 </script>
 
-<StatusBadge label={label} tone={tone} pulse={state !== 'connected'} className={className} />
+<StatusBadge {label} {tone} pulse={state !== 'connected'} {className} />

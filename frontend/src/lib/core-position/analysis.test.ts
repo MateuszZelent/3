@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyzeCore } from './analysis';
+import { analyzeCore, getCorePlotCounts, sampleCoreCoordinates } from './analysis';
 
 describe('core trajectory validity', () => {
 	it('excludes invalid rows and breaks analytics at gaps', () => {
@@ -58,5 +58,32 @@ describe('core trajectory validity', () => {
 			1
 		]);
 		expect(analyzeCore(coarse, 2).metrics.frequencyGHz).toBeNull();
+	});
+
+	it('bounds rendered coordinates at large track sizes while retaining both endpoints', () => {
+		const rows = Array.from({ length: 100_001 }, (_, index) => [index, index, -index]);
+
+		const points = sampleCoreCoordinates(rows, 0, rows.length, 5_000);
+
+		expect(points).toHaveLength(5_000);
+		expect(points[0][0]).toBe(0);
+		expect(points[0][1]).toBeCloseTo(0);
+		expect(points.at(-1)).toEqual([100_000, -100_000]);
+		for (let index = 1; index < points.length; index++) {
+			expect(points[index][0]).toBeGreaterThan(points[index - 1][0]);
+		}
+	});
+
+	it('reports when rendered core markers are sampled from the valid source records', () => {
+		expect(getCorePlotCounts(100_000, 2_000, 5_000)).toEqual({
+			sourcePoints: 100_000,
+			renderedPoints: 7_000,
+			sampled: true
+		});
+		expect(getCorePlotCounts(123, 23, 5_000)).toEqual({
+			sourcePoints: 123,
+			renderedPoints: 123,
+			sampled: false
+		});
 	});
 });

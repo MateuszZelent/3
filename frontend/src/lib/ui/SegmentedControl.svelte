@@ -11,9 +11,10 @@
 		options: Option[];
 		onchange?: (value: string) => void;
 		compact?: boolean;
+		disabled?: boolean;
 	};
 
-	let { label = '', value, options, onchange, compact = false }: Props = $props();
+	let { label = '', value, options, onchange, compact = false, disabled = false }: Props = $props();
 </script>
 
 <div class="ui-segmented-wrapper">
@@ -21,13 +22,13 @@
 		<span class="ui-segmented__label">{label}</span>
 	{/if}
 	<div class="ui-segmented" data-compact={compact}>
-		{#each options as option}
+		{#each options as option (option.value)}
 			<button
 				type="button"
 				class="ui-segmented__option"
 				aria-pressed={value === option.value}
 				data-active={value === option.value}
-				disabled={option.disabled}
+				disabled={disabled || option.disabled}
 				onclick={() => onchange?.(option.value)}
 			>
 				{option.label}
@@ -78,7 +79,11 @@
 	}
 
 	.ui-segmented__option[data-active='true'] {
-		background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 95%, transparent), color-mix(in srgb, var(--accent-strong) 95%, transparent));
+		background: linear-gradient(
+			135deg,
+			color-mix(in srgb, var(--accent) 95%, transparent),
+			color-mix(in srgb, var(--accent-strong) 95%, transparent)
+		);
 		color: var(--on-accent);
 	}
 

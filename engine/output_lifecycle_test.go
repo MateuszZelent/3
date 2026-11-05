@@ -19,9 +19,10 @@ func isolateOutput(t *testing.T) {
 	oldOwned := outputOwned
 	oldStructured := structuredOutput
 	logMu.Lock()
-	oldLog, oldHist, oldClosed := logfile, hist, logClosed
+	oldLog, oldHist, oldBootstrap, oldClosed := logfile, hist, logBootstrap, logClosed
 	logfile = nil
 	hist = "initial audit log"
+	logBootstrap = []string{hist}
 	logClosed = false
 	logMu.Unlock()
 	Table = *newTable("table")
@@ -39,7 +40,7 @@ func isolateOutput(t *testing.T) {
 		outputOwned = oldOwned
 		structuredOutput = oldStructured
 		logMu.Lock()
-		logfile, hist, logClosed = oldLog, oldHist, oldClosed
+		logfile, hist, logBootstrap, logClosed = oldLog, oldHist, oldBootstrap, oldClosed
 		logMu.Unlock()
 	})
 }

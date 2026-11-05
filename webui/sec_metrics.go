@@ -286,7 +286,9 @@ func (m *MetricsState) postMetricsReset(c echo.Context) error {
 	m.ws.stateMu.Lock()
 	m.Error = ""
 	m.lastGPUUpdate = time.Time{}
+	// Bump the revision in the same critical section so an in-flight
+	// snapshot cannot publish the old error state over this reset.
+	m.ws.broadcastEngineStateWithoutPreviewLocked()
 	m.ws.stateMu.Unlock()
-	m.ws.broadcastEngineStateWithoutPreview() // Use the instance to call the method
 	return c.JSON(http.StatusOK, "")
 }

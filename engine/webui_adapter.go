@@ -21,6 +21,13 @@ func init() {
 }
 
 func EvalTryRecover(code string) {
+	_ = EvalTryRecoverError(code)
+}
+
+// EvalTryRecoverError is the WebUI operation variant of EvalTryRecover. It
+// logs recoverable script failures and returns them so asynchronous jobs can
+// publish an accurate terminal status to the browser.
+func EvalTryRecoverError(code string) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			switch recovered.(type) {
@@ -28,9 +35,10 @@ func EvalTryRecover(code string) {
 				panic(recovered)
 			}
 			LogErr(recovered)
+			err = fmt.Errorf("%v", recovered)
 		}
 	}()
-	Eval(code)
+	return EvalError(code)
 }
 
 func LogHistory() string {

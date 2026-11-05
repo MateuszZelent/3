@@ -33,17 +33,21 @@ type PreviewState struct {
 	occupancyGPU          *data.Slice
 	sparePositions        []Vector3i
 	cachedTopologyKey     string
-	ServerVectorCount     int     `msgpack:"serverVectorCount"`
-	TransportSampling     int     `msgpack:"transportSampling"`
-	Sequence              uint64  `msgpack:"sequence"`
-	Step                  int     `msgpack:"step"`
-	Timestamp             int64   `msgpack:"timestamp"`
-	NormScale             float64 `msgpack:"normScale"`
-	FixedScale            float64 `msgpack:"fixedScale"`
-	InvalidCount          int     `msgpack:"invalidCount"`
-	CaptureMs             float64 `msgpack:"captureMs"`
-	ProcessMs             float64 `msgpack:"processMs"`
-	HardLimit             int     `msgpack:"hardLimit"`
+	ServerVectorCount     int        `msgpack:"serverVectorCount"`
+	TransportSampling     int        `msgpack:"transportSampling"`
+	Sequence              uint64     `msgpack:"sequence"`
+	Step                  int        `msgpack:"step"`
+	Timestamp             int64      `msgpack:"timestamp"`
+	ConfigRevision        uint64     `msgpack:"configRevision"`
+	Mesh                  *MeshState `msgpack:"mesh,omitempty"`
+	NormScale             float64    `msgpack:"normScale"`
+	FixedScale            float64    `msgpack:"fixedScale"`
+	InvalidCount          int        `msgpack:"invalidCount"`
+	CaptureMs             float64    `msgpack:"captureMs"`
+	QueueMs               float64    `msgpack:"queueMs"`
+	ProcessMs             float64    `msgpack:"processMs"`
+	EncodeMs              float64    `msgpack:"encodeMs"`
+	HardLimit             int        `msgpack:"hardLimit"`
 	ws                    *WebSocketManager
 	globalQuantities      []string
 	layerMask             [][]float32
@@ -82,21 +86,22 @@ type PreviewState struct {
 	Refresh               bool         `msgpack:"refresh"`
 	NComp                 int          `msgpack:"nComp"`
 
-	MaxPoints            int    `msgpack:"maxPoints"`
-	DataPointsCount      int    `msgpack:"dataPointsCount"`
-	XPossibleSizes       []int  `msgpack:"xPossibleSizes"`
-	YPossibleSizes       []int  `msgpack:"yPossibleSizes"`
-	ZPossibleSizes       []int  `msgpack:"zPossibleSizes"`
-	ZChosenSize          int    `msgpack:"zChosenSize"`
-	AppliedZChosenSize   int    `msgpack:"appliedZChosenSize"`
-	XChosenSize          int    `msgpack:"xChosenSize"`
-	YChosenSize          int    `msgpack:"yChosenSize"`
-	AppliedXChosenSize   int    `msgpack:"appliedXChosenSize"`
-	AppliedYChosenSize   int    `msgpack:"appliedYChosenSize"`
-	AppliedLayerStride   int    `msgpack:"appliedLayerStride"`
-	AutoScaleEnabled     bool   `msgpack:"autoScaleEnabled"`
-	AutoDownscaled       bool   `msgpack:"autoDownscaled"`
-	AutoDownscaleMessage string `msgpack:"autoDownscaleMessage"`
+	MaxPoints             int    `msgpack:"maxPoints"`
+	DataPointsCount       int    `msgpack:"dataPointsCount"`
+	ServerDataPointsCount int    `msgpack:"serverDataPointsCount"`
+	XPossibleSizes        []int  `msgpack:"xPossibleSizes"`
+	YPossibleSizes        []int  `msgpack:"yPossibleSizes"`
+	ZPossibleSizes        []int  `msgpack:"zPossibleSizes"`
+	ZChosenSize           int    `msgpack:"zChosenSize"`
+	AppliedZChosenSize    int    `msgpack:"appliedZChosenSize"`
+	XChosenSize           int    `msgpack:"xChosenSize"`
+	YChosenSize           int    `msgpack:"yChosenSize"`
+	AppliedXChosenSize    int    `msgpack:"appliedXChosenSize"`
+	AppliedYChosenSize    int    `msgpack:"appliedYChosenSize"`
+	AppliedLayerStride    int    `msgpack:"appliedLayerStride"`
+	AutoScaleEnabled      bool   `msgpack:"autoScaleEnabled"`
+	AutoDownscaled        bool   `msgpack:"autoDownscaled"`
+	AutoDownscaleMessage  string `msgpack:"autoDownscaleMessage"`
 }
 
 type Vector3f struct {
@@ -109,6 +114,145 @@ type Vector3i struct {
 	X int `msgpack:"x"`
 	Y int `msgpack:"y"`
 	Z int `msgpack:"z"`
+}
+
+// copyPreviewConfig copies the small, versioned input set while retaining the
+// capture worker's private reusable CUDA and CPU buffers.
+func copyPreviewConfig(dst, src *PreviewState, ws *WebSocketManager) {
+	if dst.Sequence == 0 {
+		dst.TopologyRevision = src.TopologyRevision
+	}
+	dst.ws = ws
+	dst.Region = src.Region
+	dst.regionFullAllLayers = src.regionFullAllLayers
+	dst.ConfigRevision = src.ConfigRevision
+	dst.EncodeMs = src.EncodeMs
+	dst.Refresh = src.Refresh
+	dst.Sequence = src.Sequence
+	dst.Step = src.Step
+	dst.Quantity = src.Quantity
+	dst.Component = src.Component
+	dst.Layer = src.Layer
+	dst.Plane = src.Plane
+	dst.SliceIndex = src.SliceIndex
+	dst.AllLayers = src.AllLayers
+	dst.Type = src.Type
+	dst.NComp = src.NComp
+	dst.MaxPoints = src.MaxPoints
+	dst.HardLimit = src.HardLimit
+	dst.FixedScale = src.FixedScale
+	dst.AutoScaleEnabled = src.AutoScaleEnabled
+	dst.XChosenSize = src.XChosenSize
+	dst.YChosenSize = src.YChosenSize
+	dst.ZChosenSize = src.ZChosenSize
+	dst.AppliedXChosenSize = src.AppliedXChosenSize
+	dst.AppliedYChosenSize = src.AppliedYChosenSize
+	dst.AppliedZChosenSize = src.AppliedZChosenSize
+	dst.AppliedLayerStride = src.AppliedLayerStride
+	dst.PlaneUChosenSize = src.PlaneUChosenSize
+	dst.PlaneVChosenSize = src.PlaneVChosenSize
+	dst.AppliedPlaneUSize = src.AppliedPlaneUSize
+	dst.AppliedPlaneVSize = src.AppliedPlaneVSize
+	dst.previewMeshSize = src.previewMeshSize
+	dst.planeChosenSize = src.planeChosenSize
+	dst.sliceIndices = src.sliceIndices
+	dst.XPossibleSizes = src.XPossibleSizes
+	dst.YPossibleSizes = src.YPossibleSizes
+	dst.ZPossibleSizes = src.ZPossibleSizes
+	dst.PlaneUPossibleSizes = src.PlaneUPossibleSizes
+	dst.PlaneVPossibleSizes = src.PlaneVPossibleSizes
+	if src.globalQuantities != nil {
+		dst.globalQuantities = src.globalQuantities
+	}
+}
+
+// clonePreviewState creates an immutable encoding snapshot with no slices
+// shared with the capture worker or mutable EngineState.
+func clonePreviewState(src *PreviewState) *PreviewState {
+	clone := *src
+	if src.Mesh != nil {
+		mesh := *src.Mesh
+		clone.Mesh = &mesh
+	}
+	clone.VectorFieldValues = append([]Vector3f(nil), src.VectorFieldValues...)
+	clone.VectorFieldPositions = append([]Vector3i(nil), src.VectorFieldPositions...)
+	clone.VectorValuesBinary = append([]byte(nil), src.VectorValuesBinary...)
+	clone.VectorPositionsBinary = append([]byte(nil), src.VectorPositionsBinary...)
+	clone.VectorOccupancy = append([]byte(nil), src.VectorOccupancy...)
+	clone.ScalarField = append([][3]float32(nil), src.ScalarField...)
+	clone.PlaneUPossibleSizes = append([]int(nil), src.PlaneUPossibleSizes...)
+	clone.PlaneVPossibleSizes = append([]int(nil), src.PlaneVPossibleSizes...)
+	clone.XPossibleSizes = append([]int(nil), src.XPossibleSizes...)
+	clone.YPossibleSizes = append([]int(nil), src.YPossibleSizes...)
+	clone.ZPossibleSizes = append([]int(nil), src.ZPossibleSizes...)
+	return &clone
+}
+
+func copyPreviewOutput(dst, src *PreviewState) {
+	dst.ConfigRevision = src.ConfigRevision
+	dst.Sequence = src.Sequence
+	dst.Step = src.Step
+	dst.Timestamp = src.Timestamp
+	dst.Mesh = src.Mesh
+	dst.NormScale = src.NormScale
+	dst.Unit = src.Unit
+	dst.InvalidCount = src.InvalidCount
+	dst.CaptureMs = src.CaptureMs
+	dst.QueueMs = src.QueueMs
+	dst.ProcessMs = src.ProcessMs
+	dst.EncodeMs = src.EncodeMs
+	dst.HardLimit = src.HardLimit
+	dst.RegionActive = src.RegionActive
+	dst.PlaneUPossibleSizes = src.PlaneUPossibleSizes
+	dst.PlaneVPossibleSizes = src.PlaneVPossibleSizes
+	dst.AppliedPlaneUSize = src.AppliedPlaneUSize
+	dst.AppliedPlaneVSize = src.AppliedPlaneVSize
+	dst.AppliedXChosenSize = src.AppliedXChosenSize
+	dst.AppliedYChosenSize = src.AppliedYChosenSize
+	dst.AppliedZChosenSize = src.AppliedZChosenSize
+	dst.AppliedLayerStride = src.AppliedLayerStride
+	dst.AutoDownscaled = src.AutoDownscaled
+	dst.AutoDownscaleMessage = src.AutoDownscaleMessage
+	dst.ServerVectorCount = src.ServerVectorCount
+	dst.ServerDataPointsCount = src.ServerDataPointsCount
+	dst.TransportSampling = src.TransportSampling
+	dst.DataPointsCount = src.DataPointsCount
+	dst.VectorCount = src.VectorCount
+	dst.TopologyRevision = src.TopologyRevision
+	dst.VectorFieldValues = src.VectorFieldValues
+	dst.VectorFieldPositions = src.VectorFieldPositions
+	dst.VectorValuesBinary = src.VectorValuesBinary
+	dst.VectorPositionsBinary = src.VectorPositionsBinary
+	dst.VectorOccupancy = src.VectorOccupancy
+	dst.ScalarField = src.ScalarField
+	dst.Min = src.Min
+	dst.Max = src.Max
+	// The capture normalizes its configuration against the current mesh
+	// (possible and chosen sizes, clamped region, slices). Publish it so the
+	// next capture and the POST validators start from the same values.
+	dst.previewMeshSize = src.previewMeshSize
+	dst.XPossibleSizes = src.XPossibleSizes
+	dst.YPossibleSizes = src.YPossibleSizes
+	dst.ZPossibleSizes = src.ZPossibleSizes
+	dst.XChosenSize = src.XChosenSize
+	dst.YChosenSize = src.YChosenSize
+	dst.ZChosenSize = src.ZChosenSize
+	dst.planeChosenSize = src.planeChosenSize
+	dst.sliceIndices = src.sliceIndices
+	dst.SliceIndex = src.SliceIndex
+	dst.Layer = src.Layer
+	dst.PlaneUChosenSize = src.PlaneUChosenSize
+	dst.PlaneVChosenSize = src.PlaneVChosenSize
+	dst.Region = src.Region
+	dst.AllLayers = src.AllLayers
+	dst.Quantity = src.Quantity
+	dst.Component = src.Component
+	dst.NComp = src.NComp
+	dst.Type = src.Type
+	if src.globalQuantities != nil {
+		dst.globalQuantities = src.globalQuantities
+	}
+	dst.Refresh = false
 }
 
 func sameVectorPositions(a, b []Vector3i) bool {
@@ -179,6 +323,7 @@ func (s *PreviewState) setVectorPayload(values []Vector3f, positions []Vector3i)
 	s.VectorPositionsBinary = s.cachedPositionsBinary
 	s.ScalarField = nil
 	s.DataPointsCount = len(values)
+	s.ServerDataPointsCount = len(values)
 }
 
 func (s *PreviewState) clearVectorPayload() {
@@ -285,19 +430,33 @@ func (s *PreviewState) previewBuffers(nComp int, size [3]int) (*data.Slice, *dat
 }
 
 func (s *PreviewState) Update() {
-	start := time.Now()
+	s.update(true)
+}
+
+// update keeps engine-owned capture on the solver thread, but does no global
+// WebSocket state locking. Periodic calls skip a fresh GPU snapshot while the
+// solver step and preview configuration have not changed.
+func (s *PreviewState) update(force bool) {
+	queuedAt := time.Now()
 	s.pendingScalar = nil
 	s.pendingCPU = nil
 	s.pendingOccupancy = nil
 
 	captureRequested := false
+	var entered time.Time
 	engine.InjectAndWait(func() {
+		entered = time.Now()
 		// The solver may have been busy when this capture was queued. Recheck
 		// demand on its CUDA-owning thread before evaluating any quantity.
 		if s.ws != nil && s.ws.previewConnections.activeCount() == 0 {
 			return
 		}
+		mesh := currentPreviewMesh()
+		if !force && !s.Refresh && s.Sequence > 0 && s.Step == engine.NSteps && samePreviewMesh(s.Mesh, mesh) {
+			return
+		}
 		captureRequested = true
+		s.Mesh = mesh
 		if !s.addPossibleDownscaleSizes() {
 			return
 		}
@@ -306,13 +465,14 @@ func (s *PreviewState) Update() {
 		s.Step = engine.NSteps
 		s.UpdateQuantityBuffer()
 	})
+	if !entered.IsZero() {
+		s.QueueMs = float64(entered.Sub(queuedAt).Microseconds()) / 1000
+		s.CaptureMs = float64(time.Since(entered).Microseconds()) / 1000
+	}
 	if !captureRequested {
 		return
 	}
-	s.CaptureMs = float64(time.Since(start).Microseconds()) / 1000
-	start = time.Now()
-	// The broadcaster holds stateMu through capture and processing. Reusable CPU
-	// buffers cannot be overwritten by another capture while processing them here.
+	start := time.Now()
 	if s.pendingCPU != nil {
 		s.processVectorSnapshot()
 	}
@@ -322,6 +482,26 @@ func (s *PreviewState) Update() {
 	s.ProcessMs = float64(time.Since(start).Microseconds()) / 1000
 	s.Sequence++
 	s.Timestamp = time.Now().UnixMilli()
+}
+
+func currentPreviewMesh() *MeshState {
+	size, cell, world, pbc := engine.MeshSnapshot()
+	return &MeshState{
+		Nx: size[0], Ny: size[1], Nz: size[2],
+		Dx: cell[0], Dy: cell[1], Dz: cell[2],
+		Tx: world[0], Ty: world[1], Tz: world[2],
+		PBCx: pbc[0], PBCy: pbc[1], PBCz: pbc[2],
+	}
+}
+
+func samePreviewMesh(a, b *MeshState) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Nx == b.Nx && a.Ny == b.Ny && a.Nz == b.Nz &&
+		a.Dx == b.Dx && a.Dy == b.Dy && a.Dz == b.Dz &&
+		a.Tx == b.Tx && a.Ty == b.Ty && a.Tz == b.Tz &&
+		a.PBCx == b.PBCx && a.PBCy == b.PBCy && a.PBCz == b.PBCz
 }
 
 type previewSizing struct {
@@ -711,6 +891,7 @@ func (s *PreviewState) UpdateScalarField(scalarField [][][]float32) {
 		s.ScalarField = nil
 		s.clearVectorPayload()
 		s.DataPointsCount = 0
+		s.ServerDataPointsCount = 0
 		return
 	}
 
@@ -719,6 +900,7 @@ func (s *PreviewState) UpdateScalarField(scalarField [][][]float32) {
 	s.ScalarField = valArray
 	s.clearVectorPayload()
 	s.DataPointsCount = len(valArray)
+	s.ServerDataPointsCount = len(valArray)
 }
 
 // Capture current geometry for every frame, including moving-window changes.
@@ -905,61 +1087,64 @@ func (s *PreviewState) validateComponent() {
 }
 
 func (s *PreviewState) postPreviewComponent(c echo.Context) error {
-	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	type Request struct {
-		Component string `msgpack:"component"`
+		RequestID string `json:"requestId"`
+		Component string `json:"component" msgpack:"component"`
+		AllLayers *bool  `json:"allLayers" msgpack:"allLayers"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	if req.Component != "x" && req.Component != "y" && req.Component != "z" && req.Component != "3D" && req.Component != "None" {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid component"})
 	}
 	s.Component = req.Component
 	s.validateComponent()
 	s.updatePreviewType()
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	if req.AllLayers != nil {
+		s.AllLayers = *req.AllLayers
+	}
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func (s *PreviewState) postPreviewQuantity(c echo.Context) error {
-	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	type Request struct {
-		Quantity string `msgpack:"quantity"`
+		RequestID string `json:"requestId"`
+		Quantity  string `json:"quantity" msgpack:"quantity"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	_, exists := engine.AvailableQuantities()[req.Quantity]
 	if !exists {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Quantity not found"})
 	}
 	s.Quantity = req.Quantity
 	s.validateComponent()
-	s.Refresh = true
 	s.updatePreviewType()
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func (s *PreviewState) postPreviewLayer(c echo.Context) error {
-	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	type Request struct {
-		Layer int `msgpack:"layer"`
+		RequestID string `json:"requestId"`
+		Layer     int    `json:"layer" msgpack:"layer"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 
 	axis := 2
 	if s.Type == "2D" {
@@ -974,36 +1159,38 @@ func (s *PreviewState) postPreviewLayer(c echo.Context) error {
 	} else {
 		s.Layer = req.Layer
 	}
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func (s *PreviewState) postPreviewMaxPoints(c echo.Context) error {
-	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	type Request struct {
-		MaxPoints int `msgpack:"maxPoints"`
+		RequestID string `json:"requestId"`
+		MaxPoints int    `json:"maxPoints" msgpack:"maxPoints"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	if req.MaxPoints < 8 || req.MaxPoints > previewHardLimit {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "MaxPoints must be between 8 and 1000000"})
 	}
 	s.MaxPoints = req.MaxPoints
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func (s *PreviewState) postPreviewRefresh(c echo.Context) error {
+	var req struct {
+		RequestID string `json:"requestId"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func containsInt(arr []int, target int) bool {
@@ -1018,6 +1205,12 @@ func containsInt(arr []int, target int) bool {
 // Resolve every axis against the current server mesh in one operation. Browser
 // metadata can lag after a Console mesh change or an All layers toggle.
 func (s *PreviewState) postFullResolution(c echo.Context) error {
+	var req struct {
+		RequestID string `json:"requestId"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	if !s.addPossibleDownscaleSizes() {
@@ -1028,113 +1221,109 @@ func (s *PreviewState) postFullResolution(c echo.Context) error {
 	s.ZChosenSize = max(s.previewMeshSize[2], 1)
 	s.planeChosenSize = s.previewMeshSize
 	s.refreshPlaneMetadata()
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func (s *PreviewState) postXChosenSize(c echo.Context) error {
-	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	type Request struct {
-		XChosenSize int `msgpack:"xChosenSize"`
+		RequestID   string `json:"requestId"`
+		XChosenSize int    `json:"xChosenSize" msgpack:"xChosenSize"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	if !containsInt(s.XPossibleSizes, req.XChosenSize) {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid xChosenSize"})
 	}
 	s.XChosenSize = req.XChosenSize
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func (s *PreviewState) postYChosenSize(c echo.Context) error {
-	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	type Request struct {
-		YChosenSize int `msgpack:"yChosenSize"`
+		RequestID   string `json:"requestId"`
+		YChosenSize int    `json:"yChosenSize" msgpack:"yChosenSize"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	if !containsInt(s.YPossibleSizes, req.YChosenSize) {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid yChosenSize"})
 	}
 	s.YChosenSize = req.YChosenSize
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func (s *PreviewState) postZChosenSize(c echo.Context) error {
+	var req struct {
+		RequestID   string `json:"requestId"`
+		ZChosenSize int    `json:"zChosenSize" msgpack:"zChosenSize"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid zChosenSize"})
+	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
-	var req struct {
-		ZChosenSize int `msgpack:"zChosenSize"`
-	}
-	if err := c.Bind(&req); err != nil || !containsInt(s.ZPossibleSizes, req.ZChosenSize) {
+	if !containsInt(s.ZPossibleSizes, req.ZChosenSize) {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid zChosenSize"})
 	}
 	s.ZChosenSize = req.ZChosenSize
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func (s *PreviewState) postAllLayers(c echo.Context) error {
-	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	type Request struct {
-		AllLayers bool `msgpack:"allLayers"`
+		RequestID string `json:"requestId"`
+		AllLayers bool   `json:"allLayers" msgpack:"allLayers"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	s.AllLayers = req.AllLayers
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func (s *PreviewState) postAutoScaleEnabled(c echo.Context) error {
-	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	type Request struct {
-		AutoScaleEnabled bool `msgpack:"autoScaleEnabled"`
+		RequestID        string `json:"requestId"`
+		AutoScaleEnabled bool   `json:"autoScaleEnabled" msgpack:"autoScaleEnabled"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	s.AutoScaleEnabled = req.AutoScaleEnabled
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func (s *PreviewState) postPreviewScale(c echo.Context) error {
 	var req struct {
-		Scale float64 `json:"scale"`
+		RequestID string  `json:"requestId"`
+		Scale     float64 `json:"scale"`
 	}
 	if err := c.Bind(&req); err != nil || req.Scale < 0 || math.IsNaN(req.Scale) || math.IsInf(req.Scale, 0) {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Scale must be finite and nonnegative (0 = adaptive)"})
 	}
 	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	s.FixedScale = req.Scale
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	ack := s.ws.broadcastPreviewStateLocked(req.RequestID)
+	s.ws.stateMu.Unlock()
+	return c.JSON(http.StatusOK, ack)
 }
 
 // Include practical sizes even for prime dimensions; exact coverage is provided

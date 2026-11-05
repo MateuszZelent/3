@@ -162,6 +162,10 @@ a {
 	min-width: 0;
 }
 
+.workspace [hidden] {
+	display: none !important;
+}
+
 .workspace-column {
 	display: flex;
 	flex-direction: column;
@@ -192,6 +196,12 @@ a {
 
 	.zone-metrics {
 		grid-column: 1;
+	}
+}
+
+@media (max-width: 1023px) {
+	.workspace-column {
+		display: contents;
 	}
 }
 

@@ -138,3 +138,20 @@ it('does not initialize a renderer after its surface unmounts during a lazy impo
 	await flush();
 	expect(preview3D).not.toHaveBeenCalled();
 });
+
+it('renders self-contained frame geometry before the separate mesh channel arrives', async () => {
+	setPreviewSurface(surface());
+	parsePreviewMsgpack(
+		buffer({
+			type: '3D',
+			nComp: 3,
+			mesh,
+			vectorCount: 1,
+			topologyRevision: 0,
+			vectorFieldValues: [{ x: 1, y: 0, z: 0 }],
+			vectorFieldPositions: [{ x: 0, y: 0, z: 0 }]
+		})
+	);
+	await flush();
+	expect(preview3D).toHaveBeenCalledOnce();
+});

@@ -1,13 +1,13 @@
 import { post } from '$api/post';
 
 export function postFftComponent(component: number) {
-	post('fft/component', { component });
+	return post('fft/component', { component });
 }
 
 export function postFftClear() {
-	post('fft/clear', {});
+	return post('fft/clear', {});
 }
 
 export function postFftMaxFrequency(maxFreqGHz: number) {
-	post('fft/max-frequency', { maxFreqGHz });
+	return post('fft/max-frequency', { maxFreqGHz });
 }

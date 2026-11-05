@@ -1,45 +1,73 @@
-import { get } from "svelte/store";
-import { post } from "$api/post";
-import { solverState } from "$api/incoming/solver";
+import { derived, get, writable } from 'svelte/store';
+import { post, type PostResult } from '$api/post';
+import { solverState } from '$api/incoming/solver';
+import { setAlert } from '$lib/alerts/alert';
+import { postAcceptedCommand, isEngineOperationActive } from '../acceptedCommand';
+
+export const solverCommandPending = writable(false);
+export const solverOperationBusy = derived(
+	[solverState, solverCommandPending],
+	([state, pending]) => pending || isEngineOperationActive(state)
+);
+
+async function submitSolverCommand(endpoint: string, data: object): Promise<PostResult> {
+	if (get(solverOperationBusy)) {
+		const error = 'A solver operation is already pending. Use Break to stop it.';
+		setAlert(error);
+		return { ok: false, error };
+	}
+	solverCommandPending.set(true);
+	try {
+		const result = await postAcceptedCommand(endpoint, data);
+		if (!result.ok) return result;
+		const operationId = result.data.operationId;
+		solverState.update((state) =>
+			(state.operationId ?? 0) >= operationId
+				? state
+				: { ...state, operationId, operationStatus: 'pending', operationError: '' }
+		);
+		return result;
+	} finally {
+		solverCommandPending.set(false);
+	}
+}
 
 export function postSolverType(type: string) {
-    post('solver/type', { type });
+	return post('solver/type', { type });
 }
 
 export function postRun(runtime: string) {
-    post('solver/run', { runtime });
+	return submitSolverCommand('solver/run', { runtime });
 }
 
 export function postSteps(steps: string) {
-    post('solver/steps', { steps });
+	return submitSolverCommand('solver/steps', { steps });
 }
 
 export function postRelax() {
-    post('solver/relax', {});
+	return submitSolverCommand('solver/relax', {});
 }
 
 export function postMinimize() {
-    post('solver/minimize', {});
+	return submitSolverCommand('solver/minimize', {});
 }
 
 export function postBreak() {
-    post('solver/break', {});
+	return post('solver/break', {});
 }
 
-export function postFixdt() {
-    post('solver/fixdt', { fixdt: get(solverState).fixdt });
+export function postFixdt(fixdt = get(solverState).fixdt) {
+	return post('solver/fixdt', { fixdt });
 }
 
-export function postMindt() {
-    post('solver/mindt', { mindt: get(solverState).mindt });
+export function postMindt(mindt = get(solverState).mindt) {
+	return post('solver/mindt', { mindt });
 }
 
-export function postMaxdt() {
-    post('solver/maxdt', { maxdt: get(solverState).maxdt });
+export function postMaxdt(maxdt = get(solverState).maxdt) {
+	return post('solver/maxdt', { maxdt });
 }
 
-export function postMaxerr() {
-    post('solver/maxerr', { maxerr: get(solverState).maxerr });
+export function postMaxerr(maxerr = get(solverState).maxerr) {
+	return post('solver/maxerr', { maxerr });
 }
-
-

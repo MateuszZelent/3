@@ -13,13 +13,14 @@ import (
 // Bounds are source-cell edges: Start inclusive, End exclusive. Global resolution
 // settings remain untouched, allowing return to the original full-domain view.
 type PreviewRegion struct {
-	Enabled   bool   `json:"enabled" msgpack:"enabled"`
-	Start     [3]int `json:"start" msgpack:"start"`
-	End       [3]int `json:"end" msgpack:"end"`
-	Mode      string `json:"mode" msgpack:"mode"`
-	Samples   [3]int `json:"samples" msgpack:"samples"`
-	MaxPoints int    `json:"maxPoints" msgpack:"maxPoints"`
-	RequestID string `json:"requestId" msgpack:"requestId"`
+	Enabled        bool   `json:"enabled" msgpack:"enabled"`
+	Start          [3]int `json:"start" msgpack:"start"`
+	End            [3]int `json:"end" msgpack:"end"`
+	Mode           string `json:"mode" msgpack:"mode"`
+	Samples        [3]int `json:"samples" msgpack:"samples"`
+	MaxPoints      int    `json:"maxPoints" msgpack:"maxPoints"`
+	RequestID      string `json:"requestId" msgpack:"requestId"`
+	ConfigRevision uint64 `json:"configRevision" msgpack:"configRevision"`
 }
 
 func (r PreviewRegion) size() (s [3]int) {
@@ -60,12 +61,12 @@ func (r PreviewRegion) requested() (s [3]int) {
 	return
 }
 func (s *PreviewState) postPreviewRegion(c echo.Context) error {
-	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	var r PreviewRegion
 	if err := c.Bind(&r); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid region payload"})
 	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	if err := r.validate(engine.MeshSnapshotSize()); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": err.Error()})
 	}
@@ -81,7 +82,9 @@ func (s *PreviewState) postPreviewRegion(c echo.Context) error {
 	}
 	// Capture changes atomically; the response and websocket frame acknowledge the
 	// same request ID, so a slow response cannot overwrite a newer slider draft.
-	s.ws.broadcastPreviewStateLocked()
+	ack := s.ws.broadcastPreviewStateLocked(r.RequestID)
+	r.ConfigRevision = ack.ConfigRevision
+	s.Region = r
 	return c.JSON(http.StatusOK, s.Region)
 }
 func (s *PreviewState) updateRegion(src *data.Slice, components int) {

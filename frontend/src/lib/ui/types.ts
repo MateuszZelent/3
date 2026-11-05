@@ -1,11 +1,5 @@
 export type PanelId =
-	| 'preview'
-	| 'tableplot'
-	| 'solver'
-	| 'parameters'
-	| 'mesh'
-	| 'console'
-	| 'metrics';
+	'preview' | 'tableplot' | 'solver' | 'parameters' | 'mesh' | 'console' | 'metrics';
 
 export type WorkspaceMode = 'wide' | 'compact' | 'mobile';
 export type CompactTab = 'visualization' | 'controls' | 'inspectors' | 'diagnostics';

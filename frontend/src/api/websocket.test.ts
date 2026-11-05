@@ -2,7 +2,7 @@ import { encode } from '@msgpack/msgpack';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
-vi.stubGlobal('requestAnimationFrame', (_callback: FrameRequestCallback) => 1);
+vi.stubGlobal('requestAnimationFrame', () => 1);
 
 vi.mock('$lib/preview/preview3D', () => ({
 	preview3D: vi.fn(),

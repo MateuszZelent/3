@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import type { Component } from 'svelte';
 
 	import { headerState } from '$api/incoming/header';
 	import { connected, initializeWebSocket } from '$api/websocket';
-	import { postBreak, postRun } from '$api/outgoing/solver';
+	import { postBreak, postRun, solverOperationBusy } from '$api/outgoing/solver';
 	import Alert from '$lib/alerts/Alert.svelte';
 	import Console from '$lib/Console.svelte';
 	import DemagProgress from '$lib/DemagProgress.svelte';
@@ -14,7 +14,7 @@
 	import Parameters from '$lib/Parameters.svelte';
 	import Solver from '$lib/Solver.svelte';
 	import Button from '$lib/ui/Button.svelte';
-	import { panelPreferences, setActiveCompactTab } from '$lib/ui/preferences';
+	import { panelPreferences, setActiveCompactTab, workspaceModeState } from '$lib/ui/preferences';
 	import type { CompactTab, WorkspaceMode } from '$lib/ui/types';
 
 	import '../app.css';
@@ -25,6 +25,7 @@
 	let TablePlotComponent = $state<Component | null>(null);
 	let previewLoadError = $state('');
 	let tablePlotLoadError = $state('');
+	let disconnectWebSockets: (() => void) | undefined;
 
 	const compactTabs: { id: CompactTab; label: string }[] = [
 		{ id: 'visualization', label: 'Visuals' },
@@ -34,38 +35,40 @@
 	];
 
 	function syncWorkspaceMode() {
-		if (window.innerWidth < 768) {
-			workspaceMode = 'mobile';
-			return;
-		}
-
-		if (window.innerWidth < 1024) {
-			workspaceMode = 'compact';
-			return;
-		}
-
-		workspaceMode = 'wide';
+		workspaceMode =
+			window.innerWidth < 768 ? 'mobile' : window.innerWidth < 1024 ? 'compact' : 'wide';
+		workspaceModeState.set(workspaceMode);
 	}
 
-	function requestPreviewMode(mode: 'inline' | 'popout' | 'fullscreen') {
+	async function requestPreviewMode(mode: 'inline' | 'popout' | 'fullscreen') {
+		if (workspaceMode !== 'wide') {
+			setActiveCompactTab('visualization');
+			await tick();
+		}
 		window.dispatchEvent(new CustomEvent('amumax:preview-mode', { detail: mode }));
 	}
 
-	function isTypingTarget(target: EventTarget | null) {
-		const element = target as HTMLElement | null;
-		if (!element) {
-			return false;
-		}
-		return ['INPUT', 'TEXTAREA', 'SELECT'].includes(element.tagName) || element.isContentEditable;
+	function isInteractiveTarget(target: EventTarget | null) {
+		return (
+			target instanceof Element &&
+			!!target.closest(
+				'input, textarea, select, button, a[href], summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="slider"], [role="tab"], [role="textbox"], [role="checkbox"], [role="combobox"], [role="menuitem"], [role="dialog"], [aria-modal="true"]'
+			)
+		);
 	}
 
 	function handleShortcuts(event: KeyboardEvent) {
-		if (showShortcuts && event.key === 'Escape') {
-			showShortcuts = false;
+		if (event.defaultPrevented || event.repeat || event.metaKey || event.ctrlKey || event.altKey)
+			return;
+		if (showShortcuts) {
+			if (event.key === 'Escape') {
+				event.preventDefault();
+				showShortcuts = false;
+			}
 			return;
 		}
 
-		if (isTypingTarget(event.target)) {
+		if (isInteractiveTarget(event.target)) {
 			return;
 		}
 
@@ -84,8 +87,9 @@
 		}
 
 		if (event.code === 'Space') {
+			if (event.shiftKey) return;
 			event.preventDefault();
-			if ($headerState.status === 'running') {
+			if ($headerState.status === 'running' || $solverOperationBusy) {
 				postBreak();
 			} else {
 				postRun('1e-9');
@@ -100,12 +104,12 @@
 
 		if (event.key.toLowerCase() === 'f') {
 			event.preventDefault();
-			requestPreviewMode('fullscreen');
+			void requestPreviewMode('fullscreen');
 		}
 	}
 
 	onMount(() => {
-		initializeWebSocket();
+		disconnectWebSockets = initializeWebSocket();
 		syncWorkspaceMode();
 		window.addEventListener('resize', syncWorkspaceMode);
 		window.addEventListener('keydown', handleShortcuts);
@@ -128,6 +132,7 @@
 	});
 
 	onDestroy(() => {
+		disconnectWebSockets?.();
 		window.removeEventListener('resize', syncWorkspaceMode);
 		window.removeEventListener('keydown', handleShortcuts);
 	});
@@ -142,7 +147,7 @@
 
 	{#if workspaceMode !== 'wide'}
 		<div class="workspace-compact-tabs">
-			{#each compactTabs as tab}
+			{#each compactTabs as tab (tab.id)}
 				<Button
 					size="sm"
 					variant={$panelPreferences.activeCompactTab === tab.id ? 'solid' : 'outline'}
@@ -160,7 +165,10 @@
 
 	<div class="workspace">
 		<div class="workspace-column">
-			<div class="zone-viz">
+			<div
+				class="zone-viz"
+				hidden={workspaceMode !== 'wide' && $panelPreferences.activeCompactTab !== 'visualization'}
+			>
 				{#if PreviewComponent}
 					<PreviewComponent />
 				{:else if previewLoadError}
@@ -171,12 +179,18 @@
 					<div class="workspace-loading-card">Loading preview surface…</div>
 				{/if}
 			</div>
-			<div class="zone-solver">
+			<div
+				class="zone-solver"
+				hidden={workspaceMode !== 'wide' && $panelPreferences.activeCompactTab !== 'controls'}
+			>
 				<Solver />
 			</div>
 		</div>
 		<div class="workspace-column">
-			<div class="zone-table">
+			<div
+				class="zone-table"
+				hidden={workspaceMode !== 'wide' && $panelPreferences.activeCompactTab !== 'visualization'}
+			>
 				{#if TablePlotComponent}
 					<TablePlotComponent />
 				{:else if tablePlotLoadError}
@@ -187,19 +201,31 @@
 					<div class="workspace-loading-card">Loading analytical plot…</div>
 				{/if}
 			</div>
-			<div class="zone-console">
+			<div
+				class="zone-console"
+				hidden={workspaceMode !== 'wide' && $panelPreferences.activeCompactTab !== 'diagnostics'}
+			>
 				<Console />
 			</div>
-			<div class="zone-mesh">
+			<div
+				class="zone-mesh"
+				hidden={workspaceMode !== 'wide' && $panelPreferences.activeCompactTab !== 'inspectors'}
+			>
 				<Mesh />
 			</div>
-			<div class="zone-params">
+			<div
+				class="zone-params"
+				hidden={workspaceMode !== 'wide' && $panelPreferences.activeCompactTab !== 'inspectors'}
+			>
 				<Parameters />
 			</div>
 		</div>
 
 		<!-- Diagnostics spans both independent columns. -->
-		<div class="zone-metrics">
+		<div
+			class="zone-metrics"
+			hidden={workspaceMode !== 'wide' && $panelPreferences.activeCompactTab !== 'diagnostics'}
+		>
 			<Metrics />
 		</div>
 	</div>

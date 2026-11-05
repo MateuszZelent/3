@@ -2,6 +2,7 @@ package webui
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -11,32 +12,36 @@ import (
 )
 
 type SolverState struct {
-	ws         *WebSocketManager
-	Type       string   `msgpack:"type"`
-	Steps      *int     `msgpack:"steps"`
-	Time       *float64 `msgpack:"time"`
-	Dt         float64  `msgpack:"dt"`
-	ErrPerStep *float64 `msgpack:"errPerStep"`
-	MaxTorque  *float64 `msgpack:"maxTorque"`
-	Fixdt      *float64 `msgpack:"fixdt"`
-	Mindt      *float64 `msgpack:"mindt"`
-	Maxdt      *float64 `msgpack:"maxdt"`
-	Maxerr     *float64 `msgpack:"maxerr"`
+	ws              *WebSocketManager
+	Type            string   `msgpack:"type"`
+	Steps           *int     `msgpack:"steps"`
+	Time            *float64 `msgpack:"time"`
+	Dt              float64  `msgpack:"dt"`
+	ErrPerStep      *float64 `msgpack:"errPerStep"`
+	MaxTorque       *float64 `msgpack:"maxTorque"`
+	Fixdt           *float64 `msgpack:"fixdt"`
+	Mindt           *float64 `msgpack:"mindt"`
+	Maxdt           *float64 `msgpack:"maxdt"`
+	Maxerr          *float64 `msgpack:"maxerr"`
+	OperationID     uint64   `msgpack:"operationId"`
+	OperationStatus string   `msgpack:"operationStatus"`
+	OperationError  string   `msgpack:"operationError"`
 }
 
 func initSolverAPI(e *echo.Group, ws *WebSocketManager) *SolverState {
 	solverState := SolverState{
-		ws:         ws,
-		Type:       getSolverName(engine.SolverType()),
-		Steps:      &engine.NSteps,
-		Time:       &engine.Time,
-		Dt:         engine.CurrentDt(),
-		ErrPerStep: &engine.LastErr,
-		MaxTorque:  &engine.LastTorque,
-		Fixdt:      &engine.FixDt,
-		Mindt:      &engine.MinDt,
-		Maxdt:      &engine.MaxDt,
-		Maxerr:     &engine.MaxErr,
+		ws:              ws,
+		Type:            getSolverName(engine.SolverType()),
+		Steps:           &engine.NSteps,
+		Time:            &engine.Time,
+		Dt:              engine.CurrentDt(),
+		ErrPerStep:      &engine.LastErr,
+		MaxTorque:       &engine.LastTorque,
+		Fixdt:           &engine.FixDt,
+		Mindt:           &engine.MinDt,
+		Maxdt:           &engine.MaxDt,
+		Maxerr:          &engine.MaxErr,
+		OperationStatus: "idle",
 	}
 
 	e.POST("/api/solver/type", solverState.postSolverType)
@@ -111,10 +116,11 @@ func (s SolverState) postSolverRun(c echo.Context) error {
 			"error": "Invalid request payload: " + err.Error(),
 		})
 	}
-	engine.Break()
-	engine.InjectAndWait(func() { engine.EvalTryRecover("Run(" + req.Runtime + ")") })
-	s.ws.broadcastEngineStateWithoutPreview()
-	return c.JSON(http.StatusOK, "")
+	duration, err := strconv.ParseFloat(req.Runtime, 64)
+	if err != nil || math.IsNaN(duration) || math.IsInf(duration, 0) || duration < 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Runtime must be a finite, nonnegative number"})
+	}
+	return s.acceptLongOperation(c, fmt.Sprintf("Run(%.17g)", duration))
 }
 
 func (s SolverState) postSolverSteps(c echo.Context) error {
@@ -126,31 +132,51 @@ func (s SolverState) postSolverSteps(c echo.Context) error {
 	if err := c.Bind(req); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
-
-	engine.Break()
-	engine.InjectAndWait(func() { engine.EvalTryRecover("Steps(" + req.Steps + ")") })
-	s.ws.broadcastEngineStateWithoutPreview()
-	return c.JSON(http.StatusOK, "")
+	steps, err := strconv.Atoi(req.Steps)
+	if err != nil || steps < 0 {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Steps must be a nonnegative integer"})
+	}
+	return s.acceptLongOperation(c, fmt.Sprintf("Steps(%d)", steps))
 }
 
 func (s SolverState) postSolverRelax(c echo.Context) error {
-	engine.Break()
-	engine.InjectAndWait(func() { engine.EvalTryRecover("Relax()") })
-	s.ws.broadcastEngineStateWithoutPreview()
-	return c.JSON(http.StatusOK, "")
+	return s.acceptLongOperation(c, "Relax()")
 }
 
 func (s SolverState) postSolverMinimize(c echo.Context) error {
-	engine.Break()
-	engine.InjectAndWait(func() { engine.EvalTryRecover("Minimize()") })
+	return s.acceptLongOperation(c, "Minimize()")
+}
+
+func (s SolverState) postSolverBreak(c echo.Context) error {
+	if err := s.ws.breakSolver(); err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+	}
 	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, "")
 }
 
-func (s SolverState) postSolverBreak(c echo.Context) error {
-	engine.Break()
-	s.ws.broadcastEngineStateWithoutPreview()
-	return c.JSON(http.StatusOK, "")
+func (s SolverState) acceptLongOperation(c echo.Context, command string) error {
+	ack, accepted := s.ws.reserveSolverOperation(command, true)
+	return writeOperationAck(c, ack, accepted)
+}
+
+func (s SolverState) acceptConsoleOperation(c echo.Context, command string) error {
+	ack, accepted := s.ws.reserveConsoleOperation(command)
+	return writeOperationAck(c, ack, accepted)
+}
+
+func writeOperationAck(c echo.Context, ack solverOperationAck, accepted bool) error {
+	if !accepted {
+		if ack.OperationID != 0 {
+			return c.JSON(http.StatusConflict, echo.Map{
+				"error":       "An operation in this lane is already pending or running",
+				"operationId": ack.OperationID,
+				"status":      ack.Status,
+			})
+		}
+		return c.JSON(http.StatusServiceUnavailable, echo.Map{"error": "Operation queue is unavailable"})
+	}
+	return c.JSON(http.StatusAccepted, ack)
 }
 
 func (s SolverState) postSolverFixDt(c echo.Context) error {

@@ -44,6 +44,7 @@ jobs:
           npm install --global --ignore-scripts npm@12.2.1
           npm ci --ignore-scripts
           npm audit --audit-level=low
+          npm run lint
           npm run check
           npm run test:unit
           npm run build
@@ -53,7 +54,7 @@ jobs:
         run: |
           npx playwright install --with-deps chromium --only-shell
           npm run test:production
-          npx playwright test tests/preview-volume.spec.ts --project=chromium
+          npm run test:e2e -- --project=chromium --workers=1
 
       - name: Embed frontend in the web UI
         run: |

@@ -73,16 +73,17 @@ func (s *PreviewState) updatePlaneScalar(input *data.Slice) {
 // Atomically configure the plane, reduction and slice. Keep the last slice of
 // each axis when switching planes; a mesh change clamps them before capture.
 func (s *PreviewState) postPreviewSection(c echo.Context) error {
-	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	var req struct {
-		Plane      string `msgpack:"plane"`
-		Mode       string `msgpack:"mode"`
-		SliceIndex *int   `msgpack:"sliceIndex"`
+		RequestID  string `json:"requestId"`
+		Plane      string `json:"plane" msgpack:"plane"`
+		Mode       string `json:"mode" msgpack:"mode"`
+		SliceIndex *int   `json:"sliceIndex" msgpack:"sliceIndex"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	if !s.addPossibleDownscaleSizes() {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Mesh is not initialized"})
 	}
@@ -105,21 +106,20 @@ func (s *PreviewState) postPreviewSection(c echo.Context) error {
 		s.AllLayers = req.Mode == "average"
 	}
 	s.refreshPlaneMetadata()
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
 func (s *PreviewState) postPlaneResolution(c echo.Context) error {
-	s.ws.stateMu.Lock()
-	defer s.ws.stateMu.Unlock()
 	var req struct {
-		USize *int `msgpack:"uSize"`
-		VSize *int `msgpack:"vSize"`
+		RequestID string `json:"requestId"`
+		USize     *int   `json:"uSize" msgpack:"uSize"`
+		VSize     *int   `json:"vSize" msgpack:"vSize"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	s.ws.stateMu.Lock()
+	defer s.ws.stateMu.Unlock()
 	if !s.addPossibleDownscaleSizes() {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Mesh is not initialized"})
 	}
@@ -135,7 +135,5 @@ func (s *PreviewState) postPlaneResolution(c echo.Context) error {
 		s.planeChosenSize[v] = *req.VSize
 	}
 	s.refreshPlaneMetadata()
-	s.Refresh = true
-	s.ws.broadcastPreviewStateLocked()
-	return c.JSON(http.StatusOK, nil)
+	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }

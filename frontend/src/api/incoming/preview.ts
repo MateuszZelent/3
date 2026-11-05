@@ -1,4 +1,5 @@
 import type { PreviewRegion } from '$lib/preview/preview3DRegion';
+import type { Mesh } from './mesh';
 import { writable } from 'svelte/store';
 
 export type VectorField = Float32Array;
@@ -7,9 +8,12 @@ export type ScalarField = Array<Array<number>>;
 
 export interface Preview {
 	region?: PreviewRegion;
+	mesh?: Mesh;
 	regionActive?: boolean;
 	transportSampling?: number;
+	serverDataPointsCount?: number;
 	serverVectorCount?: number;
+	configRevision?: number;
 	sequence?: number;
 	step?: number;
 	timestamp?: number;

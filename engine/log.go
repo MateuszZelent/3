@@ -2,17 +2,26 @@ package engine
 
 import (
 	"fmt"
-	"github.com/mumax/3/httpfs"
 	"io"
 	"os"
+	"strings"
 	"sync"
+	"unicode/utf8"
+
+	"github.com/mumax/3/httpfs"
+)
+
+const (
+	consoleHistoryLimit            = 256 * 1024
+	consoleHistoryTruncationMarker = "// [console history truncated]"
 )
 
 var (
-	logMu     sync.Mutex
-	logClosed bool
-	hist      string         // console history for GUI
-	logfile   io.WriteCloser // saves history of input commands +  output
+	logMu        sync.Mutex
+	logClosed    bool
+	hist         string         // bounded console history for GUI
+	logBootstrap []string       // complete GUI-formatted output accumulated before log file creation
+	logfile      io.WriteCloser // saves history of input commands +  output
 )
 
 // Special error that is not fatal when paniced on and called from GUI
@@ -73,20 +82,47 @@ func initLog() {
 		panic(err)
 	}
 	logClosed = false
-	_, err = fmt.Fprintln(logfile, hist)
+	_, err = fmt.Fprintln(logfile, strings.Join(logBootstrap, "\n"))
 	CheckRecoverable(err)
 	CheckRecoverable(httpfs.Sync(logfile))
+	logBootstrap = nil
 }
 
 func log2GUI(msg string) {
+	bootstrapMessage := msg
+	if len(bootstrapMessage) > 1000 {
+		bootstrapMessage = bootstrapMessage[:1000-len("...")] + "..."
+	}
+	if logfile == nil && !logClosed {
+		logBootstrap = append(logBootstrap, bootstrapMessage)
+	}
+	msg = strings.ToValidUTF8(msg, "\uFFFD")
 	if len(msg) > 1000 {
-		msg = msg[:1000-len("...")] + "..."
+		cut := 1000 - len("...")
+		for cut > 0 && !utf8.RuneStart(msg[cut]) {
+			cut--
+		}
+		msg = msg[:cut] + "..."
 	}
-	if hist != "" { // prepend newline
-		hist += "\n"
-	}
-	hist += msg
+	hist = appendConsoleHistory(hist, msg)
 	// TODO: push to web ?
+}
+
+func appendConsoleHistory(history, msg string) string {
+	if history != "" {
+		history += "\n"
+	}
+	history += msg
+	if len(history) <= consoleHistoryLimit {
+		return history
+	}
+	marker := consoleHistoryTruncationMarker + "\n"
+	remaining := consoleHistoryLimit - len(marker)
+	tail := history[len(history)-remaining:]
+	for len(tail) > 0 && !utf8.RuneStart(tail[0]) {
+		tail = tail[1:]
+	}
+	return marker + tail
 }
 
 // like fmt.Sprint but with spaces between args

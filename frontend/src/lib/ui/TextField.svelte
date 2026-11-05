@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { setAlert } from '$lib/alerts/alert';
 	type Props = {
 		label?: string;
 		value?: string | number;
@@ -15,7 +16,7 @@
 		inputMode?: 'none' | 'text' | 'tel' | 'url' | 'email' | 'numeric' | 'decimal' | 'search';
 		name?: string;
 		oninput?: (event: Event) => void;
-		onchange?: (event: Event) => void;
+		onchange?: (event: Event) => unknown;
 		onkeydown?: (event: KeyboardEvent) => void;
 	};
 
@@ -38,6 +39,25 @@
 		onchange,
 		onkeydown
 	}: Props = $props();
+	let pending = $state(false);
+	async function handleChange(event: Event) {
+		const control = event.currentTarget as HTMLInputElement;
+		if (pending || disabled || readonly) {
+			control.value = String(value);
+			return;
+		}
+		pending = true;
+		try {
+			const result = await onchange?.(event);
+			if (result && typeof result === 'object' && 'ok' in result && result.ok === false)
+				control.value = String(value);
+		} catch (error) {
+			control.value = String(value);
+			setAlert(error instanceof Error ? error.message : 'Unable to apply value');
+		} finally {
+			pending = false;
+		}
+	}
 </script>
 
 <label class="ui-textfield">
@@ -59,12 +79,12 @@
 			{max}
 			{step}
 			{readonly}
-			{disabled}
+			disabled={disabled || pending}
 			inputmode={inputMode}
 			{value}
 			data-mono={mono}
 			{oninput}
-			{onchange}
+			onchange={handleChange}
 			{onkeydown}
 		/>
 		{#if unit}

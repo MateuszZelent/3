@@ -6,14 +6,15 @@
 		count: number;
 		range: WindowRange;
 		onchange: (range: WindowRange) => void;
+		disabled?: boolean;
 	};
-	let { axis, extent, count, range, onchange }: Props = $props();
+	let { axis, extent, count, range, onchange, disabled = false }: Props = $props();
 	const step = $derived(1 / Math.max(count, 1));
 	const distance = (fraction: number) => Number((fraction * extent).toPrecision(6));
 	let track: HTMLDivElement;
 	let drag: { x: number; range: WindowRange } | null = null;
 	function move(event: PointerEvent) {
-		if (!drag) return;
+		if (!drag || disabled) return;
 		onchange(moveWindow(drag.range, (event.clientX - drag.x) / track.clientWidth));
 	}
 </script>
@@ -28,7 +29,8 @@
 		<div
 			class="window-range__selection"
 			role="slider"
-			tabindex="0"
+			tabindex={disabled ? -1 : 0}
+			aria-disabled={disabled}
 			aria-label={`Move ${axis.toUpperCase()} window`}
 			aria-valuemin={0}
 			aria-valuemax={100}
@@ -36,7 +38,7 @@
 			aria-valuetext={`${distance(range[0])} to ${distance(range[1])} nanometres`}
 			style={`left:${range[0] * 100}%;width:${(range[1] - range[0]) * 100}%`}
 			onpointerdown={(e) => {
-				if (e.button !== 0) return;
+				if (disabled || e.button !== 0) return;
 				drag = { x: e.clientX, range: [...range] };
 				e.currentTarget.setPointerCapture(e.pointerId);
 				e.preventDefault();
@@ -52,7 +54,7 @@
 				drag = null;
 			}}
 			onkeydown={(e) => {
-				if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+				if (!disabled && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
 					e.preventDefault();
 					onchange(
 						moveWindow(range, (e.key === 'ArrowLeft' ? -1 : 1) * step * (e.shiftKey ? 10 : 1))
@@ -70,7 +72,8 @@
 			max="1"
 			{step}
 			value={range[0]}
-			disabled={count < 2}
+			style:z-index={range[0] > 0.5 ? 2 : 1}
+			disabled={disabled || count < 2}
 			oninput={(e) =>
 				onchange([Math.min(Number(e.currentTarget.value), range[1] - step), range[1]])}
 		/>
@@ -82,7 +85,8 @@
 			max="1"
 			{step}
 			value={range[1]}
-			disabled={count < 2}
+			style:z-index={range[0] > 0.5 ? 1 : 2}
+			disabled={disabled || count < 2}
 			oninput={(e) =>
 				onchange([range[0], Math.max(Number(e.currentTarget.value), range[0] + step)])}
 		/>

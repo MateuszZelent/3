@@ -1,8 +1,8 @@
 import { getColorScale } from './fieldColorScale';
-import { previewState } from '$api/incoming/preview';
+import { previewState, type Preview } from '$api/incoming/preview';
 import { get, writable } from 'svelte/store';
 import { preview2DWindow, clampWindow, type WindowRange } from './preview2DWindow';
-import { meshState } from '$api/incoming/mesh';
+import { meshState, type Mesh } from '$api/incoming/mesh';
 import { disposePreview3D } from './preview3D';
 import {
 	previewSampleCoordinateNm,
@@ -16,28 +16,45 @@ import {
 	initECharts,
 	type ECharts
 } from '$lib/theme/echarts-theme';
+import { buildScalarHeatmapRaster, type ScalarHeatmapRaster } from './scalarHeatmapRaster';
+import { readPreviewStorage, writePreviewStorage } from './safePreviewStorage';
+import { previewFrameMesh } from './previewFrameMesh';
+import { use as registerEChartsComponents } from 'echarts/core';
+import { GraphicComponent } from 'echarts/components';
+import type {
+	ElementEvent,
+	GraphicComponentOption,
+	TooltipComponentFormatterCallbackParams,
+	VisualMapComponentOption
+} from 'echarts';
+
+registerEChartsComponents([GraphicComponent]);
+
+type PreviewChartOption = Parameters<ECharts['setOption']>[0] & {
+	graphic?: GraphicComponentOption | GraphicComponentOption[];
+};
 
 let chartInstance: ECharts | undefined;
 let resizeObserver: ResizeObserver | null = null;
+let scalarRaster: ScalarHeatmapRaster | null = null;
+let rasterPointerHandler: ((event: ElementEvent) => void) | null = null;
+let rasterGlobalOutHandler: (() => void) | null = null;
+let rasterFrameId: number | null = null;
+let rasterTooltip: HTMLDivElement | null = null;
+let observedContainer: HTMLElement | null = null;
+let lastChartWidth = 0;
+let lastChartHeight = 0;
 
 const AUTOSCALE_KEY = 'mumax:preview2d-autoscale';
 function loadAutoscale() {
-	try {
-		return typeof localStorage === 'undefined' || localStorage.getItem(AUTOSCALE_KEY) !== 'false';
-	} catch {
-		return true;
-	}
+	return readPreviewStorage(AUTOSCALE_KEY) !== 'false';
 }
 export const preview2DAutoscale = writable(loadAutoscale());
 let windowGeometry = '';
 export function setPreview2DAutoscale(enabled: boolean) {
 	preview2DAutoscale.set(enabled);
-	try {
-		localStorage.setItem(AUTOSCALE_KEY, String(enabled));
-	} catch {
-		/* Storage can be unavailable. */
-	}
-	if (chartInstance && !chartInstance.isDisposed()) chartInstance.setOption({ grid: planeGrid() });
+	writePreviewStorage(AUTOSCALE_KEY, String(enabled));
+	if (chartInstance && !chartInstance.isDisposed()) scheduleRasterUpdate();
 }
 export function setPreview2DWindow(axis: 'u' | 'v', range: WindowRange) {
 	const metrics = getAxisMetrics();
@@ -72,16 +89,21 @@ function syncChartWindow() {
 		if (item) next[axis] = [item.start / 100, item.end / 100];
 	}
 	preview2DWindow.set(next);
-	chartInstance.setOption({ grid: planeGrid() });
+	scheduleRasterUpdate();
 }
 function syncWindowGeometry() {
-	const mesh = get(meshState),
+	const mesh = getFrameMesh(),
 		state = get(previewState);
 	const key = `${state.plane || 'xy'}/${mesh.Nx}/${mesh.Ny}/${mesh.Nz}/${mesh.dx}/${mesh.dy}/${mesh.dz}`;
 	if (key === windowGeometry) return;
 	windowGeometry = key;
 	preview2DWindow.set({ u: [0, 1], v: [0, 1] });
 	if (chartInstance && !chartInstance.isDisposed()) resetPreview2DWindow();
+}
+
+function getFrameMesh(): Mesh {
+	const state = get(previewState) as Preview & { mesh?: Mesh };
+	return previewFrameMesh(state, get(meshState));
 }
 
 type AxisMetrics = {
@@ -109,6 +131,158 @@ function waitForChart() {
 		renderWaiters.add(finished);
 		chart.on('finished', finished);
 	});
+}
+
+function buildCurrentRaster() {
+	const state = get(previewState);
+	const metrics = getAxisMetrics();
+	const scale = getColorScale(state.min, state.max);
+	scalarRaster = buildScalarHeatmapRaster(
+		state.scalarField,
+		metrics.xSampleCount,
+		metrics.ySampleCount,
+		scale.min,
+		scale.max,
+		scale.palette,
+		{
+			window: get(preview2DWindow),
+			viewportWidth: planeGrid().width,
+			viewportHeight: planeGrid().height,
+			pixelRatio: Math.min(window.devicePixelRatio || 1, 2)
+		}
+	);
+}
+
+function rasterGraphic(): GraphicComponentOption[] {
+	if (!scalarRaster || !chartInstance || chartInstance.isDisposed()) return [];
+	const canvas = document.createElement('canvas');
+	canvas.width = scalarRaster.width;
+	canvas.height = scalarRaster.height;
+	const context = canvas.getContext('2d', { alpha: true });
+	if (!context) return [];
+	const image = context.createImageData(scalarRaster.width, scalarRaster.height);
+	image.data.set(scalarRaster.pixels);
+	context.putImageData(image, 0, 0);
+	const grid = planeGrid();
+	return [
+		{
+			id: 'scalar-heatmap-raster',
+			type: 'image',
+			silent: true,
+			z: -10,
+			style: {
+				image: canvas,
+				x: grid.left,
+				y: grid.top,
+				width: grid.width,
+				height: grid.height
+			}
+		}
+	];
+}
+
+function scheduleRasterUpdate() {
+	if (rasterFrameId !== null || !chartInstance || chartInstance.isDisposed()) return;
+	rasterFrameId = requestAnimationFrame(() => {
+		rasterFrameId = null;
+		if (!chartInstance || chartInstance.isDisposed()) return;
+		buildCurrentRaster();
+		chartInstance.setOption({ grid: planeGrid(), graphic: rasterGraphic() });
+	});
+}
+
+function hideRasterTooltip() {
+	if (rasterTooltip) rasterTooltip.style.display = 'none';
+}
+
+function handleRasterPointerMove(event: ElementEvent) {
+	if (!chartInstance || chartInstance.isDisposed() || !scalarRaster) return;
+	const pointX = event.offsetX,
+		pointY = event.offsetY;
+	const grid = planeGrid();
+	if (
+		!Number.isFinite(pointX) ||
+		!Number.isFinite(pointY) ||
+		pointX < grid.left ||
+		pointX > grid.left + grid.width ||
+		pointY < grid.top ||
+		pointY > grid.top + grid.height
+	) {
+		hideRasterTooltip();
+		return;
+	}
+	const window = get(preview2DWindow);
+	const metrics = getAxisMetrics();
+	const u =
+		window.u[0] + ((pointX - grid.left) / Math.max(grid.width, 1)) * (window.u[1] - window.u[0]);
+	const v =
+		window.v[1] - ((pointY - grid.top) / Math.max(grid.height, 1)) * (window.v[1] - window.v[0]);
+	const x = Math.max(0, Math.min(metrics.xSampleCount - 1, Math.floor(u * metrics.xSampleCount)));
+	const y = Math.max(0, Math.min(metrics.ySampleCount - 1, Math.floor(v * metrics.ySampleCount)));
+	const index = scalarRaster.getSourceIndex(x, y);
+	if (index < 0) {
+		hideRasterTooltip();
+		return;
+	}
+	const sample = get(previewState).scalarField[index];
+	if (!sample) {
+		hideRasterTooltip();
+		return;
+	}
+	if (!rasterTooltip) {
+		rasterTooltip = document.createElement('div');
+		rasterTooltip.setAttribute('role', 'tooltip');
+		rasterTooltip.style.cssText = [
+			'position:fixed',
+			'z-index:10000',
+			'display:none',
+			'pointer-events:none',
+			'padding:9px 11px',
+			'border:1px solid ' + THEME.tooltipBorder,
+			'border-radius:6px',
+			'background:' + THEME.tooltipBg,
+			'color:' + THEME.tooltipText,
+			'font:12px/1.45 system-ui,sans-serif',
+			'white-space:pre-line',
+			'box-shadow:0 5px 18px #0005'
+		].join(';');
+		document.body.appendChild(rasterTooltip);
+	}
+	const state = get(previewState);
+	rasterTooltip.textContent = [
+		state.quantity,
+		`${getAxisMetrics().uName}: ${formatAxisCoordinate('x', x)} nm`,
+		`${getAxisMetrics().vName}: ${formatAxisCoordinate('y', y)} nm`,
+		sectionDescription(),
+		`value: ${formatMagnitude(Number(sample[2]))}${state.unit ? ` ${state.unit}` : ''}`
+	].join('\n');
+	const container = document.getElementById('container');
+	const rect = container?.getBoundingClientRect();
+	rasterTooltip.style.left = `${(rect?.left ?? 0) + pointX + 14}px`;
+	rasterTooltip.style.top = `${(rect?.top ?? 0) + pointY + 14}px`;
+	rasterTooltip.style.display = 'block';
+	chartInstance.dispatchAction({ type: 'updateAxisPointer', x: pointX, y: pointY });
+}
+
+function attachRasterPointerHandlers() {
+	if (!chartInstance || chartInstance.isDisposed()) return;
+	const zr = chartInstance.getZr();
+	rasterPointerHandler = handleRasterPointerMove;
+	rasterGlobalOutHandler = hideRasterTooltip;
+	zr.on('mousemove', rasterPointerHandler);
+	zr.on('globalout', rasterGlobalOutHandler);
+}
+
+function detachRasterPointerHandlers() {
+	if (chartInstance && !chartInstance.isDisposed()) {
+		const zr = chartInstance.getZr();
+		if (rasterPointerHandler) zr.off('mousemove', rasterPointerHandler);
+		if (rasterGlobalOutHandler) zr.off('globalout', rasterGlobalOutHandler);
+	}
+	rasterPointerHandler = null;
+	rasterGlobalOutHandler = null;
+	rasterTooltip?.remove();
+	rasterTooltip = null;
 }
 
 export function preview2D(): Promise<void> {
@@ -192,7 +366,12 @@ function axisPointerLabelFormatter(axis: 'x' | 'y') {
 	};
 }
 
-function buildVisualMap(quantity: string, unit: string, min: number, max: number) {
+function buildVisualMap(
+	quantity: string,
+	unit: string,
+	min: number,
+	max: number
+): VisualMapComponentOption {
 	const scale = getColorScale(min, max);
 	const unitSuffix = unit ? ` ${unit}` : '';
 
@@ -220,7 +399,8 @@ function buildVisualMap(quantity: string, unit: string, min: number, max: number
 			fontSize: 11,
 			fontWeight: 600
 		},
-		formatter: (value: number) => `${formatMagnitude(value)}${unitSuffix}`,
+		formatter: (value: string | number | Date | null | undefined) =>
+			`${formatMagnitude(Number(value))}${unitSuffix}`,
 		inRange: {
 			color: scale.palette
 		},
@@ -234,7 +414,7 @@ function buildVisualMap(quantity: string, unit: string, min: number, max: number
 
 function getAxisMetrics(): AxisMetrics {
 	const ps = get(previewState);
-	const mesh = get(meshState);
+	const mesh = getFrameMesh();
 	const axes = previewPlaneAxes(ps.plane);
 	const counts = { x: mesh.Nx, y: mesh.Ny, z: mesh.Nz };
 	const cells = { x: mesh.dx, y: mesh.dy, z: mesh.dz };
@@ -264,17 +444,17 @@ function formatAxisCoordinate(axis: 'x' | 'y', sampleIndex: number) {
 	return formatDistanceNm(axisCoordinateNm(axis, sampleIndex));
 }
 
-function tooltipFormatter(params: any) {
+function tooltipFormatter(params: TooltipComponentFormatterCallbackParams) {
+	const item = Array.isArray(params) ? params[0] : params;
+	const coordinates = item && Array.isArray(item.value) ? item.value : [];
+	if (coordinates.length < 3) return 'NaN';
 	const ps = get(previewState);
-	if (params.value === undefined) {
-		return 'NaN';
-	}
-	const value = Number(params.value[2]);
+	const value = Number(coordinates[2]);
 	const unitSuffix = ps.unit ? ` ${ps.unit}` : '';
 	return [
 		`<strong>${ps.quantity}</strong>`,
-		`${getAxisMetrics().uName}: ${formatAxisCoordinate('x', Number(params.value[0]))} nm`,
-		`${getAxisMetrics().vName}: ${formatAxisCoordinate('y', Number(params.value[1]))} nm`,
+		`${getAxisMetrics().uName}: ${formatAxisCoordinate('x', Number(coordinates[0]))} nm`,
+		`${getAxisMetrics().vName}: ${formatAxisCoordinate('y', Number(coordinates[1]))} nm`,
 		sectionDescription(),
 		`value: ${formatMagnitude(value)}${unitSuffix}`
 	].join('<br/>');
@@ -290,7 +470,8 @@ function updateData() {
 	const { xSampleCount, ySampleCount, uName, vName } = getAxisMetrics();
 	const xCategories = Array.from({ length: xSampleCount }, (_, index) => index);
 	const yCategories = Array.from({ length: ySampleCount }, (_, index) => index);
-	const visualMap = buildVisualMap(ps.quantity, ps.unit, ps.min, ps.max) as any;
+	const visualMap = buildVisualMap(ps.quantity, ps.unit, ps.min, ps.max);
+	buildCurrentRaster();
 	chartInstance.setOption(
 		{
 			animation: false,
@@ -326,13 +507,13 @@ function updateData() {
 			series: [
 				{
 					name: ps.quantity,
+					type: 'heatmap',
 					animation: false,
-					progressive: ps.scalarField.length > 16384 ? 4096 : 0,
-					progressiveThreshold: 16384,
-					data: ps.scalarField
+					data: []
 				}
 			],
-			visualMap: [visualMap]
+			visualMap: [visualMap],
+			graphic: rasterGraphic()
 		},
 		{ lazyUpdate: true }
 	);
@@ -351,14 +532,17 @@ function init(): Promise<void> {
 			useDirtyRect: true
 		});
 	}
+	attachRasterPointerHandlers();
 	const completion = waitForChart();
 	setFullOptions();
 	chartInstance.on('datazoom', syncChartWindow);
 	chartInstance.on('restore', () => {
 		preview2DWindow.set({ u: [0, 1], v: [0, 1] });
-		chartInstance?.setOption({ grid: planeGrid() });
+		scheduleRasterUpdate();
 	});
-	resizeECharts();
+	observeChartContainer(chartDom);
+	lastChartWidth = chartInstance.getWidth();
+	lastChartHeight = chartInstance.getHeight();
 	return completion;
 }
 
@@ -372,253 +556,256 @@ function setFullOptions() {
 	const xCategories = Array.from({ length: xSampleCount }, (_, index) => index);
 	const yCategories = Array.from({ length: ySampleCount }, (_, index) => index);
 	const visualMap = buildVisualMap(ps.quantity, ps.unit, ps.min, ps.max);
+	buildCurrentRaster();
 
-	// @ts-ignore
-	chartInstance.setOption(
-		{
-			tooltip: {
-				position: 'top',
-				confine: true,
-				formatter: tooltipFormatter,
-				backgroundColor: THEME.tooltipBg,
-				borderColor: THEME.tooltipBorder,
-				borderWidth: 1,
-				padding: [10, 12],
-				textStyle: {
-					color: THEME.tooltipText,
-					fontSize: 12
-				}
-			},
-			xAxis: {
-				type: 'category',
-				data: xCategories,
-				name: `${uName} (nm)`,
-				nameLocation: 'middle',
-				nameGap: 30,
-				nameTextStyle: {
-					color: THEME.text2,
-					fontWeight: 600
-				},
-				axisLine: {
-					show: true,
-					lineStyle: {
-						color: THEME.border
-					}
-				},
-				axisPointer: {
-					show: true,
-					label: {
-						show: true,
-						backgroundColor: THEME.tooltipBg,
-						color: THEME.tooltipText,
-						padding: [6, 8],
-						borderColor: THEME.accent,
-						borderWidth: 1,
-						formatter: axisPointerLabelFormatter('x')
-					},
-					lineStyle: {
-						color: THEME.accent,
-						width: 1.5,
-						type: 'dashed'
-					}
-				},
-				axisTick: {
-					length: 6,
-					lineStyle: {
-						type: 'solid',
-						color: THEME.border
-					}
-				},
-				axisLabel: {
-					show: true,
-					formatter: function (value: number) {
-						return formatAxisCoordinate('x', Number(value));
-					},
-					color: THEME.text2,
-					showMinLabel: true,
-					showMaxLabel: true,
-					hideOverlap: true
-				},
-				splitLine: {
-					show: false
-				}
-			},
-			yAxis: {
-				type: 'category',
-				data: yCategories,
-				name: `${vName} (nm)`,
-				nameLocation: 'middle',
-				nameGap: 54,
-				nameTextStyle: {
-					color: THEME.text2,
-					fontWeight: 600
-				},
-				axisLine: {
-					show: true,
-					lineStyle: {
-						color: THEME.border
-					}
-				},
-				axisPointer: {
-					show: true,
-					label: {
-						show: true,
-						backgroundColor: THEME.tooltipBg,
-						color: THEME.tooltipText,
-						padding: [6, 8],
-						borderColor: THEME.accent,
-						borderWidth: 1,
-						formatter: axisPointerLabelFormatter('y')
-					},
-					lineStyle: {
-						color: THEME.accent,
-						width: 1.5,
-						type: 'dashed'
-					}
-				},
-				axisTick: {
-					length: 6,
-					lineStyle: {
-						type: 'solid',
-						color: THEME.border
-					}
-				},
-				axisLabel: {
-					show: true,
-					formatter: function (value: number) {
-						return formatAxisCoordinate('y', Number(value));
-					},
-					color: THEME.text2,
-					showMinLabel: true,
-					showMaxLabel: true,
-					hideOverlap: true
-				},
-				splitLine: {
-					show: false
-				}
-			},
-			visualMap: [visualMap],
-			dataZoom: ['u', 'v'].map((axis, index) => ({
-				id: `window-${axis}`,
-				type: 'inside',
-				...(index === 0 ? { xAxisIndex: 0 } : { yAxisIndex: 0 }),
-				filterMode: 'filter',
-				start: get(preview2DWindow)[axis as 'u' | 'v'][0] * 100,
-				end: get(preview2DWindow)[axis as 'u' | 'v'][1] * 100,
-				zoomOnMouseWheel: 'ctrl',
-				moveOnMouseWheel: false,
-				moveOnMouseMove: true,
-				preventDefaultMouseMove: true
-			})),
-			series: [
-				{
-					name: ps.quantity,
-					type: 'heatmap',
-					selectedMode: false,
-					emphasis: { disabled: true },
-					// Large planes render in bounded chunks; stream ACK waits for finished.
-					// Small planes retain atomic updates without progressive repainting.
-					progressive: ps.scalarField.length > 16384 ? 4096 : 0,
-					progressiveThreshold: 16384,
-					animation: false,
-					data: ps.scalarField
-				}
-			],
-			grid: planeGrid(),
-			toolbox: {
-				show: true,
-				top: 10,
-				right: 10,
-				itemSize: 20,
-				itemGap: 12,
-				iconStyle: {
-					borderColor: THEME.toolboxIcon,
-					borderWidth: 1.15
-				},
-				emphasis: {
-					iconStyle: {
-						borderColor: THEME.text1
-					}
-				},
-				feature: {
-					dataZoom: {
-						xAxisIndex: 0,
-						yAxisIndex: 0,
-						brushStyle: {
-							color: THEME.brushBg,
-							borderColor: THEME.brushBorder,
-							borderWidth: 2
-						}
-					},
-					dataView: { show: false },
-					restore: {
-						show: true
-					},
-					saveAsImage: {
-						type: 'png',
-						name: `preview-${ps.quantity}-${ps.plane || 'xy'}-${ps.allLayers ? 'mean' : (ps.sliceIndex ?? ps.layer)}`
-					}
-				}
-			},
-			animation: false,
-			animationDurationUpdate: 0
+	const options: PreviewChartOption = {
+		tooltip: {
+			position: 'top',
+			confine: true,
+			formatter: tooltipFormatter,
+			backgroundColor: THEME.tooltipBg,
+			borderColor: THEME.tooltipBorder,
+			borderWidth: 1,
+			padding: [10, 12],
+			textStyle: {
+				color: THEME.tooltipText,
+				fontSize: 12
+			}
 		},
-		{ notMerge: true, lazyUpdate: true }
-	);
+		xAxis: {
+			type: 'category',
+			data: xCategories,
+			name: `${uName} (nm)`,
+			nameLocation: 'middle',
+			nameGap: 30,
+			nameTextStyle: {
+				color: THEME.text2,
+				fontWeight: 600
+			},
+			axisLine: {
+				show: true,
+				lineStyle: {
+					color: THEME.border
+				}
+			},
+			axisPointer: {
+				show: true,
+				label: {
+					show: true,
+					backgroundColor: THEME.tooltipBg,
+					color: THEME.tooltipText,
+					padding: [6, 8],
+					borderColor: THEME.accent,
+					borderWidth: 1,
+					formatter: axisPointerLabelFormatter('x')
+				},
+				lineStyle: {
+					color: THEME.accent,
+					width: 1.5,
+					type: 'dashed'
+				}
+			},
+			axisTick: {
+				length: 6,
+				lineStyle: {
+					type: 'solid',
+					color: THEME.border
+				}
+			},
+			axisLabel: {
+				show: true,
+				formatter: function (value: number) {
+					return formatAxisCoordinate('x', Number(value));
+				},
+				color: THEME.text2,
+				showMinLabel: true,
+				showMaxLabel: true,
+				hideOverlap: true
+			},
+			splitLine: {
+				show: false
+			}
+		},
+		yAxis: {
+			type: 'category',
+			data: yCategories,
+			name: `${vName} (nm)`,
+			nameLocation: 'middle',
+			nameGap: 54,
+			nameTextStyle: {
+				color: THEME.text2,
+				fontWeight: 600
+			},
+			axisLine: {
+				show: true,
+				lineStyle: {
+					color: THEME.border
+				}
+			},
+			axisPointer: {
+				show: true,
+				label: {
+					show: true,
+					backgroundColor: THEME.tooltipBg,
+					color: THEME.tooltipText,
+					padding: [6, 8],
+					borderColor: THEME.accent,
+					borderWidth: 1,
+					formatter: axisPointerLabelFormatter('y')
+				},
+				lineStyle: {
+					color: THEME.accent,
+					width: 1.5,
+					type: 'dashed'
+				}
+			},
+			axisTick: {
+				length: 6,
+				lineStyle: {
+					type: 'solid',
+					color: THEME.border
+				}
+			},
+			axisLabel: {
+				show: true,
+				formatter: function (value: number) {
+					return formatAxisCoordinate('y', Number(value));
+				},
+				color: THEME.text2,
+				showMinLabel: true,
+				showMaxLabel: true,
+				hideOverlap: true
+			},
+			splitLine: {
+				show: false
+			}
+		},
+		visualMap: [visualMap],
+		dataZoom: ['u', 'v'].map((axis, index) => ({
+			id: `window-${axis}`,
+			type: 'inside',
+			...(index === 0 ? { xAxisIndex: 0 } : { yAxisIndex: 0 }),
+			filterMode: 'filter',
+			start: get(preview2DWindow)[axis as 'u' | 'v'][0] * 100,
+			end: get(preview2DWindow)[axis as 'u' | 'v'][1] * 100,
+			zoomOnMouseWheel: 'ctrl',
+			moveOnMouseWheel: false,
+			moveOnMouseMove: true,
+			preventDefaultMouseMove: true
+		})),
+		series: [
+			{
+				name: ps.quantity,
+				type: 'heatmap',
+				selectedMode: false,
+				emphasis: { disabled: true },
+				animation: false,
+				data: []
+			}
+		],
+		graphic: rasterGraphic(),
+		grid: planeGrid(),
+		toolbox: {
+			show: true,
+			top: 10,
+			right: 10,
+			itemSize: 20,
+			itemGap: 12,
+			iconStyle: {
+				borderColor: THEME.toolboxIcon,
+				borderWidth: 1.15
+			},
+			emphasis: {
+				iconStyle: {
+					borderColor: THEME.text1
+				}
+			},
+			feature: {
+				dataZoom: {
+					xAxisIndex: 0,
+					yAxisIndex: 0,
+					brushStyle: {
+						color: THEME.brushBg,
+						borderColor: THEME.brushBorder,
+						borderWidth: 2
+					}
+				},
+				dataView: { show: false },
+				restore: {
+					show: true
+				},
+				saveAsImage: {
+					type: 'png',
+					name: `preview-${ps.quantity}-${ps.plane || 'xy'}-${ps.allLayers ? 'mean' : (ps.sliceIndex ?? ps.layer)}`
+				}
+			}
+		},
+		animation: false,
+		animationDurationUpdate: 0
+	};
+	chartInstance.setOption(options, { notMerge: true, lazyUpdate: true });
 }
 
 export function disposePreview2D() {
 	for (const finish of [...renderWaiters]) finish();
+	detachRasterPointerHandlers();
 	if (chartInstance && !chartInstance.isDisposed()) {
 		chartInstance.dispose();
 	}
 	chartInstance = undefined;
+	scalarRaster = null;
+	if (rasterFrameId !== null) {
+		cancelAnimationFrame(rasterFrameId);
+		rasterFrameId = null;
+	}
 
 	if (resizeObserver) {
 		resizeObserver.disconnect();
 		resizeObserver = null;
 	}
+	observedContainer = null;
+	lastChartWidth = 0;
+	lastChartHeight = 0;
+}
+
+function observeChartContainer(container: HTMLElement) {
+	if (!resizeObserver) {
+		resizeObserver = new ResizeObserver(() => resizeChartToContainer());
+	}
+	if (observedContainer !== container) {
+		resizeObserver.disconnect();
+		resizeObserver.observe(container);
+		observedContainer = container;
+	}
+}
+
+function resizeChartToContainer() {
+	const container = document.getElementById('container');
+	if (!container || !chartInstance || chartInstance.isDisposed()) return;
+	const width = container.clientWidth,
+		height = container.clientHeight;
+	if (width < 1 || height < 1 || (width === lastChartWidth && height === lastChartHeight)) return;
+	chartInstance.resize({ width, height });
+	lastChartWidth = width;
+	lastChartHeight = height;
+	buildCurrentRaster();
+	chartInstance.setOption({
+		grid: planeGrid(),
+		graphic: rasterGraphic(),
+		visualMap: buildVisualMap(
+			get(previewState).quantity,
+			get(previewState).unit,
+			get(previewState).min,
+			get(previewState).max
+		)
+	});
 }
 
 export function resizeECharts() {
 	const container = document.getElementById('container');
-	if (!container) {
-		return;
-	}
-
-	if (!resizeObserver) {
-		resizeObserver = new ResizeObserver(() => {
-			if (chartInstance === undefined || chartInstance.isDisposed()) {
-				return;
-			}
-			chartInstance.resize();
-			chartInstance.setOption({
-				grid: planeGrid(),
-				visualMap: buildVisualMap(
-					get(previewState).quantity,
-					get(previewState).unit,
-					get(previewState).min,
-					get(previewState).max
-				)
-			});
-		});
-	}
-
-	resizeObserver.disconnect();
-	resizeObserver.observe(container);
-
-	if (chartInstance !== undefined && !chartInstance.isDisposed()) {
-		chartInstance.resize();
-		chartInstance.setOption({
-			grid: planeGrid(),
-			visualMap: buildVisualMap(
-				get(previewState).quantity,
-				get(previewState).unit,
-				get(previewState).min,
-				get(previewState).max
-			)
-		});
-	}
+	if (!container) return;
+	observeChartContainer(container);
+	resizeChartToContainer();
 }
 
 function planeGrid() {
@@ -649,7 +836,7 @@ function sectionDescription() {
 	const ps = get(previewState);
 	const { normal } = previewPlaneAxes(ps.plane);
 	if (ps.allLayers) return `Mean along ${normal}`;
-	const mesh = get(meshState);
+	const mesh = getFrameMesh();
 	const cells = { x: mesh.dx, y: mesh.dy, z: mesh.dz };
 	const counts = { x: mesh.Nx, y: mesh.Ny, z: mesh.Nz };
 	const position = previewSampleCoordinateNm(

@@ -88,7 +88,7 @@
 	}
 
 	$effect(() => {
-		$cameraRevision;
+		void $cameraRevision;
 		cubeTransform = $threeDPreview ? getCameraMatrix() : 'none';
 	});
 
@@ -136,10 +136,10 @@
 			onpointerup={onPointerUp}
 			onpointerleave={onPointerUp}
 		>
-			{#each faces as face}
+			{#each faces as face, faceIndex (faceIndex)}
 				<div class="vc-face" style="transform: {face.cssTransform}">
-					{#each face.zones as row}
-						{#each row as zone}
+					{#each face.zones as row, rowIndex (rowIndex)}
+						{#each row as zone, zoneIndex (zoneIndex)}
 							<button
 								class="vc-zone vc-zone--{zone.type}"
 								onclick={() => handleZoneClick(zone.dir)}

@@ -1,27 +1,49 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { fftState } from '$api/incoming/fft';
 	import EmptyState from '$lib/ui/EmptyState.svelte';
 	import Panel from '$lib/ui/Panel.svelte';
 	import StatusBadge from '$lib/ui/StatusBadge.svelte';
-	import { plotSpectrum, plotSpectrogram } from './fft-plot';
+	import {
+		disposeFftCharts,
+		disposeSpectrogram,
+		disposeSpectrum,
+		plotSpectrum,
+		plotSpectrogram
+	} from './fft-plot';
+	import { createVisibleFrameTask } from '$lib/table-plot/visible-frame-task';
 
 	let activeTab = $state<'spectrum' | 'spectrogram'>('spectrum');
+	let documentVisible = $state(true);
+	const plotFrame = createVisibleFrameTask(() => {
+		if (!documentVisible) return;
+		if (activeTab === 'spectrum') plotSpectrum();
+		else plotSpectrogram();
+	});
 
 	$effect(() => {
-		if ($fftState.enabled && $fftState.spectrum && $fftState.spectrum.length > 0) {
-			requestAnimationFrame(() => {
-				plotSpectrum();
-				plotSpectrogram();
-			});
-		}
+		if (!$fftState.enabled || !$fftState.spectrum.length) disposeSpectrum();
+		if (!$fftState.enabled || !$fftState.spectrogram.length || !$fftState.freqAxis.length)
+			disposeSpectrogram();
+		const hasActiveData =
+			activeTab === 'spectrum'
+				? $fftState.spectrum.length > 0
+				: $fftState.spectrogram.length > 0 && $fftState.freqAxis.length > 0;
+		plotFrame.schedule($fftState.enabled && documentVisible && hasActiveData);
 	});
 
 	onMount(() => {
-		if ($fftState.enabled && $fftState.spectrum && $fftState.spectrum.length > 0) {
-			plotSpectrum();
-			plotSpectrogram();
+		function updateDocumentVisibility() {
+			documentVisible = !document.hidden;
 		}
+		updateDocumentVisibility();
+		document.addEventListener('visibilitychange', updateDocumentVisibility);
+		return () => document.removeEventListener('visibilitychange', updateDocumentVisibility);
+	});
+
+	onDestroy(() => {
+		plotFrame.dispose();
+		disposeFftCharts();
 	});
 </script>
 
@@ -68,8 +90,16 @@
 			</button>
 		</div>
 
-		<div id="fft-spectrum" class="fft__canvas" style:display={activeTab === 'spectrum' ? 'block' : 'none'}></div>
-		<div id="fft-spectrogram" class="fft__canvas" style:display={activeTab === 'spectrogram' ? 'block' : 'none'}></div>
+		<div
+			id="fft-spectrum"
+			class="fft__canvas"
+			style:display={activeTab === 'spectrum' ? 'block' : 'none'}
+		></div>
+		<div
+			id="fft-spectrogram"
+			class="fft__canvas"
+			style:display={activeTab === 'spectrogram' ? 'block' : 'none'}
+		></div>
 	{/if}
 </Panel>
 

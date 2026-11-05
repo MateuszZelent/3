@@ -174,6 +174,17 @@ func TestFullGeometrySnapshotPreservesOccupiedZeroWithoutMask(t *testing.T) {
 	}
 }
 
+func TestCopyPreviewConfigPreservesHardLimit(t *testing.T) {
+	source := &PreviewState{MaxPoints: 262144, HardLimit: previewHardLimit}
+	destination := &PreviewState{}
+
+	copyPreviewConfig(destination, source, nil)
+
+	if destination.HardLimit != previewHardLimit {
+		t.Fatalf("captured preview hard limit = %d, want %d", destination.HardLimit, previewHardLimit)
+	}
+}
+
 func TestPreviewBudgetUsesAreaAveragingRatherThanSliderPresets(t *testing.T) {
 	state := &PreviewState{
 		XChosenSize: 500, YChosenSize: 500,
@@ -228,11 +239,49 @@ func TestPreviewClientBudgetProfiles(t *testing.T) {
 	}
 }
 
+func TestPreviewClientBudgetIsNotRaisedAboveRequest(t *testing.T) {
+	connection := &managedConnection{ready: make(chan struct{}, 1)}
+	connection.control([]byte(`{"maxPoints":62500}`))
+	if connection.budget != 62500 {
+		t.Fatalf("client budget raised above request: got %d, want 62500", connection.budget)
+	}
+}
+
+func TestTwoDimensionalTransportProfilePreservesGridCoordinates(t *testing.T) {
+	state := &PreviewState{
+		Type: "2D", AppliedPlaneUSize: 101, AppliedPlaneVSize: 17,
+		ScalarField: make([][3]float32, 101*17),
+	}
+	for y := 0; y < 17; y++ {
+		for x := 0; x < 101; x++ {
+			state.ScalarField[y*101+x] = [3]float32{float32(x), float32(y), float32(x + 101*y)}
+		}
+	}
+	state.DataPointsCount = len(state.ScalarField)
+	profile, stride := previewTransportProfile(state, 100)
+	if stride <= 1 || len(profile.ScalarField) > 100 {
+		t.Fatalf("2D transport budget not applied: points=%d stride=%d", len(profile.ScalarField), stride)
+	}
+	if profile.AppliedPlaneUSize != 101 || profile.AppliedPlaneVSize != 17 {
+		t.Fatalf("transport sampling changed applied grid domain: %dx%d", profile.AppliedPlaneUSize, profile.AppliedPlaneVSize)
+	}
+	if profile.ServerDataPointsCount != 101*17 || profile.DataPointsCount != len(profile.ScalarField) {
+		t.Fatalf("2D sample counts mismatch: server=%d sent=%d actual=%d", profile.ServerDataPointsCount, profile.DataPointsCount, len(profile.ScalarField))
+	}
+	for _, point := range profile.ScalarField {
+		x, y := int(point[0]), int(point[1])
+		if float32(x) != point[0] || float32(y) != point[1] || x%stride != 0 || y%stride != 0 {
+			t.Fatalf("sample coordinate was rescaled or off-stride: %v stride=%d", point, stride)
+		}
+	}
+}
+
 func TestInitialPreviewUsesWireMetadata(t *testing.T) {
 	state := &PreviewState{Type: "3D", Sequence: 12, TopologyRevision: 3, VectorCount: 1}
 	state.setVectorPayload([]Vector3f{{X: 1}}, []Vector3i{{}})
 	manager := newWebSocketManager()
 	manager.engineState = &EngineState{Preview: state}
+	manager.lastPreviewSnapshot = clonePreviewState(state)
 	connection := &managedConnection{send: make(chan outboundFrame, 1), stop: make(chan struct{})}
 	manager.sendInitialState(connection, "preview")
 	initial := <-connection.send
@@ -246,6 +295,23 @@ func TestInitialPreviewUsesWireMetadata(t *testing.T) {
 	}
 	if decoded.ServerVectorCount != 1 || decoded.TransportSampling != 1 {
 		t.Fatalf("initial counts/sampling missing: %d/%d", decoded.ServerVectorCount, decoded.TransportSampling)
+	}
+}
+
+func TestPreviewFrameCarriesItsCaptureMeshSnapshot(t *testing.T) {
+	mesh := &MeshState{Nx: 11, Ny: 7, Nz: 3, Dx: 2.5e-9, Dy: 3.5e-9, Dz: 4.5e-9, Tx: 27.5e-9, Ty: 24.5e-9, Tz: 13.5e-9, PBCx: 1, PBCy: 2, PBCz: 3}
+	frame := encodePreviewFrame(&PreviewState{Type: "2D", Mesh: mesh}, 1)
+	var decoded PreviewState
+	if err := msgpack.Unmarshal(frame.full, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Mesh == nil || !samePreviewMesh(decoded.Mesh, mesh) {
+		t.Fatalf("capture mesh was not preserved in Preview frame: %+v", decoded.Mesh)
+	}
+	changed := *mesh
+	changed.Dx *= 2
+	if samePreviewMesh(mesh, &changed) {
+		t.Fatal("same-mesh check ignored physical cell geometry")
 	}
 }
 
@@ -297,5 +363,27 @@ func TestScalarVolumeSnapshotAndDimension(t *testing.T) {
 	state.updatePreviewType()
 	if state.Type != "2D" {
 		t.Fatal("scalar section selected 3D")
+	}
+}
+
+func TestCopyPreviewOutputPublishesNormalizedConfiguration(t *testing.T) {
+	published := &PreviewState{XChosenSize: 100, YChosenSize: 100}
+	captured := &PreviewState{
+		previewMeshSize: [3]int{64, 32, 4},
+		XPossibleSizes:  []int{16, 32, 64},
+		YPossibleSizes:  []int{16, 32},
+		ZPossibleSizes:  []int{1, 2, 4},
+		XChosenSize:     64,
+		YChosenSize:     32,
+		ZChosenSize:     4,
+		planeChosenSize: [3]int{64, 32, 4},
+		Region:          PreviewRegion{Mode: "native", End: [3]int{64, 32, 4}},
+	}
+	copyPreviewOutput(published, captured)
+	if published.previewMeshSize != captured.previewMeshSize || published.XChosenSize != 64 || published.YChosenSize != 32 {
+		t.Fatalf("normalized sizes were not published: %+v", published)
+	}
+	if len(published.XPossibleSizes) != 3 || published.Region.End != captured.Region.End {
+		t.Fatalf("possible sizes or clamped region were not published: %+v", published)
 	}
 }

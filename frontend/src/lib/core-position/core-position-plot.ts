@@ -1,6 +1,13 @@
 import { get } from 'svelte/store';
-import { analyzeCore, emptyMetrics, type CoreMetrics } from './analysis';
-export type { CoreMetrics } from './analysis';
+import {
+	analyzeCore,
+	emptyMetrics,
+	getCorePlotCounts,
+	sampleCoreCoordinates,
+	type CoreMetrics,
+	type CorePlotCounts
+} from './analysis';
+export type { CoreMetrics, CorePlotCounts } from './analysis';
 import { tablePlotState } from '$api/incoming/table-plot';
 import {
 	ECHARTS_THEME_NAME,
@@ -16,9 +23,15 @@ let equalAspect = true;
 let orbitWindowNs = 2; // configurable time window in nanoseconds
 
 let lastMetrics: CoreMetrics = { ...emptyMetrics };
+let lastPlotCounts: CorePlotCounts = { sourcePoints: 0, renderedPoints: 0, sampled: false };
+const MAX_POINTS_PER_CORE_SERIES = 5_000;
 
 export function getMetrics(): CoreMetrics {
 	return lastMetrics;
+}
+
+export function getCorePositionPlotCounts(): CorePlotCounts {
+	return { ...lastPlotCounts };
 }
 
 export function setOrbitWindow(ns: number) {
@@ -41,6 +54,10 @@ export function getEqualAspect(): boolean {
 
 export function plotCorePosition() {
 	const element = document.getElementById('core-position-plot');
+	if (!element) {
+		disposeCorePosition();
+		return;
+	}
 	if (chartInstance && (chartInstance.isDisposed() || chartInstance.getDom() !== element)) {
 		if (!chartInstance.isDisposed()) chartInstance.dispose();
 		chartInstance = undefined;
@@ -50,6 +67,15 @@ export function plotCorePosition() {
 		initCorePosition();
 	}
 	updateCorePosition();
+}
+
+export function disposeCorePosition() {
+	resizeObserver?.disconnect();
+	resizeObserver = null;
+	if (chartInstance && !chartInstance.isDisposed()) chartInstance.dispose();
+	chartInstance = undefined;
+	lastMetrics = { ...emptyMetrics };
+	lastPlotCounts = { sourcePoints: 0, renderedPoints: 0, sampled: false };
 }
 
 // ── Analytics ───────────────────────────────────────────────
@@ -63,15 +89,28 @@ function updateCorePosition() {
 	const rows = state.corePos ?? [];
 	const analysis = analyzeCore(rows, orbitWindowNs);
 	lastMetrics = analysis.metrics;
+	lastPlotCounts = getCorePlotCounts(
+		analysis.valid.length,
+		analysis.recent.length,
+		MAX_POINTS_PER_CORE_SERIES
+	);
 	if (!analysis.valid.length) {
 		chartInstance.setOption({ series: [] }, { replaceMerge: ['series'] });
 		return;
 	}
-	const xArr = analysis.valid.map((r) => r[1]);
-	const yArr = analysis.valid.map((r) => r[2]);
-	const recentSet = new Set(analysis.recent);
-	const oldData = analysis.valid.filter((r) => !recentSet.has(r)).map((r) => [r[1], r[2]]);
-	const recentData = analysis.recent.map((r) => [r[1], r[2]]);
+	const oldPointCount = analysis.valid.length - analysis.recent.length;
+	const oldData = sampleCoreCoordinates(
+		analysis.valid,
+		0,
+		oldPointCount,
+		MAX_POINTS_PER_CORE_SERIES
+	);
+	const recentData = sampleCoreCoordinates(
+		analysis.recent,
+		0,
+		analysis.recent.length,
+		MAX_POINTS_PER_CORE_SERIES
+	);
 	const cx = lastMetrics.centerXNm * 1e-9;
 	const cy = lastMetrics.centerYNm * 1e-9;
 	const avgRadius = lastMetrics.radiusNm * 1e-9;
@@ -103,11 +142,11 @@ function updateCorePosition() {
 		xmax = -Infinity,
 		ymin = Infinity,
 		ymax = -Infinity;
-	for (let i = 0; i < xArr.length; i++) {
-		xmin = Math.min(xmin, xArr[i]);
-		xmax = Math.max(xmax, xArr[i]);
-		ymin = Math.min(ymin, yArr[i]);
-		ymax = Math.max(ymax, yArr[i]);
+	for (const row of analysis.valid) {
+		xmin = Math.min(xmin, row[1]);
+		xmax = Math.max(xmax, row[1]);
+		ymin = Math.min(ymin, row[2]);
+		ymax = Math.max(ymax, row[2]);
 	}
 	const pad = Math.max(xmax - xmin, ymax - ymin) * 0.12 || avgRadius || 1e-9;
 	xmin -= pad;
@@ -169,6 +208,15 @@ function updateCorePosition() {
 	});
 }
 
+function formatCorePointTooltip(params: unknown): string {
+	const item = Array.isArray(params) ? params[0] : params;
+	if (!item || typeof item !== 'object' || !('data' in item) || !Array.isArray(item.data))
+		return '';
+	const [x, y] = item.data as unknown[];
+	if (typeof x !== 'number' || typeof y !== 'number') return '';
+	return `x: ${(x * 1e9).toFixed(3)} nm<br/>y: ${(y * 1e9).toFixed(3)} nm`;
+}
+
 // ── Init ────────────────────────────────────────────────────
 
 function initCorePosition() {
@@ -191,10 +239,7 @@ function initCorePosition() {
 			backgroundColor: THEME.tooltipBg,
 			borderColor: THEME.tooltipBorder,
 			textStyle: { color: THEME.tooltipText, fontSize: 11 },
-			formatter: (p: any) => {
-				if (!p.data || p.data.length < 2) return '';
-				return `x: ${(p.data[0] * 1e9).toFixed(3)} nm<br/>y: ${(p.data[1] * 1e9).toFixed(3)} nm`;
-			}
+			formatter: formatCorePointTooltip
 		},
 		grid: {
 			containLabel: true,

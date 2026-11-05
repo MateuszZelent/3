@@ -2,7 +2,11 @@
 	import {
 		previewTransition,
 		previewTransitionError,
-		requestPreviewTransition
+		previewControlsBusy,
+		requestPreviewTransition,
+		requestPreviewResync,
+		retryPreviewTransition,
+		cancelPreviewTransition
 	} from '$api/previewTransition';
 	import {
 		connected,
@@ -27,7 +31,9 @@
 		postLayer,
 		postXChosenSize,
 		postZChosenSize,
-		postYChosenSize
+		postYChosenSize,
+		waitForPreviewMutations,
+		cancelPreviewMutations
 	} from '$api/outgoing/preview';
 	import Slider from '$components/Slider.svelte';
 	import SliceControl from './inputs/SliceControl.svelte';
@@ -51,19 +57,18 @@
 	import type { ViewportMode } from '$lib/ui/types';
 	import { get } from 'svelte/store';
 	import { onDestroy, onMount } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import { resizeECharts, disposePreview2D, preview2DAutoscale } from './preview2D';
 	import {
 		qualityLevel,
 		renderMode,
-		volumeProjection,
-		volumeColorMode,
 		resetCamera,
 		setQuality,
 		setRenderMode,
-		threeDPreview,
 		visibleRenderCount,
 		previewPerformance,
 		disposePreview3D,
+		resizePreview3D,
 		glyphSampling,
 		voxelSampling,
 		type Preview3DRenderMode,
@@ -72,14 +77,12 @@
 	import RenderControls from './inputs/RenderControls.svelte';
 	import ViewCube from './ViewCube.svelte';
 	import { quantities } from './inputs/quantities';
+	import { sectionState, setSectionOpen } from './sectionState';
+	import { waitForRegionUpdate, cancelRegionUpdates } from './preview3DRegion';
 
 	let previewNow = $state(Date.now());
 	let viewMode = $state<ViewportMode>('inline');
 	let viewportWidth = $state(1024);
-	let sectionExpanded = $state(true);
-	$effect(() => {
-		sectionExpanded = viewportWidth > 650;
-	});
 	let previewWrapper: HTMLDivElement;
 	let previewStudio: HTMLDivElement;
 	let visibilityObserver: IntersectionObserver | null = null;
@@ -94,6 +97,8 @@
 	let resizing = $state(false);
 	let dragOffX = $state(0);
 	let dragOffY = $state(0);
+	let modeRequestId = 0;
+	let resizeTimer: ReturnType<typeof setTimeout> | undefined;
 
 	const quantityOptions = $derived(
 		Object.entries(quantities).flatMap(([group, items]) =>
@@ -109,6 +114,7 @@
 	);
 
 	const is2D = $derived($previewState.type === '2D');
+	const controlsBusy = $derived($previewControlsBusy);
 	const plane = $derived($previewState.plane || 'xy');
 	const axes = $derived(previewPlaneAxes(plane));
 	const axisCounts = $derived({ x: $meshState.Nx, y: $meshState.Ny, z: $meshState.Nz });
@@ -138,20 +144,38 @@
 	});
 	const componentOptions = ['x', 'y', 'z'].map((value) => ({ value, label: value.toUpperCase() }));
 	function setDimension(mode: string) {
-		if (mode === '3D' && $previewState.nComp === 1) setRenderMode('volume');
+		if (get(previewControlsBusy) || mode === (is2D ? '2D' : '3D')) return;
+		const threeD = mode === '3D';
+		const component = threeD ? '3D' : $previewState.nComp === 1 ? 'None' : lastComponent;
+		const atomicAllLayers = threeD && $previewState.nComp === 1;
+		if (atomicAllLayers) setRenderMode('volume', { ensureAllLayers: false });
 		void requestPreviewTransition(
 			'component',
-			{ component: mode === '3D' ? '3D' : lastComponent },
-			`Switching to ${mode === '3D' ? '3D volume' : '2D section'}`,
-			{ type: mode }
+			{
+				component,
+				...(atomicAllLayers ? { allLayers: true } : {})
+			},
+			`Switching to ${threeD ? '3D volume' : '2D section'}`,
+			{ type: mode, component },
+			{
+				beforeRequest: async () => {
+					await Promise.all([waitForPreviewMutations(), waitForRegionUpdate()]);
+				}
+			}
 		);
 	}
 	function changeQuantity(quantity: string) {
+		if (get(previewControlsBusy)) return;
 		void requestPreviewTransition('quantity', { quantity }, `Loading ${quantity}`, { quantity });
 	}
 	function setSlice(index: number) {
 		if (Number.isInteger(index) && index >= 0 && index < sliceCount)
 			void postSection({ sliceIndex: index });
+	}
+
+	function changeRenderMode(mode: string) {
+		if (get(previewControlsBusy)) return;
+		setRenderMode(mode as Preview3DRenderMode);
 	}
 
 	const qualityOptions = $derived(
@@ -195,17 +219,34 @@
 		!$connected ? 'warn' : $previewState.autoDownscaled ? 'warn' : hasData ? 'info' : 'default'
 	);
 
-	$effect(() => {
-		viewMode = $panelPreferences.preferredPreviewMode;
-	});
-
-	function setMode(mode: ViewportMode) {
-		if (viewMode === 'fullscreen' && document.fullscreenElement) {
-			document.exitFullscreen().catch(() => undefined);
-		}
-
-		if (mode === 'fullscreen' && previewWrapper) {
-			previewWrapper.requestFullscreen().catch(() => undefined);
+	async function setMode(mode: ViewportMode) {
+		const requestId = ++modeRequestId;
+		if (mode === 'fullscreen') {
+			if (!previewWrapper) return;
+			try {
+				await previewWrapper.requestFullscreen();
+			} catch {
+				// Keep the previously selected viewport when the browser rejects fullscreen.
+				return;
+			}
+			if (requestId !== modeRequestId) {
+				if (document.fullscreenElement) {
+					try {
+						await document.exitFullscreen();
+					} catch {
+						// The latest viewport request still owns the UI state.
+					}
+				}
+				return;
+			}
+			if (document.fullscreenElement !== previewWrapper) return;
+		} else if (viewMode === 'fullscreen' && document.fullscreenElement) {
+			try {
+				await document.exitFullscreen();
+			} catch {
+				if (requestId === modeRequestId && document.fullscreenElement) return;
+			}
+			if (requestId !== modeRequestId || document.fullscreenElement) return;
 		}
 
 		if (mode === 'popout') {
@@ -220,14 +261,10 @@
 	}
 
 	function scheduleResize() {
-		window.setTimeout(() => {
-			const container = document.getElementById('container');
-			const display = get(threeDPreview);
-			if (display && container) {
-				display.renderer.setSize(container.clientWidth, container.clientHeight);
-				display.camera.aspect = container.clientWidth / container.clientHeight;
-				display.camera.updateProjectionMatrix();
-			}
+		clearTimeout(resizeTimer);
+		resizeTimer = setTimeout(() => {
+			resizeTimer = undefined;
+			resizePreview3D();
 			resizeECharts();
 		}, 120);
 	}
@@ -281,14 +318,17 @@
 
 	function onPreviewModeRequest(event: Event) {
 		const customEvent = event as CustomEvent<ViewportMode>;
-		setMode(customEvent.detail);
+		void setMode(customEvent.detail);
 	}
 
 	onMount(() => {
+		// Apply the saved mode once. Updating the preference during a fullscreen
+		// gesture must not reset the active mode to the reload fallback.
+		if (get(panelPreferences).preferredPreviewMode === 'popout') void setMode('popout');
 		const ageTimer = setInterval(() => {
 			previewNow = Date.now();
 		}, 1000);
-		const visibleSurfaces = new Map<Element, boolean>();
+		const visibleSurfaces = new SvelteMap<Element, boolean>();
 		visibilityObserver = new IntersectionObserver((entries) => {
 			for (const entry of entries) visibleSurfaces.set(entry.target, entry.isIntersecting);
 			setPreviewVisible([...visibleSurfaces.values()].some(Boolean));
@@ -298,7 +338,7 @@
 		document.addEventListener('fullscreenchange', onFullscreenChange);
 		document.addEventListener('mousemove', onMouseMove);
 		document.addEventListener('mouseup', onMouseUp);
-		window.addEventListener('amumax:preview-mode', onPreviewModeRequest as EventListener);
+		window.addEventListener('amumax:preview-mode', onPreviewModeRequest);
 		setPreviewSurface(previewCanvas);
 		surfaceObserver = new ResizeObserver(requestPreviewRender);
 		surfaceObserver.observe(previewCanvas);
@@ -307,6 +347,10 @@
 	});
 
 	onDestroy(() => {
+		cancelPreviewTransition({ restore: false });
+		cancelPreviewMutations();
+		cancelRegionUpdates();
+		clearTimeout(resizeTimer);
 		visibilityObserver?.disconnect();
 		surfaceObserver?.disconnect();
 		setPreviewSurface(null);
@@ -316,7 +360,7 @@
 		document.removeEventListener('fullscreenchange', onFullscreenChange);
 		document.removeEventListener('mousemove', onMouseMove);
 		document.removeEventListener('mouseup', onMouseUp);
-		window.removeEventListener('amumax:preview-mode', onPreviewModeRequest as EventListener);
+		window.removeEventListener('amumax:preview-mode', onPreviewModeRequest);
 	});
 </script>
 
@@ -358,22 +402,24 @@
 			<SelectField
 				label="Quantity"
 				value={$previewTransition?.quantity || $previewState.quantity}
-				disabled={!!$previewTransition}
+				disabled={controlsBusy}
 				options={quantityOptions}
 				onchange={changeQuantity}
 			/>
 			<SegmentedControl
 				label="View"
 				value={is2D ? '2D' : '3D'}
+				disabled={controlsBusy}
 				options={[
-					{ value: '3D', label: '3D volume', disabled: !!$previewTransition },
-					{ value: '2D', label: '2D section', disabled: !!$previewTransition }
+					{ value: '3D', label: '3D volume' },
+					{ value: '2D', label: '2D section' }
 				]}
 				onchange={setDimension}
 			/>
 			{#if is2D && $previewState.nComp === 3}<SegmentedControl
 					label="Component"
 					value={$previewState.component}
+					disabled={controlsBusy}
 					options={componentOptions}
 					onchange={postComponent}
 				/>{:else}<div class="studio-source__description">
@@ -386,13 +432,14 @@
 		{#if is2D}
 			<div class="section-strip">
 				<div class="plane-picker" role="group" aria-label="Section plane">
-					{#each ['xy', 'yz', 'xz'] as value}
+					{#each ['xy', 'yz', 'xz'] as value (value)}
 						<button
 							type="button"
 							class="plane-button"
 							class:active={plane === value}
 							aria-pressed={plane === value}
 							aria-label={value.toUpperCase()}
+							disabled={controlsBusy}
 							onclick={() => postSection({ plane: value as PreviewPlane })}
 						>
 							<svg viewBox="0 0 40 36" aria-hidden="true"
@@ -419,15 +466,9 @@
 				<SegmentedControl
 					label="Reduction"
 					value={$previewState.allLayers ? 'average' : 'single'}
+					disabled={controlsBusy}
 					options={[
-						{
-							value: 'single',
-							label: 'Single layer',
-							disabled:
-								$renderMode === 'volume' &&
-								$volumeProjection === 'average' &&
-								$volumeColorMode !== 'geometry'
-						},
+						{ value: 'single', label: 'Single layer' },
 						{ value: 'average', label: 'Average' }
 					]}
 					onchange={(value) => postSection({ mode: value as 'single' | 'average' })}
@@ -438,6 +479,7 @@
 					count={sliceCount}
 					cellSize={cellSizes[axes.normal]}
 					value={sliceIndex}
+					disabled={controlsBusy}
 					onchange={setSlice}
 				/>{:else}<p class="section-explanation">
 					<span class="mean-symbol">μ</span>Arithmetic mean across all {sliceCount}
@@ -449,6 +491,7 @@
 				<SegmentedControl
 					label="Show"
 					value={$previewState.allLayers ? 'all' : 'single'}
+					disabled={controlsBusy}
 					options={[
 						{ value: 'single', label: 'Single layer', disabled: $previewState.regionActive },
 						{ value: 'all', label: 'All layers', disabled: $meshState.Nz < 2 }
@@ -458,8 +501,9 @@
 				<SegmentedControl
 					label="Render"
 					value={$renderMode}
+					disabled={controlsBusy}
 					options={renderOptions}
-					onchange={(next) => setRenderMode(next as Preview3DRenderMode)}
+					onchange={changeRenderMode}
 				/>
 				<Button variant="outline" tone="accent" onclick={resetCamera}>Reset camera</Button>
 			</div>
@@ -506,11 +550,16 @@
 			<div class="preview-field-controls">
 				{#if is2D}
 					{#if viewMode !== 'inline' && is2D}
-						<details class="floating-section" bind:open={sectionExpanded}>
+						<details
+							class="floating-section"
+							open={$sectionState.floating}
+							ontoggle={(e) => setSectionOpen('floating', e.currentTarget.open)}
+						>
 							<summary>Section · {plane.toUpperCase()} · {sectionCaption}</summary>
 							<div class="floating-section-controls">
 								<SegmentedControl
 									value={plane}
+									disabled={controlsBusy}
 									options={['xy', 'yz', 'xz'].map((value) => ({
 										value,
 										label: value.toUpperCase()
@@ -519,6 +568,7 @@
 								/>
 								<SegmentedControl
 									value={$previewState.allLayers ? 'average' : 'single'}
+									disabled={controlsBusy}
 									options={[
 										{ value: 'single', label: 'Single layer' },
 										{ value: 'average', label: 'Average' }
@@ -530,16 +580,17 @@
 										count={sliceCount}
 										cellSize={cellSizes[axes.normal]}
 										value={sliceIndex}
+										disabled={controlsBusy}
 										onchange={setSlice}
 									/>{/if}
 							</div>
 						</details>
 					{/if}
-					<PlaneWindowControls />
+					<PlaneWindowControls disabled={controlsBusy} />
 				{:else}
-					<VolumeControls />
-					<RenderControls />
-					<RegionWindowControls compact />
+					<VolumeControls disabled={controlsBusy} />
+					<RenderControls disabled={controlsBusy} />
+					<RegionWindowControls disabled={controlsBusy} />
 				{/if}
 			</div>
 			<div class="preview-viewport">
@@ -623,8 +674,12 @@
 				<div class="preview-wrapper__stats">
 					<strong>{plane.toUpperCase()}</strong> · {$previewState.allLayers
 						? 'Arithmetic mean'
-						: 'Single layer'} · grid {appliedU} × {appliedV} · {$previewState.dataPointsCount.toLocaleString()}
-					cells · {axes.u}/{axes.v} in nm{#if $previewState.timestamp}
+						: 'Single layer'} · grid {appliedU} × {appliedV} · transmitted {$previewState.dataPointsCount.toLocaleString()}
+					/ {(
+						$previewState.serverDataPointsCount ?? $previewState.dataPointsCount
+					).toLocaleString()} server points · {axes.u}/{axes.v} in nm{#if ($previewState.transportSampling || 1) > 1}
+						· preview samples every {$previewState.transportSampling}th source cell; values keep
+						original coordinates{/if}{#if $previewState.timestamp}
 						· step {$previewState.step} · {Math.max(
 							0,
 							(previewNow - $previewState.timestamp) / 1000
@@ -638,9 +693,19 @@
 			{/if}
 		</div>
 
-		{#if $previewTransitionError}<p class="studio-alert" role="alert">
-				{$previewTransitionError}
-			</p>{/if}
+		{#if $previewTransitionError}<div class="studio-alert" role="alert">
+				<p>{$previewTransitionError}</p>
+				<div class="studio-alert__actions">
+					<Button
+						size="sm"
+						variant="outline"
+						onclick={() => {
+							void retryPreviewTransition();
+						}}>Retry transition</Button
+					>
+					<Button size="sm" variant="outline" onclick={requestPreviewResync}>Resync preview</Button>
+				</div>
+			</div>{/if}
 		{#if $previewError}<p class="studio-alert" role="alert">{$previewError}</p>{/if}
 		{#if $connected && !$previewConnected}<p class="studio-alert" role="status">
 				Preview stream disconnected; the displayed field may be stale.
@@ -689,7 +754,8 @@
 								size="sm"
 								variant="outline"
 								onclick={postFullResolution}
-								disabled={!$previewState.xPossibleSizes.length}>Full mesh resolution</Button
+								disabled={controlsBusy || !$previewState.xPossibleSizes.length}
+								>Full mesh resolution</Button
 							>
 						</div>
 						<div class="resolution-sliders">
@@ -698,12 +764,14 @@
 									label={`${axes.u.toUpperCase()} data points`}
 									value={planeUSize}
 									values={$previewState.planeUPossibleSizes || $previewState.xPossibleSizes}
+									isDisabled={controlsBusy}
 									onChangeFunction={(uSize) => postPlaneResolution({ uSize })}
 								/>
 								<Slider
 									label={`${axes.v.toUpperCase()} data points`}
 									value={planeVSize}
 									values={$previewState.planeVPossibleSizes || $previewState.yPossibleSizes}
+									isDisabled={controlsBusy}
 									onChangeFunction={(vSize) => postPlaneResolution({ vSize })}
 								/>
 							{:else}
@@ -711,24 +779,27 @@
 									label="X data points"
 									value={$previewState.xChosenSize}
 									values={$previewState.xPossibleSizes}
+									isDisabled={controlsBusy}
 									onChangeFunction={postXChosenSize}
 								/>
 								<Slider
 									label="Y data points"
 									value={$previewState.yChosenSize}
 									values={$previewState.yPossibleSizes}
+									isDisabled={controlsBusy}
 									onChangeFunction={postYChosenSize}
 								/>
 								{#if $previewState.allLayers}<Slider
 										label="Z data points"
 										value={$previewState.zChosenSize || $meshState.Nz}
 										values={zSizes}
+										isDisabled={controlsBusy || !zSamplingSupported}
 										onChangeFunction={postZChosenSize}
-										isDisabled={!zSamplingSupported}
 									/>{:else if $meshState.Nz > 1}<Slider
 										label="Z layer"
 										value={$previewState.layer}
 										values={Array.from({ length: $meshState.Nz }, (_, i) => i)}
+										isDisabled={controlsBusy}
 										onChangeFunction={postLayer}
 									/>{/if}
 							{/if}
@@ -752,12 +823,13 @@
 							<Toggle
 								label="Fit resolution to budget"
 								checked={$previewState.autoScaleEnabled}
+								disabled={controlsBusy}
 								onchange={postAutoScaleEnabled}
 							/><SelectField
 								label="Preview point budget"
 								value={$previewState.maxPoints}
 								options={budgetOptions}
-								disabled={!$previewState.autoScaleEnabled}
+								disabled={controlsBusy || !$previewState.autoScaleEnabled}
 								onchange={(value) => postMaxPoints(Number(value))}
 							/>
 						</div>
@@ -769,8 +841,8 @@
 								application to enable this control.
 							</p>{/if}
 						<p class="settings-hint">
-							Area averages preserve coverage within each pixel.{#if !is2D}{' '}
-								Z uses sampled layers.{/if} Budgets cap the requested grid.{#if !$previewState.autoScaleEnabled}{' '}
+							Area averages preserve coverage within each pixel.{#if !is2D}
+								Z uses sampled layers.{/if} Budgets cap the requested grid.{#if !$previewState.autoScaleEnabled}
 								Safety limit: 1,000,000 points.{/if}
 						</p>
 					{/if}
@@ -820,6 +892,7 @@
 						<SegmentedControl
 							label="Quality"
 							value={$qualityLevel}
+							disabled={controlsBusy}
 							options={qualityOptions}
 							onchange={(next) => setQuality(next as QualityLevel)}
 						/>
@@ -830,6 +903,7 @@
 								<SelectField
 									label="Maximum transferred points"
 									value={$previewClientBudget}
+									disabled={controlsBusy}
 									options={transferOptions}
 									onchange={(value) => setPreviewClientBudget(Number(value))}
 								/>
@@ -981,6 +1055,10 @@
 		color: var(--accent);
 		box-shadow: inset 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
 	}
+	.plane-button:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
 	.plane-button svg {
 		width: 2.15rem;
 		flex-shrink: 0;
@@ -1095,6 +1173,7 @@
 		flex-shrink: 0;
 		max-height: 45vh;
 		overflow-y: auto;
+		overscroll-behavior: contain;
 		min-width: 0;
 		border-bottom: 1px solid var(--border-subtle);
 	}
@@ -1270,9 +1349,19 @@
 		color: var(--text-2);
 	}
 	.studio-alert {
+		display: grid;
+		gap: 0.55rem;
 		margin: 0;
 		font-size: 0.8rem;
 		color: var(--warn);
+	}
+	.studio-alert p {
+		margin: 0;
+	}
+	.studio-alert__actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
 	}
 	.preview-notice {
 		display: flex;

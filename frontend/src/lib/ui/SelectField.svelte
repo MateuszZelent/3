@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { setAlert } from '$lib/alerts/alert';
 	export type SelectOption = {
 		value: string;
 		label: string;
@@ -12,13 +13,34 @@
 		options: SelectOption[];
 		hint?: string;
 		disabled?: boolean;
-		onchange?: (value: string) => void;
+		onchange?: (value: string) => unknown;
 	};
 
 	let { label = '', value, options, hint = '', disabled = false, onchange }: Props = $props();
+	let pending = $state(false);
+	let select = $state<HTMLSelectElement>();
+	$effect(() => {
+		void options;
+		if (select) select.value = String(value);
+	});
 
-	function handleChange(event: Event) {
-		onchange?.((event.currentTarget as HTMLSelectElement).value);
+	async function handleChange(event: Event) {
+		const control = event.currentTarget as HTMLSelectElement;
+		if (pending || disabled) {
+			control.value = String(value);
+			return;
+		}
+		pending = true;
+		try {
+			const result = await onchange?.(control.value);
+			if (result && typeof result === 'object' && 'ok' in result && result.ok === false)
+				control.value = String(value);
+		} catch (error) {
+			control.value = String(value);
+			setAlert(error instanceof Error ? error.message : 'Unable to apply selection');
+		} finally {
+			pending = false;
+		}
 	}
 </script>
 
@@ -33,12 +55,13 @@
 	{/if}
 	<span class="ui-select__control">
 		<select
-			{disabled}
+			bind:this={select}
+			disabled={disabled || pending}
 			aria-label={label || undefined}
 			value={String(value)}
 			onchange={handleChange}
 		>
-			{#each options as option}
+			{#each options as option, index (index)}
 				<option value={option.value} disabled={option.disabled}>
 					{option.group ? `${option.group} / ${option.label}` : option.label}
 				</option>

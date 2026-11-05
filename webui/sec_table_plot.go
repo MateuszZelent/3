@@ -175,8 +175,6 @@ func (t *TablePlotState) GetTableNames() []string {
 }
 
 func (t *TablePlotState) postTablePlotAutoSaveInterval(c echo.Context) error {
-	t.ws.stateMu.Lock()
-	defer t.ws.stateMu.Unlock()
 	type Request struct {
 		AutoSaveInterval string `msgpack:"autoSaveInterval"`
 	}
@@ -185,13 +183,11 @@ func (t *TablePlotState) postTablePlotAutoSaveInterval(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
 	engine.InjectAndWait(func() { engine.EvalTryRecover("TableAutoSave(" + req.AutoSaveInterval + ")") })
-	t.ws.broadcastEngineStateWithoutPreviewLocked()
+	t.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, nil)
 }
 
 func (t *TablePlotState) postTablePlotXColumn(c echo.Context) error {
-	t.ws.stateMu.Lock()
-	defer t.ws.stateMu.Unlock()
 	type Request struct {
 		XColumn string `msgpack:"XColumn"`
 	}
@@ -199,6 +195,8 @@ func (t *TablePlotState) postTablePlotXColumn(c echo.Context) error {
 	if err := c.Bind(req); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	t.ws.stateMu.Lock()
+	defer t.ws.stateMu.Unlock()
 	if !t.ColumnExists(req.XColumn) {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Table column not found"})
 	}
@@ -208,8 +206,6 @@ func (t *TablePlotState) postTablePlotXColumn(c echo.Context) error {
 }
 
 func (t *TablePlotState) postTablePlotYColumn(c echo.Context) error {
-	t.ws.stateMu.Lock()
-	defer t.ws.stateMu.Unlock()
 	type Request struct {
 		YColumn string `msgpack:"YColumn"`
 	}
@@ -217,6 +213,8 @@ func (t *TablePlotState) postTablePlotYColumn(c echo.Context) error {
 	if err := c.Bind(req); err != nil {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	t.ws.stateMu.Lock()
+	defer t.ws.stateMu.Unlock()
 	if !t.ColumnExists(req.YColumn) {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Table column not found"})
 	}
@@ -226,8 +224,6 @@ func (t *TablePlotState) postTablePlotYColumn(c echo.Context) error {
 }
 
 func (t *TablePlotState) postTablePlotMaxPoints(c echo.Context) error {
-	t.ws.stateMu.Lock()
-	defer t.ws.stateMu.Unlock()
 	type Request struct {
 		MaxPoints int `msgpack:"maxPoints"`
 	}
@@ -236,6 +232,8 @@ func (t *TablePlotState) postTablePlotMaxPoints(c echo.Context) error {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	t.ws.stateMu.Lock()
+	defer t.ws.stateMu.Unlock()
 	if req.MaxPoints < 1 || req.MaxPoints > 100000 {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "MaxPoints must be between 1 and 100000"})
 	}
@@ -245,8 +243,6 @@ func (t *TablePlotState) postTablePlotMaxPoints(c echo.Context) error {
 }
 
 func (t *TablePlotState) postTablePlotStep(c echo.Context) error {
-	t.ws.stateMu.Lock()
-	defer t.ws.stateMu.Unlock()
 	type Request struct {
 		Step int `msgpack:"step"`
 	}
@@ -255,6 +251,8 @@ func (t *TablePlotState) postTablePlotStep(c echo.Context) error {
 		log.Log.Err("%v", err)
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
 	}
+	t.ws.stateMu.Lock()
+	defer t.ws.stateMu.Unlock()
 	if req.Step < 1 {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Step must be at least 1"})
 	}

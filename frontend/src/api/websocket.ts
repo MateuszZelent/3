@@ -1,4 +1,11 @@
-import { markPreviewRendering, finishPreviewTransition } from './previewTransition';
+import {
+	markPreviewRendering,
+	finishPreviewTransition,
+	failPreviewTransition,
+	cancelPreviewTransition,
+	setPreviewRecoveryHandler
+} from './previewTransition';
+import { connectWebSocket } from './websocketConnection';
 import { decode } from '@msgpack/msgpack';
 
 import { type Preview, previewState } from './incoming/preview';
@@ -33,8 +40,8 @@ type PreviewWire = Omit<Preview, 'vectorFieldValues' | 'vectorFieldPositions'> &
 	vectorPositionsBinary?: Uint8Array;
 };
 
-export let connected = writable(false);
-export let connectionState = writable<ConnectionState>('disconnected');
+export const connected = writable(false);
+export const connectionState = writable<ConnectionState>('disconnected');
 export const previewConnected = writable(false);
 export const previewError = writable('');
 let previewSocket: WebSocket | null = null;
@@ -47,7 +54,9 @@ let previewSurface: HTMLElement | null = null;
 let previewRenderScheduled = false;
 let previewRendering = false;
 let previewRenderAgain = false;
-let tableRenderScheduled = false;
+let previewFrame: number | undefined;
+let renderGeneration = 0;
+let disposeConnections: (() => void) | null = null;
 let cachedVectorPositions: Int32Array<ArrayBufferLike> = new Int32Array();
 let cachedTopologyRevision = -1;
 
@@ -137,13 +146,11 @@ function normalizePreview(msg: PreviewWire): Preview {
 	cachedTopologyRevision = candidateRevision;
 	const positions = vectorCount > 0 ? candidatePositions : new Int32Array();
 
-	const {
-		vectorValuesBinary: _values,
-		vectorPositionsBinary: _positions,
-		vectorFieldValues: _legacyValues,
-		vectorFieldPositions: _legacyPositions,
-		...metadata
-	} = msg;
+	const metadata = { ...msg };
+	delete metadata.vectorValuesBinary;
+	delete metadata.vectorPositionsBinary;
+	delete metadata.vectorFieldValues;
+	delete metadata.vectorFieldPositions;
 	return {
 		...metadata,
 		vectorFieldValues: values,
@@ -154,7 +161,7 @@ function normalizePreview(msg: PreviewWire): Preview {
 }
 
 function previewCanRender() {
-	const mesh = get(meshState);
+	const mesh = get(previewState).mesh ?? get(meshState);
 	return (
 		!!previewSurface?.isConnected &&
 		previewSurface.clientWidth > 0 &&
@@ -165,9 +172,20 @@ function previewCanRender() {
 
 // A frame may arrive before the lazy visualization component or mesh metadata.
 // Retain it in the store and render when both dependencies become available.
+function invalidatePreviewRender() {
+	renderGeneration++;
+	if (previewFrame !== undefined && typeof cancelAnimationFrame === 'function')
+		cancelAnimationFrame(previewFrame);
+	previewFrame = undefined;
+	previewRenderScheduled = false;
+	previewRendering = false;
+	previewRenderAgain = false;
+}
 export function setPreviewSurface(surface: HTMLElement | null) {
+	if (previewSurface !== surface) invalidatePreviewRender();
 	previewSurface = surface;
-	schedulePreviewRender();
+	if (surface) schedulePreviewRender();
+	else ackPreview();
 }
 export function requestPreviewRender() {
 	schedulePreviewRender();
@@ -176,21 +194,21 @@ export function requestPreviewRender() {
 async function renderPreview() {
 	if (get(previewState).type === '3D') {
 		const { preview3D, setRenderMode, renderMode } = await import('$lib/preview/preview3D');
-		if (!previewCanRender() || get(previewState).type !== '3D') return false;
-		if (get(previewState).nComp === 1 && get(renderMode) !== 'volume') setRenderMode('volume');
-		await preview3D();
-		return true;
+		if (!previewCanRender() || get(previewState).type !== '3D') return null;
+		const state = get(previewState);
+		markPreviewRendering(state);
+		if (state.nComp === 1 && get(renderMode) !== 'volume')
+			setRenderMode('volume', { ensureAllLayers: false });
+		const rendered: unknown = await preview3D();
+		return rendered === false ? null : state;
 	}
 
 	const { preview2D } = await import('$lib/preview/preview2D');
-	if (!previewCanRender() || get(previewState).type !== '2D') return false;
+	if (!previewCanRender() || get(previewState).type !== '2D') return null;
+	const state = get(previewState);
+	markPreviewRendering(state);
 	await preview2D();
-	return true;
-}
-
-async function renderTablePlot() {
-	const { plotTable } = await import('$lib/table-plot/table-plot');
-	await plotTable();
+	return state;
 }
 
 function schedulePreviewRender() {
@@ -202,26 +220,31 @@ function schedulePreviewRender() {
 		return;
 	}
 	previewRenderScheduled = true;
-	requestAnimationFrame(() => {
+	const generation = renderGeneration;
+	previewFrame = requestAnimationFrame(() => {
+		if (generation !== renderGeneration) return;
+		previewFrame = undefined;
 		previewRenderScheduled = false;
 		if (!previewVisible || document.hidden || !previewCanRender()) {
 			ackPreview();
 			return;
 		}
 		previewRendering = true;
-		const rendered = get(previewState);
 		const ack = pendingAck;
-		markPreviewRendering(rendered);
 		void renderPreview()
-			.then((didRender) => {
-				if (didRender) finishPreviewTransition(rendered);
+			.then((rendered) => {
+				if (generation !== renderGeneration) return;
+				if (rendered && previewCanRender()) finishPreviewTransition(rendered);
 				if (pendingAck === ack) ackPreview();
 			})
 			.catch((error) => {
+				if (generation !== renderGeneration) return;
 				previewError.set(String(error));
+				failPreviewTransition(error);
 				if (pendingAck === ack) ackPreview();
 			})
 			.finally(() => {
+				if (generation !== renderGeneration) return;
 				previewRendering = false;
 				if (previewRenderAgain) {
 					previewRenderAgain = false;
@@ -231,15 +254,9 @@ function schedulePreviewRender() {
 	});
 }
 
-function scheduleTableRender() {
-	if (tableRenderScheduled) {
-		return;
-	}
-	tableRenderScheduled = true;
-	requestAnimationFrame(() => {
-		tableRenderScheduled = false;
-		void renderTablePlot();
-	});
+export function requestPreviewResync() {
+	if (previewSocket?.readyState === WebSocket.OPEN)
+		previewSocket.send(JSON.stringify({ resync: true }));
 }
 
 function connectWS(
@@ -248,21 +265,18 @@ function connectWS(
 	onClose: () => void,
 	onMessage: (data: ArrayBuffer) => void
 ) {
-	const retryInterval = 1000;
-	let ws: WebSocket | null = null;
-
-	function connect() {
-		console.debug('Connecting to WebSocket server at', wsUrl);
-		ws = new WebSocket(wsUrl);
-		ws.binaryType = 'arraybuffer';
-
-		ws.onopen = function () {
-			if (wsUrl.endsWith('/preview')) {
-				previewSocket = ws;
+	const isPreview = wsUrl.endsWith('/preview');
+	let current: WebSocket | null = null;
+	return connectWebSocket(wsUrl, {
+		open: (socket) => {
+			current = socket;
+			if (isPreview) {
+				previewSocket = socket;
 				lastSequence = 0;
+				pendingAck = null;
 				cachedTopologyRevision = -1;
 				cachedVectorPositions = new Int32Array();
-				ws?.send(
+				socket.send(
 					JSON.stringify({
 						protocol: 2,
 						maxPoints: get(previewClientBudget),
@@ -271,50 +285,39 @@ function connectWS(
 				);
 			}
 			onOpen();
-		};
-
-		ws.onmessage = function (event) {
+		},
+		close: () => {
+			current = null;
+			if (isPreview) {
+				previewSocket = null;
+				pendingAck = null;
+				failPreviewTransition(new Error('Preview connection lost. Retry when connected.'));
+			}
+			onClose();
+		},
+		message: (data) => {
 			try {
-				onMessage(event.data as ArrayBuffer);
+				onMessage(data);
 			} catch (error) {
 				previewError.set(String(error));
-				if (wsUrl.endsWith('/preview')) ws?.send(JSON.stringify({ resync: true }));
+				if (isPreview) {
+					failPreviewTransition(error);
+					if (current?.readyState === WebSocket.OPEN) requestPreviewResync();
+				}
 			}
-		};
-
-		ws.onclose = function () {
-			if (wsUrl.endsWith('/preview')) previewSocket = null;
-			onClose();
-			console.debug(
-				'WebSocket closed. Attempting to reconnect in ' + retryInterval / 1000 + ' seconds...'
-			);
-			ws = null;
-			setTimeout(connect, retryInterval);
-		};
-
-		ws.onerror = function (event) {
-			console.error('WebSocket encountered error:', event);
-			if (ws) {
-				ws.close();
-			}
-		};
-	}
-
-	try {
-		connect();
-	} catch (err) {
-		console.error(
-			'WebSocket connection failed:',
-			err,
-			'Retrying in ' + retryInterval / 1000 + ' seconds...'
-		);
-		setTimeout(connect, retryInterval);
-	}
+		}
+	});
 }
 
-export function initializeWebSocket() {
-	document.addEventListener('visibilitychange', () => setPreviewVisible(previewVisible));
-	connectWS(
+export function initializeWebSocket(): () => void {
+	if (disposeConnections) return disposeConnections;
+	const visibilityChanged = () => setPreviewVisible(previewVisible);
+	document.addEventListener('visibilitychange', visibilityChanged);
+	setPreviewRecoveryHandler(() => {
+		requestPreviewResync();
+		requestPreviewRender();
+	});
+	const disposeMain = connectWS(
 		'./ws',
 		() => {
 			connected.set(true);
@@ -322,16 +325,34 @@ export function initializeWebSocket() {
 		},
 		() => {
 			connected.set(false);
-			connectionState.update((state) => (state === 'connected' ? 'reconnecting' : 'disconnected'));
+			connectionState.update((state) => (state === 'disconnected' ? state : 'reconnecting'));
 		},
 		parseMsgpack
 	);
-	connectWS(
+	const disposePreview = connectWS(
 		'./ws/preview',
 		() => previewConnected.set(true),
 		() => previewConnected.set(false),
 		parsePreviewMsgpack
 	);
+	const dispose = () => {
+		if (disposeConnections !== dispose) return;
+		disposeConnections = null;
+		document.removeEventListener('visibilitychange', visibilityChanged);
+		setPreviewRecoveryHandler(null);
+		cancelPreviewTransition({ restore: false });
+		disposeMain();
+		disposePreview();
+		invalidatePreviewRender();
+		previewSurface = null;
+		previewSocket = null;
+		pendingAck = null;
+		connected.set(false);
+		previewConnected.set(false);
+		connectionState.set('disconnected');
+	};
+	disposeConnections = dispose;
+	return dispose;
 }
 
 export function parseMsgpack(data: ArrayBuffer) {
@@ -365,10 +386,9 @@ export function parseMsgpack(data: ArrayBuffer) {
 			data: msg.tablePlot.data ?? [],
 			corePos: msg.tablePlot.corePos ?? null,
 			coreEnabled: msg.tablePlot.coreEnabled ?? false,
- coreMode: msg.tablePlot.coreMode ?? "",
- coreStatus: msg.tablePlot.coreStatus ?? ""
+			coreMode: msg.tablePlot.coreMode ?? '',
+			coreStatus: msg.tablePlot.coreStatus ?? ''
 		});
-		scheduleTableRender();
 	}
 	if (msg.preview) {
 		acceptPreview(msg.preview as PreviewWire);
@@ -388,7 +408,21 @@ export function parsePreviewMsgpack(data: ArrayBuffer) {
 
 function acceptPreview(msg: PreviewWire) {
 	const sequence = Number(msg.sequence ?? 0);
-	if (sequence > 0 && sequence <= lastSequence) return;
+	if (sequence > 0 && sequence < lastSequence) return;
+	if (
+		sequence > 0 &&
+		sequence === lastSequence &&
+		Number(msg.topologyRevision ?? 0) === cachedTopologyRevision
+	) {
+		// Resync can replay an already accepted frame and reset the server's
+		// credit. Return that credit without replacing a newer pending ACK.
+		// A frame still drawing keeps its original render-completion ACK.
+		if (pendingAck?.sequence !== sequence && previewSocket?.readyState === WebSocket.OPEN)
+			previewSocket.send(JSON.stringify({ ack: sequence, revision: cachedTopologyRevision }));
+		return;
+	}
+	// A different transport profile can reuse the source sequence. Normalize
+	// and draw its topology before acknowledging that profile's revision.
 	const state = normalizePreview(msg);
 	if (sequence > 0) lastSequence = sequence;
 	previewState.set(state);

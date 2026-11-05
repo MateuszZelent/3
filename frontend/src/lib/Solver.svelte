@@ -10,9 +10,11 @@
 		postRelax,
 		postRun,
 		postSolverType,
-		postSteps
+		postSteps,
+		solverOperationBusy
 	} from '$api/outgoing/solver';
-	import { writable } from 'svelte/store';
+	import { get } from 'svelte/store';
+	import type { PostResult } from '$api/post';
 	import Button from '$lib/ui/Button.svelte';
 	import Panel from '$lib/ui/Panel.svelte';
 	import ReadonlyField from '$lib/ui/ReadonlyField.svelte';
@@ -21,16 +23,12 @@
 
 	let runSeconds = $state('1e-9');
 	let runSteps = $state('100');
+	let numericPending = $state(false);
 
-	const solverTypes = [
-		'bw_euler',
-		'euler',
-		'heun',
-		'rk4',
-		'rk23',
-		'rk45',
-		'rkf56'
-	].map((type) => ({ value: type, label: type }));
+	const solverTypes = ['bw_euler', 'euler', 'heun', 'rk4', 'rk23', 'rk45', 'rkf56'].map((type) => ({
+		value: type,
+		label: type
+	}));
 
 	function submitRun() {
 		postRun(runSeconds);
@@ -42,16 +40,29 @@
 
 	function bindNumericField<K extends 'fixdt' | 'mindt' | 'maxdt' | 'maxerr'>(
 		key: K,
-		submit: () => void
+		submit: (value: number) => Promise<PostResult>
 	) {
-		return (event: Event) => {
-			const next = Number((event.currentTarget as HTMLInputElement).value);
-			if (!Number.isFinite(next)) {
+		return async (event: Event) => {
+			const input = event.currentTarget as HTMLInputElement;
+			const next = Number(input.value);
+			if (
+				numericPending ||
+				!input.value.trim() ||
+				!Number.isFinite(next) ||
+				next < 0 ||
+				(key === 'maxerr' && next === 0)
+			) {
+				input.value = String(get(solverState)[key]);
 				return;
 			}
-
-			solverState.update((state) => ({ ...state, [key]: next }));
-			submit();
+			numericPending = true;
+			try {
+				const result = await submit(next);
+				if (result.ok) solverState.update((state) => ({ ...state, [key]: next }));
+				else input.value = String(get(solverState)[key]);
+			} finally {
+				numericPending = false;
+			}
 		};
 	}
 </script>
@@ -86,7 +97,9 @@
 					oninput={(event) => (runSeconds = (event.currentTarget as HTMLInputElement).value)}
 					onkeydown={(event) => event.key === 'Enter' && submitRun()}
 				/>
-				<Button variant="solid" tone="accent" onclick={submitRun}>Run</Button>
+				<Button variant="solid" tone="accent" disabled={$solverOperationBusy} onclick={submitRun}
+					>Run</Button
+				>
 			</div>
 
 			<div class="solver-run">
@@ -97,14 +110,25 @@
 					oninput={(event) => (runSteps = (event.currentTarget as HTMLInputElement).value)}
 					onkeydown={(event) => event.key === 'Enter' && submitSteps()}
 				/>
-				<Button variant="outline" tone="info" onclick={submitSteps}>Run steps</Button>
+				<Button variant="outline" tone="info" disabled={$solverOperationBusy} onclick={submitSteps}
+					>Run steps</Button
+				>
 			</div>
 
 			<div class="solver-actions">
-				<Button variant="subtle" tone="accent" onclick={postRelax}>Relax</Button>
-				<Button variant="subtle" tone="info" onclick={postMinimize}>Minimize</Button>
+				<Button variant="subtle" tone="accent" disabled={$solverOperationBusy} onclick={postRelax}
+					>Relax</Button
+				>
+				<Button variant="subtle" tone="info" disabled={$solverOperationBusy} onclick={postMinimize}
+					>Minimize</Button
+				>
 				<Button variant="outline" tone="danger" onclick={postBreak}>Break</Button>
 			</div>
+			{#if $solverOperationBusy}<p role="status">
+					Solver operation {$solverState.operationStatus === 'running' ? 'running' : 'pending'}… Use
+					Break to stop it.
+				</p>{/if}
+			{#if $solverState.operationError}<p role="alert">{$solverState.operationError}</p>{/if}
 		</section>
 
 		<section class="solver-block">
@@ -115,10 +139,24 @@
 
 			<div class="solver-grid">
 				<ReadonlyField label="Steps" value={`${$solverState.steps}`} mono={true} />
-				<ReadonlyField label="Time" value={$solverState.time.toExponential(3)} unit="s" mono={true} />
+				<ReadonlyField
+					label="Time"
+					value={$solverState.time.toExponential(3)}
+					unit="s"
+					mono={true}
+				/>
 				<ReadonlyField label="dt" value={$solverState.dt.toExponential(3)} unit="s" mono={true} />
-				<ReadonlyField label="Err/step" value={$solverState.errPerStep.toExponential(3)} mono={true} />
-				<ReadonlyField label="Max torque" value={$solverState.maxTorque.toExponential(3)} unit="T" mono={true} />
+				<ReadonlyField
+					label="Err/step"
+					value={$solverState.errPerStep.toExponential(3)}
+					mono={true}
+				/>
+				<ReadonlyField
+					label="Max torque"
+					value={$solverState.maxTorque.toExponential(3)}
+					unit="T"
+					mono={true}
+				/>
 			</div>
 
 			<div class="solver-grid solver-grid--editable">
@@ -128,6 +166,7 @@
 					value={$solverState.fixdt}
 					unit="s"
 					mono={true}
+					disabled={numericPending}
 					onchange={bindNumericField('fixdt', postFixdt)}
 				/>
 				<TextField
@@ -136,6 +175,7 @@
 					value={$solverState.mindt}
 					unit="s"
 					mono={true}
+					disabled={numericPending}
 					onchange={bindNumericField('mindt', postMindt)}
 				/>
 				<TextField
@@ -144,6 +184,7 @@
 					value={$solverState.maxdt}
 					unit="s"
 					mono={true}
+					disabled={numericPending}
 					onchange={bindNumericField('maxdt', postMaxdt)}
 				/>
 				<TextField
@@ -151,6 +192,7 @@
 					type="number"
 					value={$solverState.maxerr}
 					mono={true}
+					disabled={numericPending}
 					onchange={bindNumericField('maxerr', postMaxerr)}
 				/>
 			</div>

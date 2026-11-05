@@ -1,11 +1,15 @@
 // svelte store that manages the alerts
 import { writable } from 'svelte/store';
 
-export let alert = writable("");
+export const alert = writable('');
+
+let dismissTimer: ReturnType<typeof setTimeout> | undefined;
 
 export function setAlert(message: string) {
-    alert.set(message);
-    setTimeout(() => {
-        alert.set("");
-    }, 10000);
+	if (dismissTimer !== undefined) clearTimeout(dismissTimer);
+	alert.set(message);
+	dismissTimer = setTimeout(() => {
+		alert.set('');
+		dismissTimer = undefined;
+	}, 10000);
 }

@@ -39,6 +39,12 @@ describe('volume surface projection', () => {
 			).toEqual(expected);
 		}
 	});
+	it('does not create a per-sample coordinate array and ignores malformed out-of-domain positions', () => {
+		const positions = new Int32Array([0, 0, 0, 8, 0, 0]);
+		const values = new Float32Array([2, 4, 6, 100, 100, 100]);
+		const result = projectVolumeVectors(positions, values, [1, 1, 1], 1, 'z');
+		expect(Array.from(result)).toEqual([2, 4, 6, 0, 0, 0]);
+	});
 	it('uses the same signed and one-sided field scales as 2D', () => {
 		expect(getColorScale(-0.5, 2)).toMatchObject({
 			min: -2,

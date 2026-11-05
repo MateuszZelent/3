@@ -1,9 +1,12 @@
 <script lang="ts">
+	type Props = { disabled?: boolean };
+	let { disabled = false }: Props = $props();
 	import { previewState } from '$api/incoming/preview';
 	import SelectField from '$lib/ui/SelectField.svelte';
 	import Toggle from '$lib/ui/Toggle.svelte';
 	import TextField from '$lib/ui/TextField.svelte';
 	import { postScale } from '$api/outgoing/preview';
+	import { sectionState, setSectionOpen } from '../sectionState';
 	import {
 		renderMode,
 		brightness,
@@ -11,6 +14,8 @@
 		volumeColorMode,
 		volumeLighting,
 		setVolumeLighting,
+		qualityLevel,
+		QUALITY_CONFIGS,
 		glyphSampling,
 		setGlyphSampling,
 		voxelSampling,
@@ -35,7 +40,13 @@
 
 	const isVolume = $derived($renderMode === 'volume');
 	const isVoxel = $derived($renderMode === 'voxel');
-	const lit = $derived(!isVolume || $volumeColorMode === 'geometry' || $volumeLighting);
+	// Basic (unlit) materials ignore lights: the volume without lighting and
+	// arrows/voxels in the low quality preset.
+	const lit = $derived(
+		isVolume
+			? $volumeColorMode === 'geometry' || $volumeLighting
+			: QUALITY_CONFIGS[$qualityLevel].useLighting
+	);
 	const sliders = $derived([
 		{
 			label: 'Lighting intensity',
@@ -93,18 +104,29 @@
 	]);
 </script>
 
-<details class="render-controls">
+<details
+	class="render-controls"
+	open={$sectionState.render}
+	ontoggle={(e) => setSectionOpen('render', e.currentTarget.open)}
+>
 	<summary
-		>{isVolume
-			? 'Surface appearance'
-			: isVoxel
-				? 'Voxel material & topography'
-				: 'Arrow display'}</summary
+		><span
+			>{isVolume
+				? 'Surface appearance'
+				: isVoxel
+					? 'Voxel material & topography'
+					: 'Arrow display'}</span
+		></summary
 	>
 	<div class="render-controls__body">
 		{#if isVolume}
 			{#if $volumeColorMode !== 'geometry'}
-				<Toggle label="Surface lighting" checked={$volumeLighting} onchange={setVolumeLighting} />
+				<Toggle
+					label="Surface lighting"
+					checked={$volumeLighting}
+					{disabled}
+					onchange={setVolumeLighting}
+				/>
 				<p>
 					{lit ? 'Lighting changes perceived colors.' : 'Unlit colors preserve the field palette.'}
 				</p>
@@ -117,12 +139,13 @@
 				min={0}
 				step="any"
 				value={$previewState.fixedScale ?? 0}
+				{disabled}
 				onchange={(e) => postScale(Number((e.currentTarget as HTMLInputElement).value))}
 			/>
 			<SelectField
 				label="Display sampling"
 				value={$previewState.regionActive ? 1 : isVoxel ? $voxelSampling : $glyphSampling}
-				disabled={$previewState.regionActive}
+				disabled={disabled || $previewState.regionActive}
 				options={[1, 2, 4].map((value) => ({ value: String(value), label: `${value}×` }))}
 				onchange={(value) =>
 					isVoxel
@@ -134,18 +157,29 @@
 				</p>{/if}
 		{/if}
 		{#if isVoxel}
-			<Toggle label="Opaque voxels" checked={$voxelOpaque} onchange={setVoxelOpaque} />
-			<Toggle label="Voxel topography" checked={$topoEnabled} onchange={setTopoEnabled} />
+			<Toggle label="Opaque voxels" checked={$voxelOpaque} {disabled} onchange={setVoxelOpaque} />
+			<Toggle
+				label="Voxel topography"
+				checked={$topoEnabled}
+				{disabled}
+				onchange={setTopoEnabled}
+			/>
 			{#if $topoEnabled}
 				<SelectField
 					label="Topography component"
 					value={$topoComponent}
+					{disabled}
 					options={['x', 'y', 'z'].map((value) => ({ value, label: value.toUpperCase() }))}
 					onchange={(value) => setTopoComponent(value as TopoComponent)}
 				/>
 			{/if}
 		{/if}
-		{#each sliders as slider}
+		{#if !lit}<p>
+				{isVolume
+					? 'Lighting is off, so intensity has no effect.'
+					: 'Lighting requires High or Ultra quality.'}
+			</p>{/if}
+		{#each sliders as slider (slider.label)}
 			<label class="render-slider">
 				<span>{slider.label}<output>{slider.value.toFixed(2)}</output></span>
 				<input
@@ -155,7 +189,7 @@
 					min={slider.min}
 					max={slider.max}
 					step={slider.step}
-					disabled={slider.disabled}
+					disabled={disabled || slider.disabled}
 					oninput={(e) => slider.change(Number(e.currentTarget.value))}
 				/>
 			</label>
@@ -169,10 +203,26 @@
 		color: var(--text-1);
 	}
 	summary {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 1rem;
+		list-style: none;
 		padding: 0.85rem 1rem;
 		cursor: pointer;
 		font-size: 0.8rem;
 		font-weight: 600;
+	}
+	summary::-webkit-details-marker {
+		display: none;
+	}
+	summary::after {
+		content: '⌄';
+		color: var(--text-3);
+		transition: transform 0.15s;
+	}
+	.render-controls:not([open]) > summary::after {
+		transform: rotate(-90deg);
 	}
 	.render-controls__body {
 		display: grid;

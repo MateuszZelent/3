@@ -50,7 +50,9 @@
 				onChangeFunction(values[chosenIndex] ?? values[0] ?? 0);
 				editing = false;
 			}}
-			onblur={() => { editing = false; }}
+			onblur={() => {
+				editing = false;
+			}}
 		/>
 		<div class="slider-field__meta">
 			<span>{values[0] ?? 0}</span>
@@ -97,7 +99,11 @@
 
 	.slider-field__fill {
 		height: 100%;
-		background: linear-gradient(90deg, color-mix(in srgb, var(--info) 16%, transparent), color-mix(in srgb, var(--accent) 20%, transparent));
+		background: linear-gradient(
+			90deg,
+			color-mix(in srgb, var(--info) 16%, transparent),
+			color-mix(in srgb, var(--accent) 20%, transparent)
+		);
 		transition: width var(--duration-fast) var(--easing-default);
 	}
 

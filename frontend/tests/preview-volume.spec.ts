@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, publishPreviewConfig } from './fixtures';
+import type { Preview } from '../src/api/incoming/preview';
+import type { PreviewDisplay } from './preview-test-types';
 
 test('volume sampling exposes Z and preserves a cube at unequal preview sizes', async ({
 	page
@@ -13,15 +15,13 @@ test('volume sampling exposes Z and preserves a cube at unequal preview sizes', 
 			json: { id: 0, active: false, failed: false, stage: '', percent: 0, startedAt: 0, logs: [] }
 		})
 	);
-	await page.routeWebSocket(/\/ws/, (socket) => socket.close());
+	await page.routeWebSocket(/\/ws/, () => {});
+	let configRevision = 0;
 	await page.route('**/api/preview/*', async (route) => {
-		const data = route.request().postDataJSON();
-		await page.evaluate(async (data) => {
-			const path = '/src/api/incoming/preview.ts';
-			const { previewState } = await import(path);
-			previewState.update((state: object) => ({ ...state, ...data, refresh: true }));
-		}, data);
-		await route.fulfill({ json: null });
+		const { requestId, ...data } = route.request().postDataJSON();
+		const revision = ++configRevision;
+		await publishPreviewConfig(page, { ...data, refresh: true }, revision);
+		await route.fulfill({ json: { requestId, configRevision: revision } });
 	});
 	await page.goto('/');
 	await expect(page.getByRole('button', { name: 'Single layer', exact: true })).toBeVisible();
@@ -42,7 +42,7 @@ test('volume sampling exposes Z and preserves a cube at unequal preview sizes', 
 				}
 			}
 		}
-		previewState.update((state: object) => ({
+		previewState.update((state: Preview) => ({
 			...state,
 			quantity: 'm',
 			type: '3D',
@@ -65,7 +65,7 @@ test('volume sampling exposes Z and preserves a cube at unequal preview sizes', 
 		}));
 		await new Promise(requestAnimationFrame);
 		const { preview3D } = await import(rendererPath);
-		preview3D();
+		await preview3D();
 	});
 	const zSlider = page.locator('label.slider-field').filter({ hasText: 'Z data points' });
 	await expect(zSlider).toHaveCount(0);
@@ -84,25 +84,36 @@ test('volume sampling exposes Z and preserves a cube at unequal preview sizes', 
 	await page.evaluate(async () => {
 		const path = '/src/api/incoming/preview.ts';
 		const { previewState } = await import(path);
-		previewState.update((state: any) => ({ ...state, zPossibleSizes: [...state.zPossibleSizes] }));
+		previewState.update((state: Preview) => ({
+			...state,
+			zPossibleSizes: [...state.zPossibleSizes]
+		}));
 	});
 	await expect(zSlider.locator('input')).toHaveValue('3');
 	await zSlider.locator('input').dispatchEvent('change');
-	expect((await request).postDataJSON()).toEqual({ zChosenSize: 10 });
+	expect((await request).postDataJSON()).toEqual({
+		zChosenSize: 10,
+		requestId: expect.any(String)
+	});
 	await expect(zSlider.locator('strong')).toHaveText('10');
 	const geometry = await page.evaluate(async () => {
 		const path = '/src/lib/preview/preview3D.ts';
 		const { preview3D, threeDPreview, setRenderMode } = await import(path);
-		preview3D();
-		let display: any;
-		const unsubscribe = threeDPreview.subscribe((value: any) => (display = value));
+		await preview3D();
+		const snapshot: { value: PreviewDisplay | null } = { value: null };
+		const unsubscribe = threeDPreview.subscribe(
+			(value: PreviewDisplay | null) => (snapshot.value = value)
+		);
 		unsubscribe();
+		const display = snapshot.value;
+		if (!display) throw new Error('Renderer did not mount');
 		const arrowCount = display.mesh.count;
 		const target = display.controls.target.toArray();
 		const matrices = display.mesh.offsets.array;
 		const first = Array.from(matrices.slice(0, 3));
 		const last = Array.from(matrices.slice((arrowCount - 1) * 3, (arrowCount - 1) * 3 + 3));
 		setRenderMode('voxel');
+		await preview3D();
 		return { arrowCount, voxelCount: display.mesh.count, target, first, last };
 	});
 	expect(geometry.arrowCount).toBe(5000);
@@ -123,7 +134,7 @@ test('volume sampling exposes Z and preserves a cube at unequal preview sizes', 
 	await page.evaluate(async () => {
 		const path = '/src/api/incoming/preview.ts';
 		const { previewState } = await import(path);
-		previewState.update((state: object) => ({
+		previewState.update((state: Preview) => ({
 			...state,
 			zPossibleSizes: undefined,
 			zChosenSize: undefined

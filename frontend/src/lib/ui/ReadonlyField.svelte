@@ -8,14 +8,7 @@
 		copyValue?: string;
 	};
 
-	let {
-		label,
-		value,
-		unit = '',
-		hint = '',
-		mono = false,
-		copyValue = ''
-	}: Props = $props();
+	let { label, value, unit = '', hint = '', mono = false, copyValue = '' }: Props = $props();
 
 	let copied = $state(false);
 

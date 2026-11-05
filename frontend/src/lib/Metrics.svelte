@@ -15,7 +15,12 @@
 	}
 </script>
 
-<Panel title="Metrics" subtitle="Host and simulation telemetry with compact signal-first cards." panelId="metrics" eyebrow="Diagnostics">
+<Panel
+	title="Metrics"
+	subtitle="Host and simulation telemetry with compact signal-first cards."
+	panelId="metrics"
+	eyebrow="Diagnostics"
+>
 	{#if $metrics.error}
 		<EmptyState
 			title="Telemetry unavailable"
@@ -32,14 +37,31 @@
 					<p>Machine-wide resource pressure.</p>
 				</header>
 				<div class="metrics-grid">
-					<MetricTile label="CPU total" value={pct($metrics.cpuPercentTotal)} progress={$metrics.cpuPercentTotal} tone="info" />
-					<MetricTile label="RAM total" value={pct($metrics.ramPercentTotal)} progress={$metrics.ramPercentTotal} tone="accent" />
-					<MetricTile label="GPU util." value={pct($metrics.gpuUtilizationPercent)} progress={$metrics.gpuUtilizationPercent} tone="info" />
+					<MetricTile
+						label="CPU total"
+						value={pct($metrics.cpuPercentTotal)}
+						progress={$metrics.cpuPercentTotal}
+						tone="info"
+					/>
+					<MetricTile
+						label="RAM total"
+						value={pct($metrics.ramPercentTotal)}
+						progress={$metrics.ramPercentTotal}
+						tone="accent"
+					/>
+					<MetricTile
+						label="GPU util."
+						value={pct($metrics.gpuUtilizationPercent)}
+						progress={$metrics.gpuUtilizationPercent}
+						tone="info"
+					/>
 					<MetricTile
 						label="Power draw"
 						value={`${$metrics.gpuPowerDraw.toFixed(1)} W`}
 						detail={`${$metrics.gpuPowerLimit.toFixed(1)} W limit`}
-						progress={$metrics.gpuPowerLimit > 0 ? ($metrics.gpuPowerDraw / $metrics.gpuPowerLimit) * 100 : 0}
+						progress={$metrics.gpuPowerLimit > 0
+							? ($metrics.gpuPowerDraw / $metrics.gpuPowerLimit) * 100
+							: 0}
 						tone="warn"
 					/>
 				</div>
@@ -51,17 +73,40 @@
 					<p>Process-scoped diagnostics and GPU residency.</p>
 				</header>
 				<div class="metrics-grid">
-					<MetricTile label="PID" value={`${$metrics.pid}`} detail={$metrics.gpuName || 'No GPU name'} />
-					<MetricTile label="CPU proc." value={pct($metrics.cpuPercent)} progress={$metrics.cpuPercent} tone="info" />
-					<MetricTile label="RAM proc." value={pct($metrics.ramPercent)} progress={$metrics.ramPercent} tone="accent" />
+					<MetricTile
+						label="PID"
+						value={`${$metrics.pid}`}
+						detail={$metrics.gpuName || 'No GPU name'}
+					/>
+					<MetricTile
+						label="CPU proc."
+						value={pct($metrics.cpuPercent)}
+						progress={$metrics.cpuPercent}
+						tone="info"
+					/>
+					<MetricTile
+						label="RAM proc."
+						value={pct($metrics.ramPercent)}
+						progress={$metrics.ramPercent}
+						tone="accent"
+					/>
 					<MetricTile
 						label="VRAM used"
 						value={gib($metrics.gpuVramUsed)}
 						detail={`${gib($metrics.gpuVramTotal)} total`}
-						progress={$metrics.gpuVramTotal > 0 ? ($metrics.gpuVramUsed / $metrics.gpuVramTotal) * 100 : 0}
-						tone={$metrics.gpuVramTotal > 0 && $metrics.gpuVramUsed / $metrics.gpuVramTotal > 0.8 ? 'warn' : 'default'}
+						progress={$metrics.gpuVramTotal > 0
+							? ($metrics.gpuVramUsed / $metrics.gpuVramTotal) * 100
+							: 0}
+						tone={$metrics.gpuVramTotal > 0 && $metrics.gpuVramUsed / $metrics.gpuVramTotal > 0.8
+							? 'warn'
+							: 'default'}
 					/>
-					<MetricTile label="GPU temp." value={`${$metrics.gpuTemperature}°C`} detail={$metrics.gpuUUID || 'UUID unavailable'} tone={$metrics.gpuTemperature > 80 ? 'warn' : 'default'} />
+					<MetricTile
+						label="GPU temp."
+						value={`${$metrics.gpuTemperature}°C`}
+						detail={$metrics.gpuUUID || 'UUID unavailable'}
+						tone={$metrics.gpuTemperature > 80 ? 'warn' : 'default'}
+					/>
 				</div>
 			</section>
 		</div>

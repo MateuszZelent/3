@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	type Props = { disabled?: boolean };
+	let { disabled = false }: Props = $props();
 	import { meshState } from '$api/incoming/mesh';
 	import { previewState } from '$api/incoming/preview';
 	import Button from '$lib/ui/Button.svelte';
@@ -17,13 +18,13 @@
 		fullDomain
 	} from '../preview3DRegion';
 	import { fitPreviewRegion, setGlyphSampling, setVoxelSampling } from '../preview3D';
-	let { compact = false }: { compact?: boolean } = $props();
-	let expanded = $state(untrack(() => !compact));
+	import { sectionState, setSectionOpen } from '../sectionState';
 	const counts = $derived([$meshState.Nx, $meshState.Ny, $meshState.Nz]);
 	const cells = $derived([$meshState.dx, $meshState.dy, $meshState.dz]);
 	const sizes = $derived($regionDraft.end.map((n, a) => Math.max(n - $regionDraft.start[a], 1)));
 	const nativePoints = $derived(sizes.reduce((n, v) => n * v, 1));
 	function mode(value: string) {
+		if (disabled) return;
 		if (value === 'native') {
 			setGlyphSampling(1);
 			setVoxelSampling(1);
@@ -32,14 +33,18 @@
 	}
 </script>
 
-<details class="region-controls" bind:open={expanded}>
+<details
+	class="region-controls"
+	open={$sectionState.region}
+	ontoggle={(e) => setSectionOpen('region', e.currentTarget.open)}
+>
 	<summary
 		><strong>3D render window · X / Y / Z</strong><span
 			>{$regionPending
 				? 'Updating…'
 				: $regionDraft.enabled
 					? `${sizes.join(' × ')} source cells`
-					: 'Full domain'} <span aria-hidden="true">⌄</span></span
+					: 'Full domain'}</span
 		></summary
 	>
 	<div class="region-body">
@@ -47,19 +52,21 @@
 			<Toggle
 				label="Local 3D window"
 				checked={$regionDraft.enabled}
+				{disabled}
 				onchange={(enabled) => changeRegion({ enabled })}
 			/>
 			<span>Applies to Volume, Arrows and Voxel</span>
 			<Button size="sm" variant="ghost" onclick={fitPreviewRegion}>Fit camera</Button>
-			<Button size="sm" variant="ghost" onclick={fullDomain}>Full domain</Button>
+			<Button size="sm" variant="ghost" {disabled} onclick={fullDomain}>Full domain</Button>
 		</div>
 		<div class="region-ranges">
-			{#each ['x', 'y', 'z'] as axis, a}
+			{#each ['x', 'y', 'z'] as axis, a (axis)}
 				<div>
 					<WindowRangeControl
 						{axis}
 						count={counts[a]}
 						extent={counts[a] * cells[a] * 1e9}
+						{disabled}
 						range={[
 							$regionDraft.start[a] / Math.max(counts[a], 1),
 							$regionDraft.end[a] / Math.max(counts[a], 1)
@@ -74,10 +81,12 @@
 							max={$regionDraft.end[a] - 1}
 							step={1}
 							value={$regionDraft.start[a]}
+							{disabled}
 							onchange={(e) => {
 								const value = Number((e.target as HTMLInputElement).value);
 								if (Number.isInteger(value) && value >= 0 && value < $regionDraft.end[a])
 									setRegionWindow(a, [value / counts[a], $regionDraft.end[a] / counts[a]]);
+								else (e.target as HTMLInputElement).value = String($regionDraft.start[a]);
 							}}
 						/>
 						<TextField
@@ -88,10 +97,12 @@
 							max={counts[a]}
 							step={1}
 							value={$regionDraft.end[a]}
+							{disabled}
 							onchange={(e) => {
 								const value = Number((e.target as HTMLInputElement).value);
 								if (Number.isInteger(value) && value > $regionDraft.start[a] && value <= counts[a])
 									setRegionWindow(a, [$regionDraft.start[a] / counts[a], value / counts[a]]);
+								else (e.target as HTMLInputElement).value = String($regionDraft.end[a]);
 							}}
 						/>
 					</div>
@@ -101,6 +112,7 @@
 		<div class="region-resolution">
 			<SegmentedControl
 				value={$regionDraft.mode}
+				{disabled}
 				options={[
 					{ value: 'native', label: 'Native cells' },
 					{ value: 'custom', label: 'Custom resolution' }
@@ -114,25 +126,30 @@
 			>
 		</div>
 		{#if $regionDraft.enabled && $regionDraft.mode === 'custom'}<div class="region-custom">
-				{#each ['X', 'Y', 'Z'] as axis, a}<TextField
+				{#each ['X', 'Y', 'Z'] as axis, a (axis)}<TextField
 						label={`Local ${axis} samples`}
 						type="number"
 						min={1}
 						max={sizes[a]}
 						step={1}
 						value={Math.min($regionDraft.samples[a], sizes[a])}
+						{disabled}
 						onchange={(e) => {
 							const n = Number((e.target as HTMLInputElement).value);
 							if (Number.isInteger(n) && n >= 1 && n <= sizes[a]) {
 								const samples = [...$regionDraft.samples] as [number, number, number];
 								samples[a] = n;
 								changeRegion({ enabled: true, samples });
-							}
+							} else
+								(e.target as HTMLInputElement).value = String(
+									Math.min($regionDraft.samples[a], sizes[a])
+								);
 						}}
 					/>{/each}
 				<SelectField
 					label="Preview point budget"
 					value={$regionDraft.maxPoints}
+					{disabled}
 					options={[65536, 262144, 1000000].map((value) => ({
 						value: String(value),
 						label: value.toLocaleString()
@@ -141,12 +158,13 @@
 				/>
 			</div>{/if}
 		<p>
-			Choose a smaller window to increase local detail, then select Native cells. Drag the filled range to pan, or use arrow keys (Shift: 10 cells). Bounds are measured from
-			the mesh edge. Surface and thickness averages use this window. Native cells are exact up to
-			1,000,000 points; larger windows are averaged.
+			Choose a smaller window to increase local detail, then select Native cells. Drag the filled
+			range to pan, or use arrow keys (Shift: 10 cells). Bounds are measured from the mesh edge.
+			Surface and thickness averages use this window. Native cells are exact up to 1,000,000 points;
+			larger windows are averaged.
 		</p>
 		{#if $regionError}<p role="alert">
-				{$regionError} <button onclick={() => changeRegion({})}>Retry</button>
+				{$regionError} <button {disabled} onclick={() => changeRegion({})}>Retry</button>
 			</p>{/if}
 	</div>
 </details>
@@ -165,8 +183,21 @@
 		cursor: pointer;
 		font-size: 0.75rem;
 		list-style: none;
+		align-items: center;
+	}
+	summary::-webkit-details-marker {
+		display: none;
+	}
+	summary::after {
+		content: '⌄';
+		color: var(--text-3);
+		transition: transform 0.15s;
+	}
+	.region-controls:not([open]) > summary::after {
+		transform: rotate(-90deg);
 	}
 	summary > span {
+		margin-left: auto;
 		color: var(--text-2);
 		font-size: 0.7rem;
 	}
@@ -174,7 +205,6 @@
 		display: grid;
 		gap: 1rem;
 		padding: 0.25rem 1rem 1rem;
-
 	}
 	.region-header,
 	.region-resolution {

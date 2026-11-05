@@ -17,7 +17,8 @@
 		for (const { threshold, divisor, unit } of SI_PREFIXES) {
 			if (abs >= threshold) {
 				const scaled = meters / divisor;
-				const decimals = abs >= 1 ? 3 : Math.max(0, 4 - Math.floor(Math.log10(Math.abs(scaled)) + 1));
+				const decimals =
+					abs >= 1 ? 3 : Math.max(0, 4 - Math.floor(Math.log10(Math.abs(scaled)) + 1));
 				return { value: scaled.toFixed(decimals), unit };
 			}
 		}
@@ -59,11 +60,11 @@
 	eyebrow="Inspector"
 >
 	<div class="mesh-groups">
-		{#each grouped as [group, entries]}
+		{#each grouped as [group, entries] (group)}
 			<div class="mesh-group">
 				<header>{group}</header>
 				<div class="mesh-grid">
-					{#each entries as entry}
+					{#each entries as entry (entry.label)}
 						<ReadonlyField
 							label={entry.label}
 							value={entry.value}

@@ -1,30 +1,45 @@
 <script lang="ts">
 	import { consoleState } from '$api/incoming/console';
-	import { postCommand } from '$api/outgoing/console';
+	import { consoleOperationBusy, postCommand } from '$api/outgoing/console';
+	import { headerState } from '$api/incoming/header';
+	import { postBreak, solverOperationBusy } from '$api/outgoing/solver';
 	import { connectionState } from '$api/websocket';
 	import Button from '$lib/ui/Button.svelte';
 	import EmptyState from '$lib/ui/EmptyState.svelte';
 	import Panel from '$lib/ui/Panel.svelte';
-	import Prism from 'prismjs';
-	import 'prismjs/components/prism-go';
+	import { panelPreferences, toggleCollapsed, visiblePanels } from '$lib/ui/preferences';
+	import { visibleConsoleFragment } from '$lib/console-history';
+	import { tokenizeConsoleText, type ConsoleTokenNode } from '$lib/console-tokens';
 	import { tick } from 'svelte';
 
 	let command = $state('');
+	let commandPending = $state(false);
 	let commandHistory = $state<string[]>([]);
 	let historyIndex = $state(-1);
 	let codeDiv = $state<HTMLDivElement | null>(null);
 
-	const highlightedConsole = $derived(Prism.highlight($consoleState.hist, Prism.languages['go'], 'go'));
+	const displayedConsole = $derived(
+		$visiblePanels.console ? visibleConsoleFragment($consoleState.hist) : null
+	);
+	const highlightedConsole = $derived(
+		displayedConsole?.text ? tokenizeConsoleText(displayedConsole.text) : []
+	);
 
-	function submitCommand() {
+	async function submitCommand() {
 		const next = command.trim();
-		if (!next || $connectionState === 'disconnected') {
+		if (!next || commandPending || $consoleOperationBusy || $connectionState === 'disconnected') {
 			return;
 		}
-		postCommand(next);
-		commandHistory = [next, ...commandHistory.filter((entry) => entry !== next)].slice(0, 30);
-		historyIndex = -1;
-		command = '';
+		commandPending = true;
+		try {
+			const result = await postCommand(next);
+			if (!result.ok) return;
+			commandHistory = [next, ...commandHistory.filter((entry) => entry !== next)].slice(0, 30);
+			historyIndex = -1;
+			if (command.trim() === next) command = '';
+		} finally {
+			commandPending = false;
+		}
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
@@ -54,7 +69,8 @@
 	}
 
 	$effect(() => {
-		highlightedConsole;
+		void highlightedConsole;
+		if (!$visiblePanels.console) return;
 		const output = codeDiv;
 		if (!output) return;
 		let cancelled = false;
@@ -73,7 +89,25 @@
 	});
 </script>
 
-<Panel title="Console" subtitle="Terminal-like command channel with history and sticky input." panelId="console" eyebrow="Diagnostics">
+{#snippet renderConsoleTokens(tokens: ConsoleTokenNode[])}
+	{#each tokens as token, index (index)}
+		{#if token.kind === 'text'}
+			{token.text}
+		{:else}
+			<span class={token.className}>{@render renderConsoleTokens(token.children)}</span>
+		{/if}
+	{/each}
+{/snippet}
+
+<Panel
+	title="Console"
+	subtitle="Terminal-like command channel with history and sticky input."
+	panelId="console"
+	eyebrow="Diagnostics"
+	collapsible={true}
+	collapsed={$panelPreferences.collapsedByPanel.console}
+	onToggleCollapse={() => toggleCollapsed('console')}
+>
 	<div class="console-shell">
 		<div class="console-shell__output" bind:this={codeDiv}>
 			{#if !$consoleState.hist}
@@ -86,7 +120,12 @@
 					compact={true}
 				/>
 			{:else}
-				<div class="console-shell__code">{@html highlightedConsole}</div>
+				{#if displayedConsole?.omitted}
+					<p class="console-shell__truncation" role="note">
+						Showing recent console output. Older output omitted from this view.
+					</p>
+				{/if}
+				<div class="console-shell__code">{@render renderConsoleTokens(highlightedConsole)}</div>
 			{/if}
 		</div>
 
@@ -100,9 +139,17 @@
 				onkeydown={handleKeydown}
 				disabled={$connectionState === 'disconnected'}
 			/>
-			<Button variant="solid" tone="accent" onclick={submitCommand} disabled={$connectionState === 'disconnected'}>
-				Send
+			<Button
+				variant="solid"
+				tone="accent"
+				onclick={submitCommand}
+				disabled={$connectionState === 'disconnected' || commandPending || $consoleOperationBusy}
+			>
+				{commandPending ? 'Sending…' : 'Send'}
 			</Button>
+			{#if $consoleOperationBusy || $solverOperationBusy || $headerState.status === 'running'}
+				<Button variant="outline" tone="danger" onclick={postBreak}>Break</Button>
+			{/if}
 		</div>
 	</div>
 </Panel>
@@ -122,9 +169,7 @@
 		padding: 1rem;
 		border-radius: var(--radius-md);
 		border: 1px solid var(--border-subtle);
-		background:
-			linear-gradient(180deg, rgba(8, 12, 22, 0.96), rgba(7, 10, 18, 0.98)),
-			#060911;
+		background: linear-gradient(180deg, rgba(8, 12, 22, 0.96), rgba(7, 10, 18, 0.98)), #060911;
 		box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 	}
 
@@ -136,9 +181,15 @@
 		color: var(--text-1);
 	}
 
+	.console-shell__truncation {
+		margin: 0 0 0.7rem;
+		color: var(--text-3);
+		font-size: 0.75rem;
+	}
+
 	.console-shell__input {
 		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-columns: minmax(0, 1fr) auto auto;
 		gap: 0.75rem;
 		position: sticky;
 		bottom: 0;

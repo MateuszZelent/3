@@ -10,16 +10,20 @@ import (
 )
 
 type ConsoleState struct {
-	ws   *WebSocketManager
-	Hist string `msgpack:"hist"`
+	ws              *WebSocketManager
+	Hist            string `msgpack:"hist"`
+	OperationID     uint64 `msgpack:"operationId"`
+	OperationStatus string `msgpack:"operationStatus"`
+	OperationError  string `msgpack:"operationError"`
 }
 
 func (s *ConsoleState) Update() { s.Hist = engine.LogHistory() }
 
 func initConsoleAPI(e *echo.Group, ws *WebSocketManager) *ConsoleState {
 	state := &ConsoleState{
-		ws:   ws,
-		Hist: engine.LogHistory(),
+		ws:              ws,
+		Hist:            engine.LogHistory(),
+		OperationStatus: "idle",
 	}
 	e.POST("/api/console/command", state.postConsoleCommand)
 	return state
@@ -41,8 +45,5 @@ func (s ConsoleState) postConsoleCommand(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, echo.Map{"error": "RunShell command not allowed through the WebUI"})
 	}
 
-	engine.InjectAndWait(func() { engine.EvalTryRecover(req.Command) })
-	s.ws.setPreviewRefresh(true)
-	s.ws.broadcastEngineStateWithoutPreview() // Use the instance to call the method
-	return c.JSON(http.StatusOK, "")
+	return (SolverState{ws: s.ws}).acceptConsoleOperation(c, req.Command)
 }

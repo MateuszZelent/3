@@ -8,38 +8,35 @@ export function projectVolumeVectors(
 	axis: ProjectionAxis,
 	sourceDepth = dimensions[2] * Math.max(stride, 1)
 ): Float32Array {
-	const normal = ['x', 'y', 'z'].indexOf(axis),
-		u = (normal + 1) % 3,
-		v = (normal + 2) % 3;
-	const sums = new Float64Array(dimensions[u] * dimensions[v] * 3);
-	const count = Math.min(positions.length, values.length) / 3;
-	const key = (i: number) => {
-		const p = [
-			positions[i * 3],
-			positions[i * 3 + 1],
-			Math.floor(positions[i * 3 + 2] / Math.max(stride, 1))
-		];
-		return (p[v] * dimensions[u] + p[u]) * 3;
-	};
+	const normal = axis === 'x' ? 0 : axis === 'y' ? 1 : 2;
+	const u = (normal + 1) % 3;
+	const v = (normal + 2) % 3;
+	const safeStride = Math.max(Math.floor(stride), 1);
+	const uSize = Math.max(Math.floor(dimensions[u]), 0);
+	const vSize = Math.max(Math.floor(dimensions[v]), 0);
+	const sums = new Float64Array(uSize * vSize * 3);
+	const count = Math.min(Math.floor(positions.length / 3), Math.floor(values.length / 3));
+	const positionOffset = (index: number, coordinate: number) =>
+		coordinate === 2
+			? Math.floor(positions[index * 3 + 2] / safeStride)
+			: positions[index * 3 + coordinate];
 	for (let i = 0; i < count; i++) {
-		const offset = key(i);
-		for (let c = 0; c < 3; c++)
-			sums[offset + c] +=
-				values[i * 3 + c] *
-				(normal === 2
-					? Math.max(
-							0,
-							Math.min(
-								stride,
-								sourceDepth - Math.floor(positions[i * 3 + 2] / Math.max(stride, 1)) * stride
-							)
-						)
-					: 1);
+		const uPosition = positionOffset(i, u),
+			vPosition = positionOffset(i, v);
+		if (uPosition < 0 || uPosition >= uSize || vPosition < 0 || vPosition >= vSize) continue;
+		const offset = (vPosition * uSize + uPosition) * 3;
+		const zBin = Math.floor(positions[i * 3 + 2] / safeStride);
+		const thickness = Math.max(0, Math.min(safeStride, sourceDepth - zBin * safeStride));
+		const weight = normal === 2 ? thickness : 1;
+		for (let c = 0; c < 3; c++) sums[offset + c] += values[i * 3 + c] * weight;
 	}
-	const result = new Float32Array(values.length),
-		divisor = Math.max(normal === 2 ? sourceDepth : dimensions[normal], 1);
+	const result = new Float32Array(values.length);
+	const divisor = Math.max(normal === 2 ? sourceDepth : dimensions[normal], 1);
 	for (let i = 0; i < count; i++) {
-		const offset = key(i);
+		const uPosition = positionOffset(i, u),
+			vPosition = positionOffset(i, v);
+		if (uPosition < 0 || uPosition >= uSize || vPosition < 0 || vPosition >= vSize) continue;
+		const offset = (vPosition * uSize + uPosition) * 3;
 		for (let c = 0; c < 3; c++) result[i * 3 + c] = sums[offset + c] / divisor;
 	}
 	return result;

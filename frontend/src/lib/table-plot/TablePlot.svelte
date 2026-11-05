@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { tablePlotState } from '$api/incoming/table-plot';
 	import { fftState } from '$api/incoming/fft';
 	import {
@@ -15,16 +15,27 @@
 	import SelectField from '$lib/ui/SelectField.svelte';
 	import StatusBadge from '$lib/ui/StatusBadge.svelte';
 	import TextField from '$lib/ui/TextField.svelte';
-	import { plotTable } from '$lib/table-plot/table-plot';
-	import { plotSpectrum, plotSpectrogram } from '$lib/fft/fft-plot';
+	import { disposeTablePlot, plotTable } from '$lib/table-plot/table-plot';
 	import {
-		plotCorePosition,
+		disposeFftCharts,
+		disposeSpectrogram,
+		disposeSpectrum,
+		plotSpectrum,
+		plotSpectrogram
+	} from '$lib/fft/fft-plot';
+	import { createVisibleFrameTask } from '$lib/table-plot/visible-frame-task';
+	import {
+		disposeCorePosition,
+		getCorePositionPlotCounts,
+		plotCorePosition
+	} from '$lib/core-position/core-position-plot';
+	import { panelPreferences, toggleCollapsed, visiblePanels } from '$lib/ui/preferences';
+	import {
 		setOrbitWindow,
-		getOrbitWindow,
 		setEqualAspect,
-		getEqualAspect,
 		getMetrics,
-		type CoreMetrics
+		type CoreMetrics,
+		type CorePlotCounts
 	} from '$lib/core-position/core-position-plot';
 
 	type PlotTab = 'table' | 'spectrum' | 'spectrogram' | 'corepos';
@@ -40,11 +51,22 @@
 		orbitPoints: 0,
 		hasData: false
 	});
+	let corePlotCounts = $state<CorePlotCounts>({
+		sourcePoints: 0,
+		renderedPoints: 0,
+		sampled: false
+	});
 
 	let autosaveDraft = $state('');
 	let maxPointsDraft = $state('');
 	let stepDraft = $state('');
 	let fftMaxFreqDraft = $state('');
+	let autoSavePending = $state(false);
+	let maxPointsPending = $state(false);
+	let stepPending = $state(false);
+	let fftMaxFreqPending = $state(false);
+	let documentVisible = $state(true);
+	const plotFrame = createVisibleFrameTask(updateActivePlot);
 
 	const columnOptions = $derived(
 		$tablePlotState.columns.map((column) => ({ value: column, label: column }))
@@ -73,48 +95,136 @@
 		}
 	});
 
-	function submitAutoSave(event: Event) {
+	async function submitAutoSave(event: Event) {
 		const value = (event.currentTarget as HTMLInputElement).value.trim();
-		if (!value) return;
-		postAutoSaveInterval(value);
-		autosaveDraft = '';
+		if (!value || autoSavePending) return;
+		autoSavePending = true;
+		try {
+			const result = await postAutoSaveInterval(value);
+			if (result.ok && autosaveDraft.trim() === value) autosaveDraft = '';
+		} finally {
+			autoSavePending = false;
+		}
 	}
 
-	function submitMaxPoints(event: Event) {
+	async function submitMaxPoints(event: Event) {
 		const value = (event.currentTarget as HTMLInputElement).value.trim();
-		if (!value) return;
-		postMaxPoints(value);
-		maxPointsDraft = '';
+		if (!value || maxPointsPending) return;
+		maxPointsPending = true;
+		try {
+			const result = await postMaxPoints(value);
+			if (result.ok && maxPointsDraft.trim() === value) maxPointsDraft = '';
+		} finally {
+			maxPointsPending = false;
+		}
 	}
 
-	function submitStep(event: Event) {
+	async function submitStep(event: Event) {
 		const value = (event.currentTarget as HTMLInputElement).value.trim();
-		if (!value) return;
-		postStep(value);
-		stepDraft = '';
+		if (!value || stepPending) return;
+		stepPending = true;
+		try {
+			const result = await postStep(value);
+			if (result.ok && stepDraft.trim() === value) stepDraft = '';
+		} finally {
+			stepPending = false;
+		}
 	}
 
-	function submitFftMaxFreq(event: Event) {
+	async function submitFftMaxFreq(event: Event) {
 		const value = (event.currentTarget as HTMLInputElement).value.trim();
-		if (!value) return;
+		if (!value || fftMaxFreqPending) return;
 		const parsed = Number.parseFloat(value);
 		if (!Number.isFinite(parsed) || parsed <= 0) return;
-		postFftMaxFrequency(parsed);
-		fftMaxFreqDraft = '';
+		fftMaxFreqPending = true;
+		try {
+			const result = await postFftMaxFrequency(parsed);
+			if (result.ok && fftMaxFreqDraft.trim() === value) fftMaxFreqDraft = '';
+		} finally {
+			fftMaxFreqPending = false;
+		}
+	}
+
+	function submitOnEnter(event: KeyboardEvent, submit: (event: Event) => Promise<void>) {
+		if (event.key !== 'Enter') return;
+		event.preventDefault();
+		void submit(event);
+	}
+
+	function activePlotHasData(): boolean {
+		switch (activeTab) {
+			case 'table':
+				return $tablePlotState.data.length > 0;
+			case 'spectrum':
+				return $fftState.enabled && $fftState.spectrum.length > 0;
+			case 'spectrogram':
+				return (
+					$fftState.enabled && $fftState.spectrogram.length > 0 && $fftState.freqAxis.length > 0
+				);
+			case 'corepos':
+				return !!$tablePlotState.corePos?.length;
+		}
+	}
+
+	function updateActivePlot() {
+		if (!$visiblePanels.tableplot || !documentVisible) return;
+		switch (activeTab) {
+			case 'table':
+				if ($tablePlotState.data.length > 0) plotTable();
+				break;
+			case 'spectrum':
+				if ($fftState.enabled && $fftState.spectrum.length > 0) plotSpectrum();
+				break;
+			case 'spectrogram':
+				if ($fftState.enabled && $fftState.spectrogram.length > 0) plotSpectrogram();
+				break;
+			case 'corepos':
+				if ($tablePlotState.corePos?.length) {
+					plotCorePosition();
+					coreMetrics = getMetrics();
+					corePlotCounts = getCorePositionPlotCounts();
+				}
+				break;
+		}
 	}
 
 	$effect(() => {
-		if ($tablePlotState.data.length > 0 && activeTab === 'table') {
-			requestAnimationFrame(() => plotTable());
+		plotFrame.schedule($visiblePanels.tableplot && documentVisible && activePlotHasData());
+	});
+
+	$effect(() => {
+		if ($panelPreferences.collapsedByPanel.tableplot) {
+			plotFrame.cancel();
+			disposeTablePlot();
+			disposeFftCharts();
+			disposeCorePosition();
+			corePlotCounts = getCorePositionPlotCounts();
+			coreMetrics = {
+				radiusNm: 0,
+				centerXNm: 0,
+				centerYNm: 0,
+				frequencyGHz: null,
+				totalPoints: 0,
+				orbitPoints: 0,
+				hasData: false
+			};
 		}
 	});
 
 	$effect(() => {
-		if ($tablePlotState.corePos && activeTab === 'corepos') {
-			requestAnimationFrame(() => {
-				plotCorePosition();
-				coreMetrics = getMetrics();
-			});
+		if ($tablePlotState.data.length === 0) disposeTablePlot();
+	});
+
+	$effect(() => {
+		if (!$fftState.enabled || !$fftState.spectrum.length) disposeSpectrum();
+		if (!$fftState.enabled || !$fftState.spectrogram.length || !$fftState.freqAxis.length)
+			disposeSpectrogram();
+	});
+
+	$effect(() => {
+		if (!$tablePlotState.corePos?.length || !coreEnabled) {
+			disposeCorePosition();
+			corePlotCounts = getCorePositionPlotCounts();
 		}
 	});
 
@@ -122,6 +232,7 @@
 		coreOrbitNs = ns;
 		setOrbitWindow(ns);
 		coreMetrics = getMetrics();
+		corePlotCounts = getCorePositionPlotCounts();
 	}
 
 	function handleAspectToggle() {
@@ -129,21 +240,20 @@
 		setEqualAspect(coreAspectEqual);
 	}
 
-	$effect(() => {
-		if ($fftState.enabled && $fftState.spectrum && $fftState.spectrum.length > 0) {
-			requestAnimationFrame(() => {
-				plotSpectrum();
-				plotSpectrogram();
-			});
+	onMount(() => {
+		function updateDocumentVisibility() {
+			documentVisible = !document.hidden;
 		}
+		updateDocumentVisibility();
+		document.addEventListener('visibilitychange', updateDocumentVisibility);
+		return () => document.removeEventListener('visibilitychange', updateDocumentVisibility);
 	});
 
-	onMount(() => {
-		void plotTable();
-		if ($fftState.enabled) {
-			plotSpectrum();
-			plotSpectrogram();
-		}
+	onDestroy(() => {
+		plotFrame.dispose();
+		disposeTablePlot();
+		disposeFftCharts();
+		disposeCorePosition();
 	});
 </script>
 
@@ -152,6 +262,9 @@
 	subtitle="Time-domain table data with optional FFT and core-position views."
 	panelId="plots"
 	eyebrow="Visualization"
+	collapsible={true}
+	collapsed={$panelPreferences.collapsedByPanel.tableplot}
+	onToggleCollapse={() => toggleCollapsed('tableplot')}
 >
 	{#snippet actions()}
 		{#if activeTab === 'table'}
@@ -222,7 +335,9 @@
 						placeholder={`${$tablePlotState.autoSaveInterval}`}
 						unit="s"
 						mono={true}
+						disabled={autoSavePending}
 						oninput={(event) => (autosaveDraft = (event.currentTarget as HTMLInputElement).value)}
+						onkeydown={(event) => submitOnEnter(event, submitAutoSave)}
 						onchange={submitAutoSave}
 					/>
 				</div>
@@ -246,7 +361,9 @@
 					value={maxPointsDraft}
 					placeholder={`${$tablePlotState.maxPoints}`}
 					mono={true}
+					disabled={maxPointsPending}
 					oninput={(event) => (maxPointsDraft = (event.currentTarget as HTMLInputElement).value)}
+					onkeydown={(event) => submitOnEnter(event, submitMaxPoints)}
 					onchange={submitMaxPoints}
 				/>
 				<TextField
@@ -254,7 +371,9 @@
 					value={stepDraft}
 					placeholder={`${$tablePlotState.step}`}
 					mono={true}
+					disabled={stepPending}
 					oninput={(event) => (stepDraft = (event.currentTarget as HTMLInputElement).value)}
+					onkeydown={(event) => submitOnEnter(event, submitStep)}
 					onchange={submitStep}
 				/>
 				<TextField
@@ -263,7 +382,9 @@
 					placeholder={`${$tablePlotState.autoSaveInterval}`}
 					unit="s"
 					mono={true}
+					disabled={autoSavePending}
 					oninput={(event) => (autosaveDraft = (event.currentTarget as HTMLInputElement).value)}
+					onkeydown={(event) => submitOnEnter(event, submitAutoSave)}
 					onchange={submitAutoSave}
 				/>
 			</div>
@@ -290,7 +411,9 @@
 						? `Sampling every ${$fftState.sampleIntervalNs.toFixed(3)} ns`
 						: 'Sampling interval unavailable'}
 					mono={true}
+					disabled={fftMaxFreqPending}
 					oninput={(event) => (fftMaxFreqDraft = (event.currentTarget as HTMLInputElement).value)}
+					onkeydown={(event) => submitOnEnter(event, submitFftMaxFreq)}
 					onchange={submitFftMaxFreq}
 				/>
 			</div>
@@ -325,7 +448,9 @@
 						? `Sampling every ${$fftState.sampleIntervalNs.toFixed(3)} ns`
 						: 'Sampling interval unavailable'}
 					mono={true}
+					disabled={fftMaxFreqPending}
 					oninput={(event) => (fftMaxFreqDraft = (event.currentTarget as HTMLInputElement).value)}
+					onkeydown={(event) => submitOnEnter(event, submitFftMaxFreq)}
 					onchange={submitFftMaxFreq}
 				/>
 				<SelectField
@@ -393,7 +518,7 @@
 				<div class="cp__group">
 					<span class="cp__label">Orbit window</span>
 					<div class="cp__seg">
-						{#each [1, 2, 5, 10, 20] as ns}
+						{#each [1, 2, 5, 10, 20] as ns (ns)}
 							<button
 								class="cp__seg-btn"
 								class:cp__seg-btn--active={coreOrbitNs === ns}
@@ -411,6 +536,19 @@
 			</div>
 
 			<div id="core-position-plot" class="plots__canvas"></div>
+			{#if corePlotCounts.sourcePoints > 0}
+				<p class="cp__sampling-note" role="note">
+					Rendered {corePlotCounts.renderedPoints.toLocaleString()} of {corePlotCounts.sourcePoints.toLocaleString()}
+					valid trajectory samples.
+					{#if corePlotCounts.sampled}
+						Points are evenly sampled for display; markers remain original samples and orbit metrics
+						use every valid sample in the selected window.
+					{:else}
+						Markers are original samples; orbit metrics use every valid sample in the selected
+						window.
+					{/if}
+				</p>
+			{/if}
 
 			<!-- Metrics panel -->
 			{#if coreMetrics.hasData}
@@ -615,6 +753,12 @@
 		justify-content: space-between;
 		gap: 0.75rem;
 		margin-bottom: 0.5rem;
+	}
+
+	.cp__sampling-note {
+		margin: -0.15rem 0 0.65rem;
+		color: var(--text-3);
+		font-size: 0.72rem;
 	}
 
 	.cp__group {

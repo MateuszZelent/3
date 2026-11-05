@@ -9,6 +9,8 @@ import (
 	"github.com/mumax/3/httpfs"
 )
 
+const fftMaxFrequencyBins = 16384
+
 func fftLogf(format string, args ...interface{}) { LogOut(fmt.Sprintf(format, args...)) }
 func fftErrf(format string, args ...interface{}) { LogErr(fmt.Sprintf(format, args...)) }
 
@@ -94,6 +96,14 @@ func init() {
 // FftTrack registers a quantity for NUDFT tracking.
 // freqs in GHz for user convenience.
 func FftTrack(q Quantity, minFreqGHz, maxFreqGHz, dFreqGHz float64) {
+	if math.IsNaN(minFreqGHz) || math.IsInf(minFreqGHz, 0) || math.IsNaN(maxFreqGHz) || math.IsInf(maxFreqGHz, 0) || math.IsNaN(dFreqGHz) || math.IsInf(dFreqGHz, 0) {
+		panic(UserErr("FftTrack: frequencies must be finite"))
+	}
+	minFreq, maxFreq, dFreq := minFreqGHz*1e9, maxFreqGHz*1e9, dFreqGHz*1e9
+	nFreqs, err := validateFFTFrequencyGrid(minFreq, maxFreq, dFreq)
+	if err != nil {
+		panic(UserErr("FftTrack: " + err.Error()))
+	}
 	if !FftEnabled {
 		FftEnabled = true
 		fftLogf("FftTrack enabled real-time FFT mode.")
@@ -116,18 +126,10 @@ func FftTrack(q Quantity, minFreqGHz, maxFreqGHz, dFreqGHz float64) {
 		}
 	}
 
-	globalFft.minFreq = minFreqGHz * 1e9
-	globalFft.maxFreq = maxFreqGHz * 1e9
-	globalFft.dFreq = dFreqGHz * 1e9
-
-	if globalFft.dFreq <= 0 {
-		panic(UserErr("FftTrack: dFreqGHz must be > 0"))
-	}
-	if globalFft.maxFreq <= globalFft.minFreq {
-		panic(UserErr("FftTrack: maxFreqGHz must be > minFreqGHz"))
-	}
-
-	globalFft.nFreqs = int((globalFft.maxFreq-globalFft.minFreq)/globalFft.dFreq) + 1
+	globalFft.minFreq = minFreq
+	globalFft.maxFreq = maxFreq
+	globalFft.dFreq = dFreq
+	globalFft.nFreqs = nFreqs
 	globalFft.nComp = len(globalFft.labels)
 
 	// Precompute frequency array
@@ -178,6 +180,31 @@ func FftTrack(q Quantity, minFreqGHz, maxFreqGHz, dFreqGHz float64) {
 	fftLogf("│ Batch size:  %d steps", globalFft.stepsPerBatch)
 	fftLogf("│ Spectrogram segment: %.2f ns", globalFft.segDuration*1e9)
 	fftLogf("└────────────────────────────────────────────")
+}
+
+func validateFFTFrequencyGrid(minFreq, maxFreq, dFreq float64) (int, error) {
+	if math.IsNaN(minFreq) || math.IsInf(minFreq, 0) || math.IsNaN(maxFreq) || math.IsInf(maxFreq, 0) || math.IsNaN(dFreq) || math.IsInf(dFreq, 0) {
+		return 0, fmt.Errorf("FFT frequencies must be finite")
+	}
+	if dFreq <= 0 {
+		return 0, fmt.Errorf("dFreqGHz must be > 0")
+	}
+	if maxFreq <= minFreq {
+		return 0, fmt.Errorf("maxFreqGHz must be > minFreqGHz")
+	}
+	span := maxFreq - minFreq
+	if math.IsInf(span, 0) || math.IsNaN(span) {
+		return 0, fmt.Errorf("FFT frequency range overflows")
+	}
+	steps := span / dFreq
+	if math.IsInf(steps, 0) || math.IsNaN(steps) {
+		return 0, fmt.Errorf("FFT frequency bin count overflows")
+	}
+	truncatedSteps := math.Trunc(steps)
+	if truncatedSteps >= float64(fftMaxFrequencyBins) {
+		return 0, fmt.Errorf("FFT frequency grid exceeds the %d-bin limit", fftMaxFrequencyBins)
+	}
+	return int(truncatedSteps) + 1, nil
 }
 
 // doFftStep is called from step() in run.go. No-op when FFT is disabled.
@@ -481,16 +508,20 @@ func SetFftMaxFreqGHz(maxFreqGHz float64) error {
 		return fmt.Errorf("FFT tracking is not initialized")
 	}
 
+	if math.IsNaN(maxFreqGHz) || math.IsInf(maxFreqGHz, 0) {
+		return fmt.Errorf("maxFreqGHz must be finite")
+	}
 	maxFreq := maxFreqGHz * 1e9
-	if maxFreq <= globalFft.minFreq {
-		return fmt.Errorf("maxFreqGHz must be > %.6g", globalFft.minFreq/1e9)
+	nFreqs, err := validateFFTFrequencyGrid(globalFft.minFreq, maxFreq, globalFft.dFreq)
+	if err != nil {
+		return err
 	}
 	if maxFreq == globalFft.maxFreq {
 		return nil
 	}
 
 	globalFft.maxFreq = maxFreq
-	globalFft.nFreqs = int((globalFft.maxFreq-globalFft.minFreq)/globalFft.dFreq) + 1
+	globalFft.nFreqs = nFreqs
 	globalFft.freqs = make([]float64, globalFft.nFreqs)
 	for fi := 0; fi < globalFft.nFreqs; fi++ {
 		globalFft.freqs[fi] = globalFft.minFreq + float64(fi)*globalFft.dFreq

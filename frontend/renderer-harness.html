@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Isolated preview renderer benchmark</title>
+	</head>
+	<body style="margin: 0; background: #101522">
+		<div
+			id="container"
+			style="position: relative; width: 100vw; height: 100vh; overflow: hidden"
+		></div>
+		<script type="module">
+			const [{ previewState }, { meshState }, renderer3d, renderer2d] = await Promise.all([
+				import('/src/api/incoming/preview.ts'),
+				import('/src/api/incoming/mesh.ts'),
+				import('/src/lib/preview/preview3D.ts'),
+				import('/src/lib/preview/preview2D.ts')
+			]);
+			const twoFrames = () =>
+				new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+			const readStore = (store) => {
+				let value;
+				const unsubscribe = store.subscribe((next) => (value = next));
+				unsubscribe();
+				return value;
+			};
+			const measure = async (action) => {
+				const start = performance.now();
+				await action();
+				await twoFrames();
+				return Number((performance.now() - start).toFixed(2));
+			};
+			const withDeadline = (promise, label, timeoutMs = 1500) =>
+				new Promise((resolve, reject) => {
+					const timeout = setTimeout(
+						() => reject(new Error(`${label} exceeded ${timeoutMs} ms`)),
+						timeoutMs
+					);
+					promise.then(
+						(value) => {
+							clearTimeout(timeout);
+							resolve(value);
+						},
+						(error) => {
+							clearTimeout(timeout);
+							reject(error);
+						}
+					);
+				});
+			const makeVectors = (count, side) => {
+				const values = new Float32Array(count * 3);
+				const positions = new Int32Array(count * 3);
+				for (let i = 0; i < count; i++) {
+					const offset = i * 3;
+					values[offset] = Math.sin(i * 0.01) * 0.9;
+					values[offset + 1] = Math.cos(i * 0.013) * 0.7;
+					values[offset + 2] = ((i % 997) / 997) * 0.5;
+					positions[offset] = i % side;
+					positions[offset + 1] = Math.floor(i / side) % side;
+					positions[offset + 2] = 0;
+				}
+				return { values, positions };
+			};
+			const makeScalar = (count, side) => {
+				const points = new Array(count);
+				for (let i = 0; i < count; i++) {
+					const x = i % side;
+					const y = Math.floor(i / side) % side;
+					points[i] = [x, y, Math.sin(x * 0.01) * Math.cos(y * 0.013)];
+				}
+				return points;
+			};
+			window.runPreviewRendererBench = async (counts) => {
+				const longTasks = [];
+				const observer = new PerformanceObserver((list) => {
+					for (const entry of list.getEntries())
+						longTasks.push({
+							start: Number(entry.startTime.toFixed(2)),
+							duration: Number(entry.duration.toFixed(2))
+						});
+				});
+				observer.observe({ type: 'longtask', buffered: true });
+				const results = [];
+				const measured = {};
+				const track = async (name, action) => {
+					const start = performance.now();
+					const duration = await measure(action);
+					await new Promise((resolve) => requestAnimationFrame(resolve));
+					const end = performance.now();
+					measured[name] = longTasks.filter(
+						(task) => task.start + task.duration >= start && task.start <= end
+					);
+					return duration;
+				};
+				for (const count of counts) {
+					renderer2d.disposePreview2D();
+					renderer3d.disposePreview3D();
+					const side = Math.ceil(Math.sqrt(count));
+					const { values, positions } = makeVectors(count, side);
+					meshState.set({
+						dx: 5e-9,
+						dy: 5e-9,
+						dz: 5e-9,
+						Nx: side,
+						Ny: side,
+						Nz: 1,
+						Tx: 0,
+						Ty: 0,
+						Tz: 0,
+						PBCx: 0,
+						PBCy: 0,
+						PBCz: 0
+					});
+					previewState.set({
+						quantity: 'm',
+						unit: 'A/m',
+						component: 'vector',
+						layer: 0,
+						plane: 'xy',
+						sliceIndex: 0,
+						allLayers: false,
+						maxPoints: count,
+						type: '3D',
+						vectorFieldValues: values,
+						vectorFieldPositions: positions,
+						vectorCount: count,
+						topologyRevision: 10,
+						sequence: 10,
+						configRevision: 10,
+						scalarField: [],
+						min: -1,
+						max: 1,
+						refresh: false,
+						nComp: 3,
+						dataPointsCount: count,
+						xPossibleSizes: [side],
+						yPossibleSizes: [side],
+						zPossibleSizes: [1],
+						zChosenSize: 1,
+						appliedZChosenSize: 1,
+						xChosenSize: side,
+						yChosenSize: side,
+						appliedXChosenSize: side,
+						appliedYChosenSize: side,
+						appliedPlaneUSize: side,
+						appliedPlaneVSize: side,
+						appliedLayerStride: 1,
+						autoScaleEnabled: true,
+						autoDownscaled: false,
+						autoDownscaleMessage: '',
+						transportSampling: 1,
+						serverVectorCount: count,
+						normScale: 1
+					});
+					await twoFrames();
+					renderer3d.setQuality('low');
+					// Normalize browser-persisted controls so each size uses the same workload.
+					renderer3d.setVoxelSampling(1);
+					renderer3d.setGlyphSampling(1);
+					renderer3d.setVoxelThreshold(0);
+					renderer3d.setRenderMode('voxel');
+					let firstFrameDrawn = false;
+					const voxelMountMs = await track(`voxelMount:${count}`, () => {
+						const completion = renderer3d.preview3D();
+						const display = readStore(renderer3d.threeDPreview);
+						if (display) display.renderer.render = () => {};
+						return completion.then((drawn) => {
+							firstFrameDrawn = drawn;
+						});
+					});
+					const visibleAfterVoxelMount = readStore(renderer3d.visibleRenderCount);
+					const colorChangeMs = await track(`color:${count}`, () => {
+						renderer3d.setVoxelColorMode('x');
+						const completion = renderer3d.preview3D();
+						const display = readStore(renderer3d.threeDPreview);
+						if (display) display.renderer.render = () => {};
+						return completion;
+					});
+					const colorUploadBytes = readStore(renderer3d.previewPerformance).uploadBytes;
+					const updateMsBeforeCamera = readStore(renderer3d.previewPerformance).updateMs;
+					const uploadedBeforeCamera = readStore(renderer3d.previewPerformance).uploadBytes;
+					const cameraChangeMs = await track(`camera:${count}`, () => {
+						renderer3d.orbitCamera(4, 2);
+					});
+					const cameraUpdateMsDelta = Number(
+						(readStore(renderer3d.previewPerformance).updateMs - updateMsBeforeCamera).toFixed(2)
+					);
+					const cameraUploadBytes = readStore(renderer3d.previewPerformance).uploadBytes;
+					const resolutionChangeMs = await track(`resolution:${count}`, () => {
+						renderer3d.setVoxelSampling(2);
+						const completion = renderer3d.preview3D();
+						const display = readStore(renderer3d.threeDPreview);
+						if (display) display.renderer.render = () => {};
+						return completion;
+					});
+					const glyphSwitchMs = await track(`glyph:${count}`, () => {
+						renderer3d.setRenderMode('glyph');
+						const completion = renderer3d.preview3D();
+						const display = readStore(renderer3d.threeDPreview);
+						if (display) display.renderer.render = () => {};
+						return completion;
+					});
+					const qualityOldCanvas = readStore(renderer3d.threeDPreview)?.renderer.domElement;
+					const qualityCamera = readStore(renderer3d.threeDPreview)?.camera.position.clone();
+					const qualityUpgradeMs = await track(`qualityUpgrade:${count}`, () => {
+						renderer3d.setQuality('high');
+						const completion = renderer3d.preview3D();
+						const display = readStore(renderer3d.threeDPreview);
+						if (display) display.renderer.render = () => {};
+						return completion;
+					});
+					const qualityDisplay = readStore(renderer3d.threeDPreview);
+					const qualityUpgrade = {
+						contextAntialias:
+							qualityDisplay?.renderer.getContext().getContextAttributes()?.antialias ?? null,
+						canvasReplaced: qualityDisplay?.renderer.domElement !== qualityOldCanvas,
+						cameraPreserved: qualityDisplay?.camera.position.distanceTo(qualityCamera) < 1e-9
+					};
+					const highQualityCanvas = qualityDisplay?.renderer.domElement;
+					const qualitySameAntialiasMs = await track(`qualitySameAntialias:${count}`, () => {
+						renderer3d.setQuality('ultra');
+						const completion = renderer3d.preview3D();
+						const display = readStore(renderer3d.threeDPreview);
+						if (display) display.renderer.render = () => {};
+						return completion;
+					});
+					const qualitySameAntialiasCanvasPreserved =
+						readStore(renderer3d.threeDPreview)?.renderer.domElement === highQualityCanvas;
+					renderer3d.disposePreview3D();
+					previewState.update((state) => ({
+						...state,
+						type: '2D',
+						vectorFieldValues: new Float32Array(0),
+						vectorFieldPositions: new Int32Array(0),
+						vectorCount: 0,
+						scalarField: []
+					}));
+					await twoFrames();
+					const scalarFixtureStart = performance.now();
+					const scalarField = makeScalar(count, side);
+					const scalarFixtureMs = Number((performance.now() - scalarFixtureStart).toFixed(2));
+					previewState.update((state) => ({
+						...state,
+						type: '2D',
+						nComp: 1,
+						scalarField,
+						min: -1,
+						max: 1,
+						appliedPlaneUSize: side,
+						appliedPlaneVSize: side,
+						appliedXChosenSize: side,
+						appliedYChosenSize: side,
+						xChosenSize: side,
+						yChosenSize: side
+					}));
+					await twoFrames();
+					const chartMountMs = await track(`chartMount:${count}`, () => renderer2d.preview2D());
+					const chartIncrementalMs = await track(`chartIncremental:${count}`, () =>
+						renderer2d.preview2D()
+					);
+					const sameDataFrameAcks = [];
+					const sameDataReplayMs = await track(`sameDataReplay:${count}`, async () => {
+						for (const sequence of [11, 12]) {
+							previewState.update((state) => ({
+								...state,
+								sequence,
+								configRevision: 10,
+								topologyRevision: 10
+							}));
+							const start = performance.now();
+							await withDeadline(renderer2d.preview2D(), `2D same-data frame ${sequence}`);
+							sameDataFrameAcks.push({
+								sequence,
+								configRevision: readStore(previewState).configRevision,
+								resolved: true,
+								elapsedMs: Number((performance.now() - start).toFixed(2))
+							});
+						}
+					});
+					const rasterSmoke = {
+						canvasCount: 0,
+						centerPixel: null,
+						tooltip: ''
+					};
+					const rasterTarget = { x: 17, y: count > 128000 ? 20 : 21 };
+					const chartElement = document.querySelector('#container canvas');
+					if (chartElement) {
+						rasterSmoke.canvasCount = document.querySelectorAll('#container canvas').length;
+						const context = chartElement.getContext('2d');
+						const pixelX = Math.ceil(62 + (1100 - 94) * ((rasterTarget.x + 0.5) / side));
+						const pixelY = Math.floor(54 + (780 - 152) * (1 - (rasterTarget.y + 0.5) / side));
+						rasterSmoke.centerPixel = Array.from(context.getImageData(pixelX, pixelY, 1, 1).data);
+						const rect = chartElement.getBoundingClientRect();
+						chartElement.dispatchEvent(
+							new MouseEvent('mousemove', {
+								bubbles: true,
+								clientX: rect.left + pixelX,
+								clientY: rect.top + pixelY
+							})
+						);
+						await new Promise((resolve) => requestAnimationFrame(resolve));
+						rasterSmoke.tooltip = document.querySelector('[role="tooltip"]')?.textContent || '';
+					}
+					results.push({
+						count,
+						side,
+						voxelMountMs,
+						firstFrameDrawn,
+						visibleAfterVoxelMount,
+						colorChangeMs,
+						colorUploadBytes,
+						cameraChangeMs,
+						cameraUpdateMsDelta,
+						uploadedBeforeCamera,
+						cameraUploadBytes,
+						resolutionChangeMs,
+						glyphSwitchMs,
+						qualityUpgradeMs,
+						qualityUpgrade,
+						qualitySameAntialiasMs,
+						qualitySameAntialiasCanvasPreserved,
+						scalarFixtureMs,
+						chartMountMs,
+						chartIncrementalMs,
+						sameDataReplayMs,
+						sameDataFrameAcks,
+						rasterSmoke,
+						longTasks: [...longTasks],
+						longTasksByOperation: { ...measured }
+					});
+					renderer2d.disposePreview2D();
+				}
+				observer.disconnect();
+				return results;
+			};
+		</script>
+	</body>
+</html>

@@ -34,24 +34,60 @@ function uiColor(token: string, fallback: string): string {
 	return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || fallback;
 }
 export const THEME = {
-	get bg() { return uiColor('--surface-1', '#0f1728'); },
-	get surface1() { return uiColor('--surface-1', '#0f1728'); },
-	get surface2() { return uiColor('--surface-2', '#141f33'); },
-	get surface3() { return uiColor('--surface-3', '#1b2840'); },
-	get border() { return uiColor('--border', '#273753'); },
-	get borderInteractive() { return uiColor('--border-interactive', '#4d739e'); },
-	get text1() { return uiColor('--text-1', '#edf3fb'); },
-	get text2() { return uiColor('--text-2', '#a7bad3'); },
-	get text3() { return uiColor('--text-3', '#6b7f9f'); },
-	get accent() { return uiColor('--accent', '#57c8b6'); },
-	get accentHover() { return uiColor('--accent-hover', '#2fa596'); },
-	get info() { return uiColor('--info', '#6ba7ff'); },
-	get tooltipBg() { return this.surface1; },
-	get tooltipBorder() { return this.borderInteractive; },
-	get tooltipText() { return this.text1; },
-	get toolboxIcon() { return this.text2; },
-	get brushBg() { return this.surface3; },
-	get brushBorder() { return this.accent; }
+	get bg() {
+		return uiColor('--surface-1', '#0f1728');
+	},
+	get surface1() {
+		return uiColor('--surface-1', '#0f1728');
+	},
+	get surface2() {
+		return uiColor('--surface-2', '#141f33');
+	},
+	get surface3() {
+		return uiColor('--surface-3', '#1b2840');
+	},
+	get border() {
+		return uiColor('--border', '#273753');
+	},
+	get borderInteractive() {
+		return uiColor('--border-interactive', '#4d739e');
+	},
+	get text1() {
+		return uiColor('--text-1', '#edf3fb');
+	},
+	get text2() {
+		return uiColor('--text-2', '#a7bad3');
+	},
+	get text3() {
+		return uiColor('--text-3', '#6b7f9f');
+	},
+	get accent() {
+		return uiColor('--accent', '#57c8b6');
+	},
+	get accentHover() {
+		return uiColor('--accent-hover', '#2fa596');
+	},
+	get info() {
+		return uiColor('--info', '#6ba7ff');
+	},
+	get tooltipBg() {
+		return this.surface1;
+	},
+	get tooltipBorder() {
+		return this.borderInteractive;
+	},
+	get tooltipText() {
+		return this.text1;
+	},
+	get toolboxIcon() {
+		return this.text2;
+	},
+	get brushBg() {
+		return this.surface3;
+	},
+	get brushBorder() {
+		return this.accent;
+	}
 };
 
 export const ECHARTS_THEME_NAME = 'amumax-lab';

@@ -31,7 +31,12 @@
 	}: Props = $props();
 </script>
 
-<section class={`ui-panel ${className}`.trim()} data-tone={tone} data-panel={panelId} data-collapsed={collapsed}>
+<section
+	class={`ui-panel ${className}`.trim()}
+	data-tone={tone}
+	data-panel={panelId}
+	data-collapsed={collapsed}
+>
 	<header class="ui-panel__header">
 		<div class="ui-panel__heading">
 			{#if eyebrow}
@@ -81,9 +86,7 @@
 		padding: 1rem;
 		border: 1px solid var(--border-subtle);
 		border-radius: var(--radius-lg);
-		background:
-			linear-gradient(180deg, var(--surface-2), var(--surface-1)),
-			var(--surface-1);
+		background: linear-gradient(180deg, var(--surface-2), var(--surface-1)), var(--surface-1);
 		box-shadow: var(--shadow-soft);
 		min-width: 0;
 	}
@@ -94,8 +97,15 @@
 		inset: 0;
 		border-radius: inherit;
 		padding: 1px;
-		background: linear-gradient(160deg, color-mix(in srgb, var(--info) 20%, transparent), transparent 45%, color-mix(in srgb, var(--accent) 16%, transparent));
-		mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+		background: linear-gradient(
+			160deg,
+			color-mix(in srgb, var(--info) 20%, transparent),
+			transparent 45%,
+			color-mix(in srgb, var(--accent) 16%, transparent)
+		);
+		mask:
+			linear-gradient(#fff 0 0) content-box,
+			linear-gradient(#fff 0 0);
 		mask-composite: exclude;
 		opacity: 0.8;
 		pointer-events: none;
@@ -103,19 +113,35 @@
 
 	.ui-panel[data-tone='accent']::before,
 	.ui-panel[data-tone='success']::before {
-		background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 34%, transparent), transparent 56%);
+		background: linear-gradient(
+			160deg,
+			color-mix(in srgb, var(--accent) 34%, transparent),
+			transparent 56%
+		);
 	}
 
 	.ui-panel[data-tone='info']::before {
-		background: linear-gradient(160deg, color-mix(in srgb, var(--info) 36%, transparent), transparent 56%);
+		background: linear-gradient(
+			160deg,
+			color-mix(in srgb, var(--info) 36%, transparent),
+			transparent 56%
+		);
 	}
 
 	.ui-panel[data-tone='warn']::before {
-		background: linear-gradient(160deg, color-mix(in srgb, var(--warn) 34%, transparent), transparent 56%);
+		background: linear-gradient(
+			160deg,
+			color-mix(in srgb, var(--warn) 34%, transparent),
+			transparent 56%
+		);
 	}
 
 	.ui-panel[data-tone='danger']::before {
-		background: linear-gradient(160deg, color-mix(in srgb, var(--danger) 34%, transparent), transparent 56%);
+		background: linear-gradient(
+			160deg,
+			color-mix(in srgb, var(--danger) 34%, transparent),
+			transparent 56%
+		);
 	}
 
 	.ui-panel__header {

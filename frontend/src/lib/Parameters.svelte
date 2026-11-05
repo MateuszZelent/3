@@ -23,7 +23,9 @@
 		return 'Other';
 	}
 
-	const regionOptions = $derived($parameters.regions.map((region) => ({ value: String(region), label: `Region ${region}` })));
+	const regionOptions = $derived(
+		$parameters.regions.map((region) => ({ value: String(region), label: `Region ${region}` }))
+	);
 
 	const visibleFields = $derived(
 		$parameters.fields.filter((field) => {
@@ -77,7 +79,11 @@
 			oninput={(event) => (search = (event.currentTarget as HTMLInputElement).value)}
 		/>
 		<div class="parameter-toggle">
-			<Toggle label="Show unchanged values" checked={showAll} onchange={(next) => (showAll = next)} />
+			<Toggle
+				label="Show unchanged values"
+				checked={showAll}
+				onchange={(next) => (showAll = next)}
+			/>
 		</div>
 	</div>
 
@@ -89,14 +95,14 @@
 		/>
 	{:else}
 		<div class="parameter-groups">
-			{#each groupedFields as [group, fields]}
+			{#each groupedFields as [group, fields] (group)}
 				<section class="parameter-group">
 					<header>
 						<h3>{group}</h3>
 						<p>{fields.length} item{fields.length === 1 ? '' : 's'}</p>
 					</header>
 					<div class="parameter-list">
-						{#each fields as field}
+						{#each fields as field (field.name)}
 							<article class="parameter-card" data-changed={field.changed}>
 								<div class="parameter-card__topline">
 									<strong>{field.name}</strong>

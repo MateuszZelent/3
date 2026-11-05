@@ -25,14 +25,22 @@ func CompileFile(fname string) (*script.BlockStmt, error) {
 }
 
 func Eval(code string) {
+	_ = EvalError(code)
+}
+
+// EvalError preserves Eval's input/error logging while returning script
+// compilation failures to callers that need an explicit operation result.
+// Recoverable runtime panics are intentionally handled by the caller.
+func EvalError(code string) error {
 	tree, err := World.Compile(code)
 	if err != nil {
 		LogIn(code)
 		LogErr(err.Error())
-		return
+		return err
 	}
 	LogIn(rmln(tree.Format()))
 	tree.Eval()
+	return nil
 }
 
 func Eval1Line(code string) interface{} {

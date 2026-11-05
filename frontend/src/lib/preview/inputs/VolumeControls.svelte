@@ -1,4 +1,6 @@
 <script lang="ts">
+	type Props = { disabled?: boolean };
+	let { disabled = false }: Props = $props();
 	import { previewState } from '$api/incoming/preview';
 	import SelectField from '$lib/ui/SelectField.svelte';
 	import SegmentedControl from '$lib/ui/SegmentedControl.svelte';
@@ -11,7 +13,6 @@
 		volumeProjection,
 		volumeProjectionAxis,
 		volumeScaleMode,
-		volumeManualRange,
 		volumeLegend,
 		setVolumeColorMode,
 		setVolumeProjection,
@@ -19,6 +20,7 @@
 		type VolumeColorMode
 	} from '../preview3D';
 	import type { ProjectionAxis } from '../volumeProjection';
+	import { sectionState, setSectionOpen } from '../sectionState';
 	const isVolume = $derived($renderMode === 'volume');
 	const colorMode = $derived(isVolume ? $volumeColorMode : $voxelColorMode);
 	function setColorMode(value: string) {
@@ -29,11 +31,6 @@
 		if ($previewState.nComp === 1 && colorMode !== 'geometry' && colorMode !== 'value')
 			setColorMode('value');
 		if ($previewState.nComp === 3 && colorMode === 'value') setColorMode('x');
-	});
-	let viewportWidth = $state(1024);
-	let expanded = $state(true);
-	$effect(() => {
-		expanded = !isVolume || viewportWidth > 650;
 	});
 	const field = $derived(colorMode !== 'geometry');
 	const scalar = $derived(field && colorMode !== 'orientation');
@@ -48,8 +45,11 @@
 	}
 </script>
 
-<svelte:window bind:innerWidth={viewportWidth} />
-<details class="volume-controls" bind:open={expanded}>
+<details
+	class="volume-controls"
+	open={$sectionState.volume}
+	ontoggle={(e) => setSectionOpen('volume', e.currentTarget.open)}
+>
 	<summary class="volume-controls__heading">
 		<span class="volume-controls__icon" aria-hidden="true">▧</span>
 		<div>
@@ -73,6 +73,7 @@
 		<SelectField
 			label="Color by"
 			value={colorMode}
+			{disabled}
 			options={$previewState.nComp === 1
 				? [
 						...(isVolume ? [{ value: 'geometry', label: 'Solid · geometry' }] : []),
@@ -91,6 +92,7 @@
 		{#if isVolume && field}<SegmentedControl
 				label="Field on surface"
 				value={$volumeProjection}
+				{disabled}
 				options={[
 					{ value: 'surface', label: 'Surface values' },
 					{ value: 'average', label: 'Thickness average' }
@@ -101,6 +103,7 @@
 				<SegmentedControl
 					label="Average along"
 					value={$volumeProjectionAxis}
+					{disabled}
 					options={['x', 'y', 'z'].map((value) => ({ value, label: value.toUpperCase() }))}
 					onchange={(value) => setVolumeProjection('average', value as ProjectionAxis)}
 				/>
@@ -109,6 +112,7 @@
 		{#if scalar}<SegmentedControl
 				label="Color range"
 				value={$volumeScaleMode}
+				{disabled}
 				options={[
 					{ value: 'data', label: 'Automatic' },
 					{ value: 'manual', label: 'Manual' }
@@ -147,6 +151,7 @@
 						type="number"
 						step="any"
 						bind:value={min}
+						{disabled}
 						oninput={updateRange}
 					/></label
 				><label
@@ -155,6 +160,7 @@
 						type="number"
 						step="any"
 						bind:value={max}
+						{disabled}
 						oninput={updateRange}
 					/></label
 				>{#if !valid}<span role="alert">Minimum must be smaller than maximum.</span>{/if}

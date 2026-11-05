@@ -35,13 +35,13 @@
 </script>
 
 <button
-	type={type}
+	{type}
 	class={`ui-button ui-button--${variant} ui-button--${size} ${fullWidth ? 'ui-button--full' : ''} ${className}`.trim()}
 	data-tone={tone}
 	{disabled}
 	{title}
 	aria-label={ariaLabel || undefined}
-	onclick={onclick}
+	{onclick}
 >
 	{#if children}
 		{@render children()}

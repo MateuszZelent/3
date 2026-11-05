@@ -1,6 +1,5 @@
-import { post } from "$api/post";
-
+import { post } from '$api/post';
 
 export function postResetError() {
-    post('metrics/reset-error', { });
+	return post('metrics/reset-error', {});
 }

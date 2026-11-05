@@ -80,6 +80,91 @@ func (es *EngineState) WithoutPreview() *EngineStateNoPreview {
 	}
 }
 
+// storeEngineStateWithoutPreview publishes sections that a snapshot worker
+// updated on a clone. Callers hold stateMu and have checked that no mutation
+// (which always bumps mainConfigRevision) happened since the clone was taken.
+func storeEngineStateWithoutPreview(live, updated *EngineState) {
+	if live == nil || updated == nil {
+		return
+	}
+	storeSection(live.Header, updated.Header)
+	storeSection(live.Console, updated.Console)
+	storeSection(live.Solver, updated.Solver)
+	storeSection(live.Mesh, updated.Mesh)
+	storeSection(live.Params, updated.Params)
+	storeSection(live.TablePlot, updated.TablePlot)
+	storeSection(live.Metrics, updated.Metrics)
+	storeSection(live.Fft, updated.Fft)
+}
+
+func storeSection[T any](live, updated *T) {
+	if live != nil && updated != nil {
+		*live = *updated
+	}
+}
+
+func cloneEngineStateWithoutPreview(es *EngineState) *EngineState {
+	if es == nil {
+		return nil
+	}
+	clone := &EngineState{}
+	if es.Header != nil {
+		header := *es.Header
+		if es.Header.Version != nil {
+			version := *es.Header.Version
+			header.Version = &version
+		}
+		clone.Header = &header
+	}
+	if es.Console != nil {
+		console := *es.Console
+		clone.Console = &console
+	}
+	if es.Solver != nil {
+		solver := *es.Solver
+		solver.Steps = cloneValuePointer(es.Solver.Steps)
+		solver.Time = cloneValuePointer(es.Solver.Time)
+		solver.ErrPerStep = cloneValuePointer(es.Solver.ErrPerStep)
+		solver.MaxTorque = cloneValuePointer(es.Solver.MaxTorque)
+		solver.Fixdt = cloneValuePointer(es.Solver.Fixdt)
+		solver.Mindt = cloneValuePointer(es.Solver.Mindt)
+		solver.Maxdt = cloneValuePointer(es.Solver.Maxdt)
+		solver.Maxerr = cloneValuePointer(es.Solver.Maxerr)
+		clone.Solver = &solver
+	}
+	if es.Mesh != nil {
+		mesh := *es.Mesh
+		clone.Mesh = &mesh
+	}
+	if es.Params != nil {
+		parameters := *es.Params
+		parameters.Regions = append([]int(nil), es.Params.Regions...)
+		parameters.Fields = append([]Field(nil), es.Params.Fields...)
+		clone.Params = &parameters
+	}
+	if es.TablePlot != nil {
+		tablePlot := *es.TablePlot
+		clone.TablePlot = &tablePlot
+	}
+	if es.Metrics != nil {
+		metrics := *es.Metrics
+		clone.Metrics = &metrics
+	}
+	if es.Fft != nil {
+		fft := *es.Fft
+		clone.Fft = &fft
+	}
+	return clone
+}
+
+func cloneValuePointer[T any](source *T) *T {
+	if source == nil {
+		return nil
+	}
+	copy := *source
+	return &copy
+}
+
 // Does not acquire engine or websocket state locks.
 func getDemagProgress(c echo.Context) error {
 	c.Response().Header().Set("Cache-Control", "no-store")

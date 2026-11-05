@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 const viewports = [
 	{ width: 1600, height: 1200 },
@@ -13,6 +13,7 @@ for (const viewport of viewports) {
 		await page.setViewportSize(viewport);
 		await page.goto('/');
 		await expect(page.getByText('Workspace')).toBeVisible();
+		await expect(page.getByText('Field studio', { exact: true })).toBeVisible();
 		await expect(page).toHaveScreenshot(`workspace-shell-${viewport.width}.png`, {
 			fullPage: true,
 			animations: 'disabled'

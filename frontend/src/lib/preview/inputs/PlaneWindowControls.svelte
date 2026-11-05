@@ -1,4 +1,6 @@
 <script lang="ts">
+	type Props = { disabled?: boolean };
+	let { disabled = false }: Props = $props();
 	import { previewState } from '$api/incoming/preview';
 	import { meshState } from '$api/incoming/mesh';
 	import Toggle from '$lib/ui/Toggle.svelte';
@@ -22,11 +24,17 @@
 
 <div class="plane-window-controls">
 	<div class="plane-window-controls__header">
-		<Toggle label="Autoscale" checked={$preview2DAutoscale} onchange={setPreview2DAutoscale} /><span
+		<Toggle
+			label="Autoscale"
+			checked={$preview2DAutoscale}
+			{disabled}
+			onchange={setPreview2DAutoscale}
+		/><span
 			>{$preview2DAutoscale
 				? 'Fill the window · stretched proportions'
 				: 'Physical proportions'}</span
-		><Button size="sm" variant="ghost" onclick={resetPreview2DWindow}>Full window</Button>
+		><Button size="sm" variant="ghost" {disabled} onclick={resetPreview2DWindow}>Full window</Button
+		>
 	</div>
 	<div class="plane-window-controls__ranges">
 		<WindowRangeControl
@@ -34,6 +42,7 @@
 			extent={extents[axes.u]}
 			count={$previewState.appliedPlaneUSize || $previewState.appliedXChosenSize || 1}
 			range={$preview2DWindow.u}
+			{disabled}
 			onchange={(range) => setPreview2DWindow('u', range)}
 		/>
 		<WindowRangeControl
@@ -41,6 +50,7 @@
 			extent={extents[axes.v]}
 			count={$previewState.appliedPlaneVSize || $previewState.appliedYChosenSize || 1}
 			range={$preview2DWindow.v}
+			{disabled}
 			onchange={(range) => setPreview2DWindow('v', range)}
 		/>
 	</div>

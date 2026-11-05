@@ -64,8 +64,7 @@
 		border: 1px solid var(--border-subtle);
 		border-radius: calc(var(--radius-lg) + 0.15rem);
 		background:
-			linear-gradient(180deg, rgba(18, 29, 49, 0.96), rgba(10, 18, 30, 0.94)),
-			var(--surface-glass);
+			linear-gradient(180deg, rgba(18, 29, 49, 0.96), rgba(10, 18, 30, 0.94)), var(--surface-glass);
 		backdrop-filter: blur(18px);
 		box-shadow: var(--shadow-panel);
 	}

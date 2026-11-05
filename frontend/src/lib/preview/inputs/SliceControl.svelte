@@ -6,8 +6,9 @@
 		cellSize: number;
 		value: number;
 		onchange: (index: number) => void;
+		disabled?: boolean;
 	};
-	let { axis, count, cellSize, value, onchange }: Props = $props();
+	let { axis, count, cellSize, value, onchange, disabled = false }: Props = $props();
 	let draft = $state(0);
 	let editing = $state(false);
 	const last = $derived(Math.max(count - 1, 0));
@@ -18,6 +19,11 @@
 		previewSampleCoordinateNm(draft, Math.max(count, 1), cellSize * Math.max(count, 1) * 1e9)
 	);
 	function commit(index: number) {
+		if (disabled) {
+			editing = false;
+			draft = value;
+			return;
+		}
 		if (!Number.isInteger(index) || index < 0 || index > last) {
 			editing = false;
 			draft = value;
@@ -41,7 +47,7 @@
 		<button
 			type="button"
 			aria-label="Previous layer"
-			disabled={draft === 0 || count < 2}
+			disabled={disabled || draft === 0 || count < 2}
 			onclick={() => commit(draft - 1)}>−</button
 		>
 		<input
@@ -52,7 +58,7 @@
 			max={last}
 			step="1"
 			value={draft}
-			disabled={count < 2}
+			disabled={disabled || count < 2}
 			oninput={(event) => {
 				editing = true;
 				draft = Number(event.currentTarget.value);
@@ -65,7 +71,7 @@
 		<button
 			type="button"
 			aria-label="Next layer"
-			disabled={draft === last || count < 2}
+			disabled={disabled || draft === last || count < 2}
 			onclick={() => commit(draft + 1)}>+</button
 		>
 		<label class="slice-control__index"
@@ -76,6 +82,7 @@
 				max={last}
 				step="1"
 				value={draft}
+				{disabled}
 				onfocus={() => {
 					editing = true;
 				}}

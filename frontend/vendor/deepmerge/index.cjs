@@ -1,20 +1,19 @@
 'use strict';
 
 var isMergeableObject = function isMergeableObject(value) {
-	return isNonNullObject(value)
-		&& !isSpecial(value)
+	return isNonNullObject(value) && !isSpecial(value);
 };
 
 function isNonNullObject(value) {
-	return !!value && typeof value === 'object'
+	return !!value && typeof value === 'object';
 }
 
 function isSpecial(value) {
 	var stringValue = Object.prototype.toString.call(value);
 
-	return stringValue === '[object RegExp]'
-		|| stringValue === '[object Date]'
-		|| isReactElement(value)
+	return (
+		stringValue === '[object RegExp]' || stringValue === '[object Date]' || isReactElement(value)
+	);
 }
 
 // see https://github.com/facebook/react/blob/b5ac963fb791d1298e7f396236383bc955f916c1/src/isomorphic/classic/element/ReactElement.js#L21-L25
@@ -22,100 +21,109 @@ var canUseSymbol = typeof Symbol === 'function' && Symbol.for;
 var REACT_ELEMENT_TYPE = canUseSymbol ? Symbol.for('react.element') : 0xeac7;
 
 function isReactElement(value) {
-	return value.$$typeof === REACT_ELEMENT_TYPE
+	return value.$$typeof === REACT_ELEMENT_TYPE;
 }
 
 function emptyTarget(val) {
-	return Array.isArray(val) ? [] : {}
+	return Array.isArray(val) ? [] : {};
 }
 
 function cloneUnlessOtherwiseSpecified(value, options) {
-	return (options.clone !== false && options.isMergeableObject(value))
+	return options.clone !== false && options.isMergeableObject(value)
 		? deepmerge(emptyTarget(value), value, options)
-		: value
+		: value;
 }
 
 function defaultArrayMerge(target, source, options) {
-	return target.concat(source).map(function(element) {
-		return cloneUnlessOtherwiseSpecified(element, options)
-	})
+	return target.concat(source).map(function (element) {
+		return cloneUnlessOtherwiseSpecified(element, options);
+	});
 }
 
 function getMergeFunction(key, options) {
 	if (!options.customMerge) {
-		return deepmerge
+		return deepmerge;
 	}
 	var customMerge = options.customMerge(key);
-	return typeof customMerge === 'function' ? customMerge : deepmerge
+	return typeof customMerge === 'function' ? customMerge : deepmerge;
 }
 
 function getEnumerableOwnPropertySymbols(target) {
 	return Object.getOwnPropertySymbols
-		? Object.getOwnPropertySymbols(target).filter(function(symbol) {
-			return Object.propertyIsEnumerable.call(target, symbol)
-		})
-		: []
+		? Object.getOwnPropertySymbols(target).filter(function (symbol) {
+				return Object.propertyIsEnumerable.call(target, symbol);
+			})
+		: [];
 }
 
 function getKeys(target) {
-	return Object.keys(target).concat(getEnumerableOwnPropertySymbols(target))
+	return Object.keys(target).concat(getEnumerableOwnPropertySymbols(target));
 }
 
 function propertyIsOnObject(object, property) {
 	try {
-		return property in object
-	} catch(_) {
-		return false
+		return property in object;
+	} catch {
+		return false;
 	}
 }
 
 // Protects from prototype poisoning and unexpected merging up the prototype chain.
 function keyIsForbidden(key) {
-	return key === '__proto__' || key === 'constructor' || key === 'prototype'
+	return key === '__proto__' || key === 'constructor' || key === 'prototype';
 }
 
 function propertyIsUnsafe(target, key) {
 	if (keyIsForbidden(key)) {
-		return true
+		return true;
 	}
 	if (target === null || (typeof target !== 'object' && typeof target !== 'function')) {
-		return false
+		return false;
 	}
 	try {
-		return key in target && !(Object.hasOwnProperty.call(target, key)
-			&& Object.propertyIsEnumerable.call(target, key))
-	} catch (_) {
-		return true
+		return (
+			key in target &&
+			!(Object.hasOwnProperty.call(target, key) && Object.propertyIsEnumerable.call(target, key))
+		);
+	} catch {
+		return true;
 	}
 }
 
 function setOwnProperty(target, key, value) {
 	Object.defineProperty(target, key, {
-		value: value, writable: true, enumerable: true, configurable: true
+		value: value,
+		writable: true,
+		enumerable: true,
+		configurable: true
 	});
 }
 
 function mergeObject(target, source, options) {
 	var destination = {};
 	if (options.isMergeableObject(target)) {
-		getKeys(target).forEach(function(key) {
+		getKeys(target).forEach(function (key) {
 			if (!keyIsForbidden(key)) {
 				setOwnProperty(destination, key, cloneUnlessOtherwiseSpecified(target[key], options));
 			}
 		});
 	}
-	getKeys(source).forEach(function(key) {
+	getKeys(source).forEach(function (key) {
 		if (propertyIsUnsafe(target, key)) {
-			return
+			return;
 		}
 
 		if (propertyIsOnObject(target, key) && options.isMergeableObject(source[key])) {
-			setOwnProperty(destination, key, getMergeFunction(key, options)(target[key], source[key], options));
+			setOwnProperty(
+				destination,
+				key,
+				getMergeFunction(key, options)(target[key], source[key], options)
+			);
 		} else {
 			setOwnProperty(destination, key, cloneUnlessOtherwiseSpecified(source[key], options));
 		}
 	});
-	return destination
+	return destination;
 }
 
 function deepmerge(target, source, options) {
@@ -131,22 +139,22 @@ function deepmerge(target, source, options) {
 	var sourceAndTargetTypesMatch = sourceIsArray === targetIsArray;
 
 	if (!sourceAndTargetTypesMatch) {
-		return cloneUnlessOtherwiseSpecified(source, options)
+		return cloneUnlessOtherwiseSpecified(source, options);
 	} else if (sourceIsArray) {
-		return options.arrayMerge(target, source, options)
+		return options.arrayMerge(target, source, options);
 	} else {
-		return mergeObject(target, source, options)
+		return mergeObject(target, source, options);
 	}
 }
 
 deepmerge.all = function deepmergeAll(array, options) {
 	if (!Array.isArray(array)) {
-		throw new Error('first argument should be an array')
+		throw new Error('first argument should be an array');
 	}
 
-	return array.reduce(function(prev, next) {
-		return deepmerge(prev, next, options)
-	}, {})
+	return array.reduce(function (prev, next) {
+		return deepmerge(prev, next, options);
+	}, {});
 };
 
 var deepmerge_1 = deepmerge;

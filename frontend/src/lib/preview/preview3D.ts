@@ -1,6 +1,6 @@
 import { browser } from '$app/env';
-import { previewState } from '$api/incoming/preview';
-import { meshState } from '$api/incoming/mesh';
+import { previewState, type Preview } from '$api/incoming/preview';
+import { meshState, type Mesh } from '$api/incoming/mesh';
 import { setPreviewClientBudget, previewClientBudget } from '$api/websocket';
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -13,6 +13,16 @@ import { getColorScale } from './fieldColorScale';
 import { postAllLayers } from '$api/outgoing/preview';
 import { VectorMesh } from './vectorInstances';
 import { THEME } from '$lib/theme/echarts-theme';
+import { getNumericFieldRange } from './fieldExtrema';
+import { readPreviewStorage, writePreviewStorage } from './safePreviewStorage';
+import { viewCubeCssMatrix } from './viewCubeOrientation';
+import {
+	PreviewRenderGate,
+	samePreviewFrame,
+	type PreviewFrameIdentity
+} from './previewRenderGate';
+import { previewFrameMesh } from './previewFrameMesh';
+import { buildVectorBlocks } from './vectorBlocks';
 
 export type QualityLevel = 'low' | 'high' | 'ultra';
 export type Preview3DRenderMode = 'glyph' | 'voxel' | 'volume';
@@ -56,9 +66,11 @@ interface ThreeDPreview {
 	controls: TrackballControls;
 	rendererMode: Preview3DRenderMode;
 	shapeKey: string;
+	contextAntialias: boolean;
+	lastGlyphSegments: number;
 }
 
-const QUALITY_CONFIGS: Record<QualityLevel, QualityConfig> = {
+export const QUALITY_CONFIGS: Record<QualityLevel, QualityConfig> = {
 	low: {
 		segments: 6,
 		useLighting: false,
@@ -97,22 +109,21 @@ const STORAGE_KEYS = {
 } as const;
 
 const _tempVec = new THREE.Vector3();
-const _camDir = new THREE.Vector3();
 
 // Local coordinates avoid precision loss for a small window far from the origin.
 // Source bounds remain available in the window controls in physical units.
 function getRenderMesh() {
-	const mesh = get(meshState),
-		p = get(previewState),
+	const p = get(previewState) as Preview & { mesh?: Mesh },
 		r = p.region;
-	if (!p.regionActive || !r) return mesh;
+	const frameMesh = previewFrameMesh(p, get(meshState));
+	if (!p.regionActive || !r) return frameMesh;
 	const nz = Math.max(p.appliedZChosenSize, 1);
 	return {
-		...mesh,
+		...frameMesh,
 		Nx: r.end[0] - r.start[0],
 		Ny: r.end[1] - r.start[1],
 		Nz: nz,
-		dz: ((r.end[2] - r.start[2]) * mesh.dz) / nz
+		dz: ((r.end[2] - r.start[2]) * frameMesh.dz) / nz
 	};
 }
 function getLayout() {
@@ -159,6 +170,11 @@ function setWorldDirectionFromSimulation(
 	return target.set(direction.x, direction.z, direction.y);
 }
 
+function getFrameMesh(): Mesh {
+	const state = get(previewState) as Preview & { mesh?: Mesh };
+	return previewFrameMesh(state, get(meshState));
+}
+
 export const brightness = writable<number>(loadBrightness());
 export const qualityLevel = writable<QualityLevel>(loadQuality());
 export const renderMode = writable<Preview3DRenderMode>(loadRenderMode());
@@ -175,7 +191,7 @@ export const voxelColorMode = writable<VoxelColorMode>(loadVoxelColorMode());
 export const voxelSampling = writable<VoxelSampling>(loadVoxelSampling());
 export const threeDPreview = writable<ThreeDPreview | null>(null);
 export const voxelOpaque = writable(
-	browser ? localStorage.getItem('preview3d_opaque') === 'true' : false
+	browser ? readPreviewStorage('preview3d_opaque') === 'true' : false
 );
 export const glyphSampling = writable<VoxelSampling>(1);
 export const previewPerformance = writable({
@@ -195,6 +211,10 @@ export const topoMultiplier = writable<number>(
 );
 
 let renderFrameId: number | null = null;
+let instanceGeneration = 0;
+let instanceUpdatePending = false;
+let renderReadyIdentity: PreviewFrameIdentity | null = null;
+const renderGate = new PreviewRenderGate();
 let controlsActive = false;
 let resizeObserver: ResizeObserver | null = null;
 
@@ -203,7 +223,7 @@ function loadClampedNumber(key: string, fallback: number, min: number, max: numb
 		return fallback;
 	}
 
-	const raw = Number.parseFloat(window.localStorage.getItem(key) || '');
+	const raw = Number.parseFloat(readPreviewStorage(key) || '');
 	if (!Number.isFinite(raw)) {
 		return fallback;
 	}
@@ -220,8 +240,8 @@ function loadQuality(): QualityLevel {
 		return 'high';
 	}
 
-	const stored = window.localStorage.getItem(STORAGE_KEYS.quality);
-	if (stored && stored in QUALITY_CONFIGS) {
+	const stored = readPreviewStorage(STORAGE_KEYS.quality);
+	if (stored === 'low' || stored === 'high' || stored === 'ultra') {
 		return stored as QualityLevel;
 	}
 
@@ -233,7 +253,7 @@ function loadRenderMode(): Preview3DRenderMode {
 		return 'glyph';
 	}
 
-	const stored = window.localStorage.getItem(STORAGE_KEYS.renderMode);
+	const stored = readPreviewStorage(STORAGE_KEYS.renderMode);
 	return stored === 'voxel' || stored === 'volume' ? stored : 'glyph';
 }
 
@@ -242,7 +262,7 @@ function loadVoxelColorMode(): VoxelColorMode {
 		return 'orientation';
 	}
 
-	const stored = window.localStorage.getItem(STORAGE_KEYS.voxelColorMode);
+	const stored = readPreviewStorage(STORAGE_KEYS.voxelColorMode);
 	if (
 		stored === 'x' ||
 		stored === 'y' ||
@@ -261,18 +281,18 @@ function loadVoxelSampling(): VoxelSampling {
 		return 1;
 	}
 
-	const stored = Number.parseInt(window.localStorage.getItem(STORAGE_KEYS.voxelSampling) || '', 10);
+	const stored = Number.parseInt(readPreviewStorage(STORAGE_KEYS.voxelSampling) || '', 10);
 	return stored === 2 || stored === 4 ? stored : 1;
 }
 
 function loadTopoEnabled(): boolean {
 	if (!browser) return false;
-	return window.localStorage.getItem(STORAGE_KEYS.topoEnabled) === 'true';
+	return readPreviewStorage(STORAGE_KEYS.topoEnabled) === 'true';
 }
 
 function loadTopoComponent(): TopoComponent {
 	if (!browser) return 'z';
-	const stored = window.localStorage.getItem(STORAGE_KEYS.topoComponent);
+	const stored = readPreviewStorage(STORAGE_KEYS.topoComponent);
 	if (stored === 'x' || stored === 'y' || stored === 'z') return stored;
 	return 'z';
 }
@@ -282,7 +302,7 @@ function persistSetting(key: string, value: string | number) {
 		return;
 	}
 
-	window.localStorage.setItem(key, String(value));
+	writePreviewStorage(key, String(value));
 }
 
 function has3DPreviewData() {
@@ -297,14 +317,20 @@ function rebuildPreview3D() {
 
 	const display = get(threeDPreview);
 	if (!display) return;
-	// Preserve the canvas/camera; the highest quality context enables MSAA once.
-	display.topologyKey = '';
+	if (display.contextAntialias !== getConfig().antialias) replaceRendererContext(display);
+	else display.renderer.setPixelRatio(getConfig().pixelRatio);
+	// Quality changes lighting and glyph geometry, but preserve the camera and
+	// instance buffers whenever the selected render mode does not need a rebuild.
 	display.scene.children
 		.filter((child) => child instanceof THREE.Light)
 		.forEach((child) => display.scene.remove(child));
 	const lights = createScene();
 	lights.children.slice().forEach((child) => display.scene.add(child));
-	display.renderer.setPixelRatio(getConfig().pixelRatio);
+	for (const mesh of display.meshes) {
+		const previous = mesh.material;
+		mesh.material = createMaterial(display.rendererMode);
+		previous.dispose();
+	}
 	update();
 }
 
@@ -320,25 +346,6 @@ function getPreviewWidthCells() {
 function getPreviewHeightCells() {
 	const state = get(previewState);
 	return Math.max(state.appliedYChosenSize || state.yChosenSize, 1);
-}
-
-function componentValue(
-	x: number,
-	y: number,
-	z: number,
-	mode: Exclude<VoxelColorMode, 'orientation'>
-) {
-	switch (mode) {
-		case 'magnitude':
-			return Math.hypot(x, y, z);
-		case 'value':
-		case 'x':
-			return x;
-		case 'y':
-			return y;
-		case 'z':
-			return z;
-	}
 }
 
 function glyphSegments() {
@@ -442,7 +449,7 @@ function setDefaultCameraPose(camera: THREE.PerspectiveCamera) {
 function createRenderer() {
 	const cfg = getConfig();
 	const renderer = new THREE.WebGLRenderer({
-		antialias: true,
+		antialias: cfg.antialias,
 		alpha: false
 	});
 
@@ -473,6 +480,44 @@ function createControls(camera: THREE.PerspectiveCamera, renderer: THREE.WebGLRe
 	installCameraRoll(camera, renderer.domElement, controls);
 
 	return controls;
+}
+
+function attachControlEvents(display: ThreeDPreview) {
+	display.controls.addEventListener('change', () => {
+		if (display.rendererMode === 'glyph' && glyphSegments() !== display.lastGlyphSegments) {
+			scheduleInstanceUpdate();
+		}
+		requestPreview3DRender();
+	});
+	display.controls.addEventListener('start', () => {
+		controlsActive = true;
+		display.renderer.setPixelRatio(Math.min(getConfig().pixelRatio, 1));
+		requestPreview3DRender();
+	});
+	display.controls.addEventListener('end', () => {
+		controlsActive = false;
+		display.renderer.setPixelRatio(getConfig().pixelRatio);
+		requestPreview3DRender();
+	});
+}
+
+function replaceRendererContext(display: ThreeDPreview) {
+	const container = document.getElementById('container');
+	if (!container) return;
+	const target = display.controls.target.clone();
+	const previousRenderer = display.renderer;
+	display.controls.dispose();
+	previousRenderer.forceContextLoss();
+	previousRenderer.dispose();
+	previousRenderer.domElement.remove();
+	display.renderer = createRenderer();
+	display.controls = createControls(display.camera, display.renderer);
+	display.controls.target.copy(target);
+	display.controls.update();
+	display.contextAntialias = getConfig().antialias;
+	attachControlEvents(display);
+	display.renderer.setPixelRatio(getConfig().pixelRatio);
+	resizePreview3D();
 }
 
 function installCameraRoll(
@@ -526,6 +571,8 @@ function installCameraRoll(
 	}
 
 	function onPointerDown(event: PointerEvent) {
+		// The canvas may have moved or resized since the controls last measured it.
+		controls.handleResize();
 		if (event.pointerType === 'mouse') pointerId = event.pointerId;
 	}
 
@@ -636,7 +683,7 @@ function updateSceneLights() {
 	});
 }
 
-function updateMaterialAppearance() {
+function updateMaterialAppearance(requestRender = true) {
 	const display = get(threeDPreview);
 	if (!display || Array.isArray(display.mesh.material) || display.rendererMode !== 'voxel') {
 		return;
@@ -651,14 +698,14 @@ function updateMaterialAppearance() {
 		}
 		mesh.material.depthWrite = get(voxelOpaque);
 	}
-	requestPreview3DRender();
+	if (requestRender) requestPreview3DRender();
 }
 
 function disposeMesh(mesh: VectorMesh) {
 	mesh.dispose();
 }
 
-function replacePreviewMesh(_requiredCapacity: number) {
+function replacePreviewMesh() {
 	const display = get(threeDPreview);
 	if (!display) return;
 	display.topologyKey = '';
@@ -668,13 +715,24 @@ function replacePreviewMesh(_requiredCapacity: number) {
 function renderPreviewFrame() {
 	renderFrameId = null;
 	const display = get(threeDPreview);
-	if (!display) {
+	if (!display || instanceUpdatePending || !renderReadyIdentity) {
 		return;
 	}
-
+	const frameIdentity = renderReadyIdentity;
 	display.controls.update();
+	if (
+		instanceUpdatePending ||
+		!renderReadyIdentity ||
+		!samePreviewFrame(frameIdentity, renderReadyIdentity)
+	)
+		return;
 	const start = performance.now();
-	display.renderer.render(display.scene, display.camera);
+	try {
+		display.renderer.render(display.scene, display.camera);
+	} catch {
+		renderGate.fail(frameIdentity);
+		return;
+	}
 	previewPerformance.update((p) => ({
 		...p,
 		renderMs: performance.now() - start,
@@ -683,6 +741,7 @@ function renderPreviewFrame() {
 		lod: get(renderMode) === 'glyph' && glyphSegments() < getConfig().segments
 	}));
 	cameraRevision.update((revision) => revision + 1);
+	renderGate.complete(frameIdentity);
 
 	if (controlsActive) {
 		requestPreview3DRender();
@@ -713,7 +772,44 @@ function isSampledPosition(x: number, y: number, z: number, step: number, allLay
 }
 
 let lastVolumeQuantity: string | undefined;
-function updateInstances(display: ThreeDPreview) {
+const UPDATE_CHUNK_SIZE = 16_384;
+const TOPOLOGY_CHUNK_SIZE = 16_384;
+function yieldToMainThread() {
+	return new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+function sampleBlockIndex(
+	index: number,
+	positions: Int32Array,
+	stride: number,
+	step: number,
+	allLayers: boolean,
+	bins: number,
+	width: number,
+	height: number,
+	depth: number
+) {
+	const offset = index * 3;
+	const x = positions[offset];
+	const y = positions[offset + 1];
+	const z = Math.floor(positions[offset + 2] / stride);
+	if (
+		x < 0 ||
+		x >= width ||
+		y < 0 ||
+		y >= height ||
+		z < 0 ||
+		z >= depth ||
+		!isSampledPosition(x, y, z, step, allLayers)
+	)
+		return -1;
+	const bx = Math.min(bins - 1, Math.floor((x * bins) / width));
+	const by = Math.min(bins - 1, Math.floor((y * bins) / height));
+	const bz = allLayers ? Math.min(bins - 1, Math.floor((z * bins) / depth)) : 0;
+	return (bz * bins + by) * bins + bx;
+}
+
+async function updateInstances(display: ThreeDPreview, generation: number): Promise<boolean> {
 	const state = get(previewState),
 		layout = getLayout(),
 		mode = get(renderMode);
@@ -785,7 +881,6 @@ function updateInstances(display: ThreeDPreview) {
 	const topologyKey = [
 		mode,
 		mode === 'volume' ? `${get(volumeColorMode) === 'geometry'}/${get(volumeLighting)}` : '',
-		get(qualityLevel),
 		state.topologyRevision,
 		count,
 		mode === 'glyph' ? glyphSegments() : 0,
@@ -798,60 +893,70 @@ function updateInstances(display: ThreeDPreview) {
 	].join(':');
 	const topologyChanged = display.topologyKey !== topologyKey;
 	if (topologyChanged) {
-		display.meshes.forEach((mesh) => {
-			display.scene.remove(mesh);
-			disposeMesh(mesh);
-		});
 		const bins = count > 131072 ? 4 : 1;
-		const groups: number[][] = Array.from(
-			{ length: bins * bins * (state.allLayers ? bins : 1) },
-			() => []
+		const groupCount = bins * bins * (state.allLayers ? bins : 1);
+		const newBlocks = await buildVectorBlocks(
+			count,
+			groupCount,
+			(index) =>
+				sampleBlockIndex(
+					index,
+					positions,
+					stride,
+					step,
+					state.allLayers,
+					bins,
+					width,
+					height,
+					depth
+				),
+			() => generation === instanceGeneration,
+			yieldToMainThread,
+			TOPOLOGY_CHUNK_SIZE
 		);
-		for (let i = 0; i < count; i++) {
-			const o = i * 3,
-				x = positions[o],
-				y = positions[o + 1],
-				z = Math.floor(positions[o + 2] / stride);
-			if (!isSampledPosition(x, y, z, step, state.allLayers)) continue;
-			const bx = Math.min(bins - 1, Math.floor((x * bins) / width));
-			const by = Math.min(bins - 1, Math.floor((y * bins) / height));
-			const bz = state.allLayers ? Math.min(bins - 1, Math.floor((z * bins) / depth)) : 0;
-			if (bx < 0 || by < 0 || bz < 0) continue;
-			groups[(bz * bins + by) * bins + bx].push(i);
+		if (!newBlocks || generation !== instanceGeneration) return false;
+		if (!newBlocks.length) newBlocks.push(new Uint32Array());
+		const newMeshes: VectorMesh[] = [];
+		const newLiveIndices: Uint32Array[] = [];
+		for (let block = 0; block < newBlocks.length; block++) {
+			if (block > 0) {
+				await yieldToMainThread();
+				if (generation !== instanceGeneration) {
+					newMeshes.forEach(disposeMesh);
+					return false;
+				}
+			}
+			const indices = newBlocks[block];
+			newMeshes.push(createMesh(indices.length));
+			newLiveIndices.push(new Uint32Array(indices.length).fill(0xffffffff));
 		}
-		display.blocks = groups.filter((g) => g.length).map((g) => Uint32Array.from(g));
-		if (!display.blocks.length) display.blocks = [new Uint32Array()];
-		display.meshes = display.blocks.map((indices) => createMesh(indices.length));
-		display.liveIndices = display.blocks.map((indices) =>
-			new Uint32Array(indices.length).fill(0xffffffff)
-		);
+		const oldMeshes = display.meshes;
+		display.blocks = newBlocks;
+		display.meshes = newMeshes;
+		display.liveIndices = newLiveIndices;
 		display.mesh = display.meshes[0];
 		display.meshCapacity = display.meshes.reduce((n, m) => n + m.capacity, 0);
 		display.meshes.forEach((mesh) => display.scene.add(mesh));
-		display.topologyKey = topologyKey;
-		display.rendererMode = mode;
+		oldMeshes.forEach((mesh) => {
+			display.scene.remove(mesh);
+			disposeMesh(mesh);
+		});
 	}
 	const colorMode = mode === 'volume' ? get(volumeColorMode) : get(voxelColorMode),
 		threshold = get(voxelThreshold);
-	const filterKey = [mode, colorMode, threshold].join(':');
+	const filterKey = [mode, mode === 'voxel' ? threshold : ''].join(':');
 	const physicalScale = state.normScale || 1;
-	let min = Infinity,
-		max = -Infinity;
-	if (colorMode !== 'geometry' && colorMode !== 'orientation') {
-		for (let i = 0; i < count; i++) {
-			if (state.vectorOccupancy?.[i] === 0) continue;
-			const value =
-				componentValue(values[i * 3], values[i * 3 + 1], values[i * 3 + 2], colorMode) *
-				physicalScale;
-			if (Number.isFinite(value)) {
-				min = Math.min(min, value);
-				max = Math.max(max, value);
-			}
-		}
-	}
-	if (!Number.isFinite(min)) {
-		min = 0;
+	let min = 0,
 		max = 1;
+	if (colorMode !== 'geometry' && colorMode !== 'orientation') {
+		({ min, max } = getNumericFieldRange(
+			values,
+			colorMode,
+			state.vectorOccupancy,
+			count,
+			physicalScale,
+			state.sequence ?? state.topologyRevision
+		));
 	}
 	if (get(volumeScaleMode) === 'manual') [min, max] = get(volumeManualRange);
 	const fieldScale = getColorScale(min, max);
@@ -919,7 +1024,13 @@ function updateInstances(display: ThreeDPreview) {
 			maxX = -Infinity,
 			maxY = -Infinity,
 			maxZ = -Infinity;
-		for (const i of display.blocks[block]) {
+		const blockIndices = display.blocks[block];
+		for (let item = 0; item < blockIndices.length; item++) {
+			if (item > 0 && item % UPDATE_CHUNK_SIZE === 0) {
+				await yieldToMainThread();
+				if (generation !== instanceGeneration) return false;
+			}
+			const i = blockIndices[item];
 			if (mode === 'volume' && state.vectorOccupancy?.[i] === 0) continue;
 			const o = i * 3,
 				vx = values[o],
@@ -985,12 +1096,19 @@ function updateInstances(display: ThreeDPreview) {
 		visible += n;
 		uploaded += n * (positionsChanged ? 28 : 16);
 	}
+	if (generation !== instanceGeneration) return false;
 	display.lastValues = values;
 	display.lastOccupancy = state.vectorOccupancy;
 	display.filterKey = filterKey;
+	if (topologyChanged) {
+		display.topologyKey = topologyKey;
+		display.rendererMode = mode;
+	}
+	display.lastGlyphSegments = mode === 'glyph' ? glyphSegments() : 0;
 	visibleRenderCount.set(visible);
 	previewPerformance.update((p) => ({ ...p, uploadBytes: uploaded }));
-	updateMaterialAppearance();
+	updateMaterialAppearance(false);
+	return true;
 }
 
 function init() {
@@ -1016,57 +1134,64 @@ function init() {
 		renderer,
 		controls,
 		rendererMode: get(renderMode),
-		shapeKey: getPreviewShapeKey()
+		shapeKey: getPreviewShapeKey(),
+		contextAntialias: getConfig().antialias,
+		lastGlyphSegments: 0
 	});
-	controls.addEventListener('change', () => {
-		scheduleInstanceUpdate();
-		requestPreview3DRender();
-	});
-	controls.addEventListener('start', () => {
-		controlsActive = true;
-		renderer.setPixelRatio(Math.min(getConfig().pixelRatio, 1));
-		requestPreview3DRender();
-	});
-	controls.addEventListener('end', () => {
-		controlsActive = false;
-		renderer.setPixelRatio(getConfig().pixelRatio);
-		requestPreview3DRender();
-	});
-
-	update();
+	const display = get(threeDPreview);
+	if (display) attachControlEvents(display);
 
 	const container = document.getElementById('container');
 	if (container) {
 		if (!resizeObserver) {
-			resizeObserver = new ResizeObserver(() => {
-				const current = document.getElementById('container');
-				if (!current) {
-					return;
-				}
-
-				const width = current.clientWidth;
-				const height = current.clientHeight;
-				renderer.setSize(width, height);
-				camera.aspect = width / height;
-				camera.updateProjectionMatrix();
-				requestPreview3DRender();
-			});
+			resizeObserver = new ResizeObserver(resizePreview3D);
 		}
 
 		resizeObserver.disconnect();
 		resizeObserver.observe(container);
 	}
+}
 
-	requestPreview3DRender();
+function frameIdentity(state = get(previewState)): PreviewFrameIdentity {
+	return {
+		sequence: state.sequence,
+		topologyRevision: state.topologyRevision,
+		values: state.vectorFieldValues,
+		positions: state.vectorFieldPositions
+	};
 }
 
 function update() {
 	const display = get(threeDPreview);
 	if (!display) return;
+	if (updateFrameId !== null) {
+		cancelAnimationFrame(updateFrameId);
+		updateFrameId = null;
+	}
+	const identity = frameIdentity();
+	renderGate.setCurrent(identity);
+	const generation = ++instanceGeneration;
+	instanceUpdatePending = true;
+	renderReadyIdentity = null;
 	const start = performance.now();
-	updateInstances(display);
-	previewPerformance.update((p) => ({ ...p, updateMs: performance.now() - start }));
-	requestPreview3DRender();
+	void updateInstances(display, generation)
+		.then((updated) => {
+			if (generation !== instanceGeneration) return;
+			instanceUpdatePending = false;
+			if (!updated) {
+				renderGate.fail(identity);
+				return;
+			}
+			previewPerformance.update((p) => ({ ...p, updateMs: performance.now() - start }));
+			renderReadyIdentity = identity;
+			requestPreview3DRender();
+		})
+		.catch(() => {
+			if (generation !== instanceGeneration) return;
+			instanceUpdatePending = false;
+			renderReadyIdentity = null;
+			renderGate.fail(identity);
+		});
 }
 
 let updateFrameId: number | null = null;
@@ -1078,20 +1203,20 @@ function scheduleInstanceUpdate() {
 	});
 }
 
-export function preview3D() {
+export function preview3D(): Promise<boolean> {
 	if (!has3DPreviewData()) {
 		disposePreview3D();
-		return;
+		return Promise.resolve(false);
 	}
+	const state = get(previewState);
+	const identity = frameIdentity(state);
+	const completion = renderGate.waitFor(identity);
 
 	const display = get(threeDPreview);
 	if (!display) {
 		disposePreview2D();
 		init();
-		return;
-	}
-
-	if (getPreviewShapeKey() !== display.shapeKey || get(previewState).refresh) {
+	} else if (getPreviewShapeKey() !== display.shapeKey || state.refresh) {
 		disposePreview2D();
 		const shapeKey = getPreviewShapeKey();
 		if (shapeKey !== display.shapeKey) {
@@ -1100,11 +1225,15 @@ export function preview3D() {
 			else resetCamera();
 		}
 	}
-
 	update();
+	return completion;
 }
 
 export function disposePreview3D() {
+	instanceGeneration++;
+	instanceUpdatePending = false;
+	renderReadyIdentity = null;
+	renderGate.dispose();
 	projectedSource = null;
 	projectedPositions = null;
 	projectedValues = new Float32Array();
@@ -1125,6 +1254,7 @@ export function disposePreview3D() {
 
 	if (display) {
 		display.controls.dispose();
+		display.renderer.forceContextLoss();
 		display.renderer.dispose();
 		display.scene.traverse((child) => {
 			if (child instanceof THREE.Mesh) {
@@ -1149,38 +1279,27 @@ export function disposePreview3D() {
 	}
 }
 
-export function resizeECharts() {
-	const container = document.getElementById('container');
-	if (!container) {
-		return;
-	}
-
-	if (!resizeObserver) {
-		resizeObserver = new ResizeObserver(() => {
-			const display = get(threeDPreview);
-			if (!display) {
-				return;
-			}
-
-			display.renderer.setSize(container.clientWidth, container.clientHeight);
-			display.camera.aspect = container.clientWidth / container.clientHeight;
-			display.camera.updateProjectionMatrix();
-		});
-	}
-
-	resizeObserver.disconnect();
-	resizeObserver.observe(container);
-
+// Resizes only when the container size changed: setSize clears the drawing
+// buffer, so a redraw is always requested afterwards.
+export function resizePreview3D() {
 	const display = get(threeDPreview);
-	if (display) {
-		display.renderer.setSize(container.clientWidth, container.clientHeight);
-		display.camera.aspect = container.clientWidth / container.clientHeight;
+	const container = document.getElementById('container');
+	if (!display || !container) return;
+	const width = container.clientWidth,
+		height = container.clientHeight;
+	if (width < 1 || height < 1) return;
+	const size = display.renderer.getSize(new THREE.Vector2());
+	if (size.x !== width || size.y !== height) {
+		display.renderer.setSize(width, height);
+		display.camera.aspect = width / height;
 		display.camera.updateProjectionMatrix();
-		requestPreview3DRender();
 	}
+	display.controls.handleResize();
+	requestPreview3DRender();
 }
 
 export function setBrightness(value: number) {
+	if (!Number.isFinite(value)) return;
 	const clamped = Math.max(0.3, Math.min(3.0, value));
 	persistSetting(STORAGE_KEYS.brightness, clamped);
 	brightness.set(clamped);
@@ -1189,21 +1308,27 @@ export function setBrightness(value: number) {
 }
 
 export function setQuality(level: QualityLevel) {
+	if (level !== 'low' && level !== 'high' && level !== 'ultra') return;
+	if (get(qualityLevel) === level) return;
 	persistSetting(STORAGE_KEYS.quality, level);
 	qualityLevel.set(level);
 	rebuildPreview3D();
 }
 
-export function setRenderMode(mode: Preview3DRenderMode) {
+export function setRenderMode(
+	mode: Preview3DRenderMode,
+	options: { ensureAllLayers?: boolean } = {}
+) {
+	if (mode !== 'glyph' && mode !== 'voxel' && mode !== 'volume') return;
 	persistSetting(STORAGE_KEYS.renderMode, mode);
 	renderMode.set(mode);
 	if (mode === 'volume') {
 		setPreviewClientBudget(1000000);
-		if (!get(previewState).allLayers && get(meshState).Nz > 1) postAllLayers(true);
+		if (options.ensureAllLayers !== false && !get(previewState).allLayers && getFrameMesh().Nz > 1)
+			postAllLayers(true);
 	}
-	const count = get(previewState).vectorCount;
 	if (get(threeDPreview)) {
-		replacePreviewMesh(count);
+		replacePreviewMesh();
 		update();
 	}
 }
@@ -1237,6 +1362,7 @@ export function setVolumeColorMode(mode: VolumeColorMode) {
 }
 
 export function setVoxelOpaque(value: boolean) {
+	if (typeof value !== 'boolean') return;
 	voxelOpaque.set(value);
 	persistSetting('preview3d_opaque', String(value));
 	updateMaterialAppearance();
@@ -1405,19 +1531,6 @@ export function orbitCamera(deltaX: number, deltaY: number) {
 export function getCameraMatrix(): string {
 	const display = get(threeDPreview);
 	if (!display) return 'none';
-
-	const cam = display.camera;
-	const target = display.controls.target;
-
-	// Direction from target toward camera (NOT camera toward target)
-	const dir = _camDir.subVectors(cam.position, target).normalize();
-
-	// Spherical angles: theta = horizontal (around Y), phi = vertical
-	const theta = Math.atan2(dir.x, dir.z); // 0 when camera at +Z (front)
-	const phi = Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1));
-
-	// CSS rotations: rotate the cube so the face the camera sees is toward the viewer
-	// rotateY(-theta): horizontal orbit
-	// rotateX(phi): vertical tilt (positive phi = camera above = tilt cube forward)
-	return `rotateX(${phi}rad) rotateY(${-theta}rad)`;
+	display.camera.updateMatrixWorld(true);
+	return viewCubeCssMatrix(display.camera.quaternion);
 }
