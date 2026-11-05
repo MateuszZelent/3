@@ -5,6 +5,7 @@ import (
 	"math"
 	"path"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -81,6 +82,10 @@ func addStructuredMetadata(key string, value interface{}) {
 	}
 	structuredOutput.mu.Lock()
 	defer structuredOutput.mu.Unlock()
+	if _, ok := value.(json.RawMessage); ok {
+		structuredOutput.metadata[key] = value
+		return
+	}
 	switch reflected := reflect.ValueOf(value); reflected.Kind() {
 	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
@@ -93,6 +98,65 @@ func addStructuredMetadata(key string, value interface{}) {
 			structuredOutput.metadata[key] = fmt.Sprint(reflected.Elem().Interface())
 		}
 	}
+}
+
+func regionwiseMetadataSnapshot(parameter *regionwise) (interface{}, bool) {
+	if len(parameter.cpu_buf) == 0 {
+		return nil, false
+	}
+	for _, update := range parameter.upd_reg {
+		if update != nil {
+			// Keep time-dependent values as their original script expression. A
+			// metadata read must not sample or advance the simulation callback.
+			return nil, false
+		}
+	}
+
+	uniform := true
+	for component := range parameter.cpu_buf {
+		first := parameter.cpu_buf[component][0]
+		for region := 1; region < NREGION; region++ {
+			if parameter.cpu_buf[component][region] != first {
+				uniform = false
+				break
+			}
+		}
+	}
+	if uniform && len(parameter.cpu_buf) == 1 {
+		return strconv.FormatFloat(float64(parameter.cpu_buf[0][0]), 'g', -1, 32), true
+	}
+	if uniform {
+		values := make([]float32, len(parameter.cpu_buf))
+		for component := range parameter.cpu_buf {
+			values[component] = parameter.cpu_buf[component][0]
+		}
+		return marshalMetadataSnapshot(values)
+	}
+
+	if len(parameter.cpu_buf) == 1 {
+		values := make(map[int]float32, NREGION)
+		for region, value := range parameter.cpu_buf[0] {
+			values[region] = value
+		}
+		return marshalMetadataSnapshot(values)
+	}
+	values := make(map[int][]float32, NREGION)
+	for region := 0; region < NREGION; region++ {
+		components := make([]float32, len(parameter.cpu_buf))
+		for component := range parameter.cpu_buf {
+			components[component] = parameter.cpu_buf[component][region]
+		}
+		values[region] = components
+	}
+	return marshalMetadataSnapshot(values)
+}
+
+func marshalMetadataSnapshot(value interface{}) (interface{}, bool) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, false
+	}
+	return json.RawMessage(encoded), true
 }
 
 type structuredDataset struct {

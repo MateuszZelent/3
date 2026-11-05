@@ -124,6 +124,18 @@ func newLValueWrapper(lv LValue) script.LValue {
 func (w *lValueWrapper) Child() []script.Expr { return nil }
 func (w *lValueWrapper) Fix() script.Expr     { return script.NewConst(w) }
 
+func (w *lValueWrapper) MetadataSnapshot() (interface{}, bool) {
+	switch value := w.LValue.(type) {
+	case *RegionwiseScalar:
+		return regionwiseMetadataSnapshot(&value.regionwise)
+	case *RegionwiseVector:
+		return regionwiseMetadataSnapshot(&value.regionwise)
+	case *Excitation:
+		return regionwiseMetadataSnapshot(&value.perRegion.regionwise)
+	}
+	return nil, false
+}
+
 func (w *lValueWrapper) AllowScriptDefineShadow() bool {
 	shadowable, ok := w.LValue.(interface {
 		AllowScriptDefineShadow() bool

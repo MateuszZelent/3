@@ -80,10 +80,17 @@ var AddMetadata = func(string, interface{}) {}
 
 func (a *assignStmt) Eval() interface{} {
 	value := a.rhs.Eval()
+	a.lhs.SetValue(value)
 	if loopNestingCount == 0 && a.name != "" {
+		if source, ok := a.lhs.(interface {
+			MetadataSnapshot() (interface{}, bool)
+		}); ok {
+			if snapshot, ok := source.MetadataSnapshot(); ok {
+				value = snapshot
+			}
+		}
 		AddMetadata(a.name, value)
 	}
-	a.lhs.SetValue(value)
 	return nil
 }
 
