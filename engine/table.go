@@ -75,6 +75,13 @@ func newTable(name string) *DataTable {
 
 func TableAdd(col Quantity) {
 	name := NameOf(col)
+	if mag, ok := col.(*magnetization); ok && mag == &M {
+		for _, output := range Table.outputs {
+			if existing, ok := output.(*magnetization); ok && existing == &M {
+				return
+			}
+		}
+	}
 	if name == NameOf(CorePos) || name == NameOf(SkyrmionPos) || name == NameOf(CoreValid) || name == NameOf(SkyrmionValid) || name == NameOf(SkyrmionPolarization) {
 		for _, output := range Table.outputs {
 			if NameOf(output) == name {
