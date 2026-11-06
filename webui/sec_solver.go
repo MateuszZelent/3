@@ -31,18 +31,9 @@ type SolverState struct {
 func initSolverAPI(e *echo.Group, ws *WebSocketManager) *SolverState {
 	solverState := SolverState{
 		ws:              ws,
-		Type:            getSolverName(engine.SolverType()),
-		Steps:           &engine.NSteps,
-		Time:            &engine.Time,
-		Dt:              engine.CurrentDt(),
-		ErrPerStep:      &engine.LastErr,
-		MaxTorque:       &engine.LastTorque,
-		Fixdt:           &engine.FixDt,
-		Mindt:           &engine.MinDt,
-		Maxdt:           &engine.MaxDt,
-		Maxerr:          &engine.MaxErr,
 		OperationStatus: "idle",
 	}
+	solverState.updateFromEngine()
 
 	e.POST("/api/solver/type", solverState.postSolverType)
 	e.POST("/api/solver/run", solverState.postSolverRun)
@@ -57,7 +48,21 @@ func initSolverAPI(e *echo.Group, ws *WebSocketManager) *SolverState {
 	return &solverState
 }
 
+// Capture on the solver thread between steps. Every published snapshot owns
+// its values; pointers to engine globals would race with the running solver.
 func (s *SolverState) Update() {
+	engine.InjectAndWait(s.updateFromEngine)
+}
+
+func (s *SolverState) updateFromEngine() {
+	s.Steps = cloneValuePointer(&engine.NSteps)
+	s.Time = cloneValuePointer(&engine.Time)
+	s.ErrPerStep = cloneValuePointer(&engine.LastErr)
+	s.MaxTorque = cloneValuePointer(&engine.LastTorque)
+	s.Fixdt = cloneValuePointer(&engine.FixDt)
+	s.Mindt = cloneValuePointer(&engine.MinDt)
+	s.Maxdt = cloneValuePointer(&engine.MaxDt)
+	s.Maxerr = cloneValuePointer(&engine.MaxErr)
 	s.Type = getSolverName(engine.SolverType())
 	s.Dt = engine.CurrentDt()
 }
