@@ -111,7 +111,7 @@ func SnapshotAs(q Quantity, fname string) {
 	}
 
 	if path.Ext(fname) == "" {
-		fname += ("." + StringFromOutputFormat[outputFormat])
+		fname += "." + SnapshotFormat
 	}
 	s := ValueOf(q)
 	defer cuda.Recycle(s)
@@ -123,8 +123,8 @@ func SnapshotAs(q Quantity, fname string) {
 func snapshot_sync(fname string, output *data.Slice) {
 	f, err := httpfs.Create(fname)
 	util.FatalErr(err)
-	defer f.Close()
-	draw.RenderFormat(f, output, "auto", "auto", arrowSize, path.Ext(fname))
+	defer func() { util.FatalErr(f.Close()) }()
+	util.FatalErr(draw.RenderFormat(f, output, "auto", "auto", arrowSize, path.Ext(fname)))
 }
 
 // synchronous save

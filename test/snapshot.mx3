@@ -10,8 +10,19 @@ Aex = 13e-12
 m  = uniform(1, .1, 0)
 
 snapshot(m)
+snapshotas(m, "named-jpg")
+snapshotas(m, "explicit.png")
 snapshotformat = "png"
 snapshot(m)
+snapshotas(m, "named-png")
 snapshotformat = "gif"
 snapshot(m)
+snapshotas(m, "named-gif")
+
+// Periodic image output must also drain before the process exits.
+FixDt = 1e-13
+AutoSnapshot(m, 1e-12)
+Run(3.1e-12)
+AutoSnapshot(m, 0)
+Flush()
 
