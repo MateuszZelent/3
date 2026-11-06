@@ -16,7 +16,11 @@ for (const viewport of viewports) {
 		await expect(page.getByText('Field studio', { exact: true })).toBeVisible();
 		await expect(page).toHaveScreenshot(`workspace-shell-${viewport.width}.png`, {
 			fullPage: true,
-			animations: 'disabled'
+			animations: 'disabled',
+			// Symbol glyphs (chevrons, icons) come from system fallback fonts that
+			// differ between Linux hosts by up to ~400 pixels; layout changes
+			// affect far more.
+			maxDiffPixels: 800
 		});
 	});
 }
