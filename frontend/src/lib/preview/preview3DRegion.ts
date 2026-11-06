@@ -25,6 +25,9 @@ export const regionDraft = writable<PreviewRegion>({
 	requestId: ''
 });
 export const regionPending = writable(false);
+// True from the HTTP acknowledgement until a preview frame shows that window.
+// On large meshes the capture and the transfer can take many seconds.
+export const regionFramePending = writable(false);
 export const regionError = writable('');
 let timer: ReturnType<typeof setTimeout> | undefined,
 	inFlight: Promise<PostResult> | null = null,
@@ -34,17 +37,27 @@ let lastMesh = '';
 let generation = 0;
 let activeController: AbortController | undefined;
 const session = Math.random().toString(36).slice(2);
+let awaitedFrame = 0;
+function requestNumber(id: string): number | null {
+	return id.startsWith(`${session}-`) ? Number(id.slice(session.length + 1)) : null;
+}
 export function cellWindow(range: [number, number], count: number): [number, number] {
 	const width = Math.max(1, Math.min(count, Math.round((range[1] - range[0]) * count)));
 	const start = Math.max(0, Math.min(count - width, Math.round(range[0] * count)));
 	return [start, start + width];
 }
 previewState.subscribe((p) => {
-	if (inFlight || revision !== acknowledged || !p.region?.mode) return;
+	if (!p.region?.mode) return;
+	const number = requestNumber(p.region.requestId || '');
+	// Another client's request also supersedes the window we were waiting for.
+	if (awaitedFrame && (number === null || number >= awaitedFrame)) {
+		awaitedFrame = 0;
+		regionFramePending.set(false);
+	}
+	if (inFlight || revision !== acknowledged) return;
 	// A frame produced before our latest acknowledged request must not roll the
 	// draft back to an older window.
-	const id = p.region.requestId || '';
-	if (id.startsWith(`${session}-`) && Number(id.slice(session.length + 1)) < acknowledged) return;
+	if (number !== null && number < acknowledged) return;
 	regionDraft.set(p.region);
 });
 meshState.subscribe((m) => {
@@ -104,6 +117,12 @@ async function drainLatest(token: number): Promise<PostResult> {
 			if (result.ok) {
 				regionDraft.set(result.data as PreviewRegion);
 				regionError.set('');
+				// The frame can arrive before this HTTP response.
+				const shown = requestNumber(get(previewState).region?.requestId || '');
+				if (shown === null || shown < sending) {
+					awaitedFrame = sending;
+					regionFramePending.set(true);
+				}
 			} else {
 				regionError.set(result.error);
 			}
@@ -136,6 +155,8 @@ export function cancelRegionUpdates() {
 	inFlight = null;
 	acknowledged = revision;
 	regionPending.set(false);
+	awaitedFrame = 0;
+	regionFramePending.set(false);
 }
 
 export async function waitForRegionUpdate(): Promise<void> {

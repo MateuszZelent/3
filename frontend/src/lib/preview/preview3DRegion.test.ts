@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { previewTransition } from '$api/previewTransition';
+import { previewState } from '$api/incoming/preview';
 import { post } from '$api/post';
 import {
 	changeRegion,
 	cancelRegionUpdates,
 	regionDraft,
 	regionError,
+	regionFramePending,
 	regionPending,
 	waitForRegionUpdate
 } from './preview3DRegion';
@@ -67,6 +69,26 @@ describe('3D region synchronization', () => {
 		});
 		expect(get(regionPending)).toBe(false);
 		expect(get(regionError)).toBe('');
+	});
+
+	it('stays pending after the acknowledgement until a frame shows the window', async () => {
+		postMock.mockImplementation(async (_endpoint, body) =>
+			appliedRegion(body as Record<string, unknown>)
+		);
+		changeRegion({ enabled: true, start: [0, 0, 0], end: [400, 120, 26] });
+		await waitForRegionUpdate();
+		const requestId = (postMock.mock.calls[0][1] as { requestId: string }).requestId;
+
+		// Large meshes take seconds to capture and transfer the window frame.
+		expect(get(regionPending)).toBe(false);
+		expect(get(regionFramePending)).toBe(true);
+
+		previewState.update((state) => ({
+			...state,
+			regionActive: true,
+			region: { ...get(regionDraft), requestId }
+		}));
+		expect(get(regionFramePending)).toBe(false);
 	});
 
 	it('rejects a transition flush when region update failed and exposes retryable error', async () => {

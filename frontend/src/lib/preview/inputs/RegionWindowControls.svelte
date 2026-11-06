@@ -12,6 +12,7 @@
 	import {
 		regionDraft,
 		regionPending,
+		regionFramePending,
 		regionError,
 		changeRegion,
 		setRegionWindow,
@@ -42,9 +43,11 @@
 		><strong>3D render window · X / Y / Z</strong><span
 			>{$regionPending
 				? 'Updating…'
-				: $regionDraft.enabled
-					? `${sizes.join(' × ')} source cells`
-					: 'Full domain'}</span
+				: $regionFramePending
+					? 'Loading window preview…'
+					: $regionDraft.enabled
+						? `${sizes.join(' × ')} source cells`
+						: 'Full domain'}</span
 		></summary
 	>
 	<div class="region-body">
@@ -120,9 +123,13 @@
 				onchange={mode}
 			/>
 			<span
-				>{nativePoints.toLocaleString()} source cells · {$previewState.regionActive
-					? `${$previewState.appliedXChosenSize} × ${$previewState.appliedYChosenSize} × ${$previewState.appliedZChosenSize} loaded`
-					: 'Enable to apply local resolution'}</span
+				>{nativePoints.toLocaleString()} source cells · {$regionFramePending
+					? 'preparing the window preview on the server…'
+					: $previewState.regionActive
+						? `${$previewState.appliedXChosenSize} × ${$previewState.appliedYChosenSize} × ${$previewState.appliedZChosenSize} loaded`
+						: $regionDraft.enabled
+							? 'waiting for the window preview'
+							: 'Enable to apply local resolution'}</span
 			>
 		</div>
 		{#if $regionDraft.enabled && $regionDraft.mode === 'custom'}<div class="region-custom">

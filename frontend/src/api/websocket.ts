@@ -445,7 +445,12 @@ export function setPreviewVisible(visible: boolean) {
 	else ackPreview();
 }
 
+// A resync makes the server resend the whole latest frame (up to ~24 MB), so
+// only send it when the budget actually changes. Callers such as the 3D window
+// controls invoke this on every slider step; the socket open handshake already
+// carries the current budget.
 export function setPreviewClientBudget(maxPoints: number) {
+	if (get(previewClientBudget) === maxPoints) return;
 	previewClientBudget.set(maxPoints);
 	if (previewSocket?.readyState === WebSocket.OPEN)
 		previewSocket.send(JSON.stringify({ protocol: 2, maxPoints, resync: true }));

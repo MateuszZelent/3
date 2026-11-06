@@ -104,6 +104,22 @@ describe('application socket ownership', () => {
 		expect(socket.send).toHaveBeenLastCalledWith(JSON.stringify({ ack: 1, revision: 7 }));
 		expect(hooks.render).toHaveBeenCalledOnce();
 	});
+	it('does not request a full-frame resync when the client budget is unchanged', async () => {
+		const api = await import('./websocket');
+		cleanup = api.initializeWebSocket();
+		Socket.instances.forEach((socket) => socket.onopen!());
+		const socket = Socket.instances[1];
+		socket.send.mockClear();
+		// The 3D window controls call this on every slider step.
+		api.setPreviewClientBudget(1000000);
+		api.setPreviewClientBudget(1000000);
+		expect(socket.send).not.toHaveBeenCalled();
+		api.setPreviewClientBudget(500000);
+		expect(socket.send).toHaveBeenCalledOnce();
+		expect(socket.send).toHaveBeenLastCalledWith(
+			JSON.stringify({ protocol: 2, maxPoints: 500000, resync: true })
+		);
+	});
 	it('keeps render credit until a duplicate pending frame has actually drawn', async () => {
 		let finish!: () => void;
 		hooks.render.mockReturnValue(
