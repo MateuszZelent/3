@@ -22,6 +22,8 @@ type PreviewState struct {
 	Region                PreviewRegion `msgpack:"region"`
 	regionFullAllLayers   bool
 	RegionActive          bool `msgpack:"regionActive"`
+	previewStorage        cuda.PreviewBuffers
+	occupancyStorage      cuda.PreviewBuffers
 	previewHost           *cuda.PreviewHostBuffer
 	occupancyHost         *cuda.PreviewHostBuffer
 	pendingScalar         *data.Slice
@@ -415,15 +417,10 @@ func (s *PreviewState) previewBuffers(nComp int, size [3]int) (*data.Slice, *dat
 	if s.previewCPU != nil && s.previewGPU != nil && s.previewBufferNComp == nComp && s.previewBufferSize == size {
 		return s.previewCPU, s.previewGPU
 	}
-	if s.previewGPU != nil {
-		s.previewGPU.Free()
-	}
-	if s.previewHost != nil {
-		s.previewHost.Free()
-	}
-	s.previewHost = cuda.NewPreviewHostBuffer(nComp, size)
+	// Views share grow-only storage: reallocating for every render window
+	// size took seconds per capture while a large simulation owned the GPU.
+	s.previewHost, s.previewGPU = s.previewStorage.View(nComp, size)
 	s.previewCPU = s.previewHost.Slice
-	s.previewGPU = cuda.NewSlice(nComp, size)
 	s.previewBufferNComp = nComp
 	s.previewBufferSize = size
 	return s.previewCPU, s.previewGPU
@@ -928,15 +925,8 @@ func (s *PreviewState) ensureMask(xSize, ySize int) {
 
 func (s *PreviewState) occupancyBuffers(size [3]int) {
 	if s.occupancyCPU == nil || s.occupancyCPU.Size() != size {
-		if s.occupancyGPU != nil {
-			s.occupancyGPU.Free()
-		}
-		if s.occupancyHost != nil {
-			s.occupancyHost.Free()
-		}
-		s.occupancyHost = cuda.NewPreviewHostBuffer(1, size)
+		s.occupancyHost, s.occupancyGPU = s.occupancyStorage.View(1, size)
 		s.occupancyCPU = s.occupancyHost.Slice
-		s.occupancyGPU = cuda.NewSlice(1, size)
 	}
 }
 

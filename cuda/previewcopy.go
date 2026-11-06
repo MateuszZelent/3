@@ -43,3 +43,49 @@ func (b *PreviewHostBuffer) Free() {
 		b.components = nil
 	}
 }
+
+// PreviewBuffers is grow-only device and pinned host storage for preview
+// captures. Allocating or freeing either kind of memory synchronizes the
+// device; while a large simulation occupies the GPU this takes seconds, and a
+// 3D render window changes the capture size on every slider step.
+type PreviewBuffers struct {
+	floats int64 // capacity in float32 values, shared by all components
+	device unsafe.Pointer
+	host   unsafe.Pointer
+}
+
+// View returns pinned host and device slices of the given size backed by the
+// shared storage, growing it when needed. Views must not be freed; they stay
+// valid until a later View call grows the storage.
+func (b *PreviewBuffers) View(nComp int, size [3]int) (*PreviewHostBuffer, *data.Slice) {
+	length := int64(prod(size))
+	required := length * int64(nComp)
+	if b.device == nil || required > b.floats {
+		data.EnableGPU(memFree, cu.MemFreeHost, MemCpy, MemCpyDtoH, MemCpyHtoD)
+		b.Free()
+		b.floats = required
+		b.device = MemAlloc(required * cu.SIZEOF_FLOAT32)
+		b.host = cu.MemAllocHost(required * cu.SIZEOF_FLOAT32)
+	}
+	stride := length * cu.SIZEOF_FLOAT32
+	device := make([]unsafe.Pointer, nComp)
+	host := make([]unsafe.Pointer, nComp)
+	for c := range nComp {
+		device[c] = unsafe.Add(b.device, int64(c)*stride)
+		host[c] = unsafe.Add(b.host, int64(c)*stride)
+	}
+	view := &PreviewHostBuffer{Slice: data.SliceFromPtrs(size, data.CPUMemory, host), components: host}
+	return view, data.SliceFromPtrs(size, data.GPUMemory, device)
+}
+
+func (b *PreviewBuffers) Free() {
+	if b.device != nil {
+		memFree(b.device)
+		b.device = nil
+	}
+	if b.host != nil {
+		cu.MemFreeHost(b.host)
+		b.host = nil
+	}
+	b.floats = 0
+}
