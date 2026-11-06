@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 func TestLongSolverOperationReturnsAcceptedRejectsDuplicateAndBreaks(t *testing.T) {
@@ -185,7 +185,7 @@ func TestPendingJobsInBothLanesCanBeCancelledBeforeWorkersStart(t *testing.T) {
 	}
 }
 
-func invokeSolverHandler(t *testing.T, handler func(echo.Context) error) *httptest.ResponseRecorder {
+func invokeSolverHandler(t *testing.T, handler func(*echo.Context) error) *httptest.ResponseRecorder {
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	context := echo.New().NewContext(httptest.NewRequest("POST", "/", strings.NewReader(`{}`)), recorder)
@@ -196,7 +196,7 @@ func invokeSolverHandler(t *testing.T, handler func(echo.Context) error) *httpte
 	return recorder
 }
 
-func invokeConsoleHandler(t *testing.T, handler func(echo.Context) error, body string) *httptest.ResponseRecorder {
+func invokeConsoleHandler(t *testing.T, handler func(*echo.Context) error, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	context := echo.New().NewContext(httptest.NewRequest("POST", "/", strings.NewReader(body)), recorder)

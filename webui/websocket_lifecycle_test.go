@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/mumax/3/engine"
@@ -314,10 +314,10 @@ func TestWebSocketLifecycleCountsOnlyMainClients(t *testing.T) {
 	wsManager := newWebSocketManager()
 	wsManager.engineState = &EngineState{Preview: &PreviewState{}}
 	e := echo.New()
-	e.GET("/ws", func(c echo.Context) error {
+	e.GET("/ws", func(c *echo.Context) error {
 		return wsManager.websocketEntrypointFor(c, wsManager.connections, "main", func() {})
 	})
-	e.GET("/ws/preview", func(c echo.Context) error {
+	e.GET("/ws/preview", func(c *echo.Context) error {
 		return wsManager.websocketEntrypointFor(c, wsManager.previewConnections, "preview", func() {})
 	})
 	server := httptest.NewServer(e)
@@ -362,7 +362,7 @@ func TestPreviewCreditsKeyframesAndLatestOnly(t *testing.T) {
 	cm := manager.previewConnections
 	ready := make(chan *managedConnection, 1)
 	e := echo.New()
-	e.GET("/", func(c echo.Context) error {
+	e.GET("/", func(c *echo.Context) error {
 		socket, err := manager.upgrader.Upgrade(c.Response(), c.Request(), nil)
 		if err != nil {
 			return err

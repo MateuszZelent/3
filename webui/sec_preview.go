@@ -8,7 +8,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/mumax/3/cuda"
 	"github.com/mumax/3/data"
@@ -1076,7 +1076,7 @@ func (s *PreviewState) validateComponent() {
 	}
 }
 
-func (s *PreviewState) postPreviewComponent(c echo.Context) error {
+func (s *PreviewState) postPreviewComponent(c *echo.Context) error {
 	type Request struct {
 		RequestID string `json:"requestId"`
 		Component string `json:"component" msgpack:"component"`
@@ -1085,12 +1085,12 @@ func (s *PreviewState) postPreviewComponent(c echo.Context) error {
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	if req.Component != "x" && req.Component != "y" && req.Component != "z" && req.Component != "3D" && req.Component != "None" {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid component"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid component"})
 	}
 	s.Component = req.Component
 	s.validateComponent()
@@ -1101,7 +1101,7 @@ func (s *PreviewState) postPreviewComponent(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
-func (s *PreviewState) postPreviewQuantity(c echo.Context) error {
+func (s *PreviewState) postPreviewQuantity(c *echo.Context) error {
 	type Request struct {
 		RequestID string `json:"requestId"`
 		Quantity  string `json:"quantity" msgpack:"quantity"`
@@ -1109,13 +1109,13 @@ func (s *PreviewState) postPreviewQuantity(c echo.Context) error {
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	_, exists := engine.AvailableQuantities()[req.Quantity]
 	if !exists {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Quantity not found"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Quantity not found"})
 	}
 	s.Quantity = req.Quantity
 	s.validateComponent()
@@ -1123,7 +1123,7 @@ func (s *PreviewState) postPreviewQuantity(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
-func (s *PreviewState) postPreviewLayer(c echo.Context) error {
+func (s *PreviewState) postPreviewLayer(c *echo.Context) error {
 	type Request struct {
 		RequestID string `json:"requestId"`
 		Layer     int    `json:"layer" msgpack:"layer"`
@@ -1131,7 +1131,7 @@ func (s *PreviewState) postPreviewLayer(c echo.Context) error {
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
@@ -1141,7 +1141,7 @@ func (s *PreviewState) postPreviewLayer(c echo.Context) error {
 		_, _, axis = previewPlaneAxes(s.Plane)
 	}
 	if req.Layer < 0 || req.Layer >= engine.MeshSnapshotSize()[axis] {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Layer outside mesh"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Layer outside mesh"})
 	}
 	if s.Type == "2D" {
 		s.SliceIndex = req.Layer
@@ -1152,7 +1152,7 @@ func (s *PreviewState) postPreviewLayer(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
-func (s *PreviewState) postPreviewMaxPoints(c echo.Context) error {
+func (s *PreviewState) postPreviewMaxPoints(c *echo.Context) error {
 	type Request struct {
 		RequestID string `json:"requestId"`
 		MaxPoints int    `json:"maxPoints" msgpack:"maxPoints"`
@@ -1160,23 +1160,23 @@ func (s *PreviewState) postPreviewMaxPoints(c echo.Context) error {
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	if req.MaxPoints < 8 || req.MaxPoints > previewHardLimit {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "MaxPoints must be between 8 and 1000000"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "MaxPoints must be between 8 and 1000000"})
 	}
 	s.MaxPoints = req.MaxPoints
 	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
-func (s *PreviewState) postPreviewRefresh(c echo.Context) error {
+func (s *PreviewState) postPreviewRefresh(c *echo.Context) error {
 	var req struct {
 		RequestID string `json:"requestId"`
 	}
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
@@ -1194,17 +1194,17 @@ func containsInt(arr []int, target int) bool {
 
 // Resolve every axis against the current server mesh in one operation. Browser
 // metadata can lag after a Console mesh change or an All layers toggle.
-func (s *PreviewState) postFullResolution(c echo.Context) error {
+func (s *PreviewState) postFullResolution(c *echo.Context) error {
 	var req struct {
 		RequestID string `json:"requestId"`
 	}
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	if !s.addPossibleDownscaleSizes() {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Mesh is not initialized"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Mesh is not initialized"})
 	}
 	s.XChosenSize = s.XPossibleSizes[len(s.XPossibleSizes)-1]
 	s.YChosenSize = s.YPossibleSizes[len(s.YPossibleSizes)-1]
@@ -1214,7 +1214,7 @@ func (s *PreviewState) postFullResolution(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
-func (s *PreviewState) postXChosenSize(c echo.Context) error {
+func (s *PreviewState) postXChosenSize(c *echo.Context) error {
 	type Request struct {
 		RequestID   string `json:"requestId"`
 		XChosenSize int    `json:"xChosenSize" msgpack:"xChosenSize"`
@@ -1222,18 +1222,18 @@ func (s *PreviewState) postXChosenSize(c echo.Context) error {
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	if !containsInt(s.XPossibleSizes, req.XChosenSize) {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid xChosenSize"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid xChosenSize"})
 	}
 	s.XChosenSize = req.XChosenSize
 	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
-func (s *PreviewState) postYChosenSize(c echo.Context) error {
+func (s *PreviewState) postYChosenSize(c *echo.Context) error {
 	type Request struct {
 		RequestID   string `json:"requestId"`
 		YChosenSize int    `json:"yChosenSize" msgpack:"yChosenSize"`
@@ -1241,35 +1241,35 @@ func (s *PreviewState) postYChosenSize(c echo.Context) error {
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	if !containsInt(s.YPossibleSizes, req.YChosenSize) {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid yChosenSize"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid yChosenSize"})
 	}
 	s.YChosenSize = req.YChosenSize
 	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
-func (s *PreviewState) postZChosenSize(c echo.Context) error {
+func (s *PreviewState) postZChosenSize(c *echo.Context) error {
 	var req struct {
 		RequestID   string `json:"requestId"`
 		ZChosenSize int    `json:"zChosenSize" msgpack:"zChosenSize"`
 	}
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid zChosenSize"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid zChosenSize"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	if !containsInt(s.ZPossibleSizes, req.ZChosenSize) {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid zChosenSize"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid zChosenSize"})
 	}
 	s.ZChosenSize = req.ZChosenSize
 	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
-func (s *PreviewState) postAllLayers(c echo.Context) error {
+func (s *PreviewState) postAllLayers(c *echo.Context) error {
 	type Request struct {
 		RequestID string `json:"requestId"`
 		AllLayers bool   `json:"allLayers" msgpack:"allLayers"`
@@ -1277,7 +1277,7 @@ func (s *PreviewState) postAllLayers(c echo.Context) error {
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
@@ -1285,7 +1285,7 @@ func (s *PreviewState) postAllLayers(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
-func (s *PreviewState) postAutoScaleEnabled(c echo.Context) error {
+func (s *PreviewState) postAutoScaleEnabled(c *echo.Context) error {
 	type Request struct {
 		RequestID        string `json:"requestId"`
 		AutoScaleEnabled bool   `json:"autoScaleEnabled" msgpack:"autoScaleEnabled"`
@@ -1293,7 +1293,7 @@ func (s *PreviewState) postAutoScaleEnabled(c echo.Context) error {
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
@@ -1301,13 +1301,13 @@ func (s *PreviewState) postAutoScaleEnabled(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
-func (s *PreviewState) postPreviewScale(c echo.Context) error {
+func (s *PreviewState) postPreviewScale(c *echo.Context) error {
 	var req struct {
 		RequestID string  `json:"requestId"`
 		Scale     float64 `json:"scale"`
 	}
 	if err := c.Bind(&req); err != nil || req.Scale < 0 || math.IsNaN(req.Scale) || math.IsInf(req.Scale, 0) {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Scale must be finite and nonnegative (0 = adaptive)"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Scale must be finite and nonnegative (0 = adaptive)"})
 	}
 	s.ws.stateMu.Lock()
 	s.FixedScale = req.Scale

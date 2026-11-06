@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	runtimedebug "runtime/debug"
@@ -12,8 +13,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 
 	"github.com/mumax/3/engine"
 	"github.com/mumax/3/log"
@@ -31,19 +32,24 @@ func Start(host string, port int, basePath string, tunnel string, debug bool) (i
 		AllowHeaders: []string{"*"},
 	}))
 
-	e.HideBanner = true
 	if debug {
-		e.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
-			Format: "method=${method}, uri=${uri}, status=${status}\n",
+		e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+			LogMethod: true,
+			LogURI:    true,
+			LogStatus: true,
+			LogValuesFunc: func(c *echo.Context, values middleware.RequestLoggerValues) error {
+				c.Logger().Info("HTTP request", "method", values.Method, "uri", values.URI, "status", values.Status)
+				return nil
+			},
 		}))
 	} else {
-		e.Logger.SetOutput(io.Discard)
+		e.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
 	api := e.Group(effectiveBasePath)
 
 	// redirect "" to "/"
-	api.GET("", func(c echo.Context) error {
+	api.GET("", func(c *echo.Context) error {
 		return c.Redirect(301, effectiveBasePath+"/")
 	})
 
@@ -96,7 +102,8 @@ func startGuiServer(e *echo.Echo, basePath string, port int, tunnel string, list
 				log.Log.Warn("WebUI crashed: %v\n%s", r, runtimedebug.Stack())
 			}
 		}()
-		if err := e.Server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		server := &http.Server{Handler: e}
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Log.Err("WebUI server stopped: %v", err)
 		}
 	}()

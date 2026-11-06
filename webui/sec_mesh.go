@@ -3,7 +3,7 @@ package webui
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/mumax/3/engine"
 )
@@ -39,6 +39,6 @@ func (m *MeshState) Update() {
 	m.PBCx, m.PBCy, m.PBCz = pbc[0], pbc[1], pbc[2]
 }
 
-func (m *MeshState) postMesh(c echo.Context) error {
+func (m *MeshState) postMesh(c *echo.Context) error {
 	return c.JSON(http.StatusNotImplemented, "")
 }

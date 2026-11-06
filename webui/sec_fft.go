@@ -3,7 +3,7 @@ package webui
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/mumax/3/engine"
 	"github.com/mumax/3/log"
@@ -60,7 +60,7 @@ func (s *FftState) Update() {
 	s.Peaks = engine.GetFftPeaks()
 }
 
-func (s *FftState) postFftComponent(c echo.Context) error {
+func (s *FftState) postFftComponent(c *echo.Context) error {
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	type Request struct {
@@ -69,7 +69,7 @@ func (s *FftState) postFftComponent(c echo.Context) error {
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	engine.SetFftSpectrogramComponent(req.Component)
 	s.SpectrogramComponent = req.Component
@@ -77,7 +77,7 @@ func (s *FftState) postFftComponent(c echo.Context) error {
 	return c.JSON(http.StatusOK, nil)
 }
 
-func (s *FftState) postFftClear(c echo.Context) error {
+func (s *FftState) postFftClear(c *echo.Context) error {
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	engine.ClearFft()
@@ -85,7 +85,7 @@ func (s *FftState) postFftClear(c echo.Context) error {
 	return c.JSON(http.StatusOK, nil)
 }
 
-func (s *FftState) postFftMaxFrequency(c echo.Context) error {
+func (s *FftState) postFftMaxFrequency(c *echo.Context) error {
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	type Request struct {
@@ -94,14 +94,14 @@ func (s *FftState) postFftMaxFrequency(c echo.Context) error {
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	if req.MaxFreqGHz <= 0 {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "maxFreqGHz must be > 0"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "maxFreqGHz must be > 0"})
 	}
 
 	if err := engine.SetFftMaxFreqGHz(req.MaxFreqGHz); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": err.Error()})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
 	}
 	s.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)

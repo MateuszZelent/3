@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/mumax/3/cuda"
 	"github.com/mumax/3/data"
 	"github.com/mumax/3/engine"
@@ -60,15 +60,15 @@ func (r PreviewRegion) requested() (s [3]int) {
 	}
 	return
 }
-func (s *PreviewState) postPreviewRegion(c echo.Context) error {
+func (s *PreviewState) postPreviewRegion(c *echo.Context) error {
 	var r PreviewRegion
 	if err := c.Bind(&r); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid region payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid region payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	if err := r.validate(engine.MeshSnapshotSize()); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": err.Error()})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
 	}
 	if r.Enabled && !s.Region.Enabled {
 		s.regionFullAllLayers = s.AllLayers

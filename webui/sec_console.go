@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/mumax/3/engine"
 )
@@ -29,7 +29,7 @@ func initConsoleAPI(e *echo.Group, ws *WebSocketManager) *ConsoleState {
 	return state
 }
 
-func (s ConsoleState) postConsoleCommand(c echo.Context) error {
+func (s ConsoleState) postConsoleCommand(c *echo.Context) error {
 	// TODO: return error if the command wrong
 	type Request struct {
 		Command string `msgpack:"command"`
@@ -37,12 +37,12 @@ func (s ConsoleState) postConsoleCommand(c echo.Context) error {
 
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 
 	// Check if "RunShell" is in the command, case-insensitive
 	if strings.Contains(strings.ToLower(req.Command), "runshell(") {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "RunShell command not allowed through the WebUI"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "RunShell command not allowed through the WebUI"})
 	}
 
 	return (SolverState{ws: s.ws}).acceptConsoleOperation(c, req.Command)

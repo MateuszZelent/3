@@ -5,7 +5,7 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Include the full SvelteKit output, including the `_app` directory.
@@ -28,7 +28,7 @@ func staticFileHandler(basePath string) http.Handler {
 
 // Serve the `index.html` file.
 func indexFileHandler() echo.HandlerFunc {
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		indexFile, err := staticFiles.ReadFile("static/index.html")
 		if err != nil {
 			return c.String(http.StatusInternalServerError, "Index file not found")

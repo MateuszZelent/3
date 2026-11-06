@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/mumax/3/engine"
 )
@@ -83,14 +83,14 @@ func getSolverName(solver int) string {
 	return ""
 }
 
-func (s SolverState) postSolverType(c echo.Context) error {
+func (s SolverState) postSolverType(c *echo.Context) error {
 	type Response struct {
 		Type string `msgpack:"type"`
 	}
 
 	res := new(Response)
 	if err := c.Bind(res); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	engine.InjectAndWait(func() {
 		solver := getSolverType(res.Type)
@@ -110,88 +110,88 @@ func (s SolverState) postSolverType(c echo.Context) error {
 	return c.JSON(http.StatusOK, engine.SolverType())
 }
 
-func (s SolverState) postSolverRun(c echo.Context) error {
+func (s SolverState) postSolverRun(c *echo.Context) error {
 	type Request struct {
 		Runtime string `msgpack:"runtime"`
 	}
 
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{
+		return c.JSON(http.StatusBadRequest, map[string]any{
 			"error": "Invalid request payload: " + err.Error(),
 		})
 	}
 	duration, err := strconv.ParseFloat(req.Runtime, 64)
 	if err != nil || math.IsNaN(duration) || math.IsInf(duration, 0) || duration < 0 {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Runtime must be a finite, nonnegative number"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Runtime must be a finite, nonnegative number"})
 	}
 	return s.acceptLongOperation(c, fmt.Sprintf("Run(%.17g)", duration))
 }
 
-func (s SolverState) postSolverSteps(c echo.Context) error {
+func (s SolverState) postSolverSteps(c *echo.Context) error {
 	type Request struct {
 		Steps string `msgpack:"steps"`
 	}
 
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	steps, err := strconv.Atoi(req.Steps)
 	if err != nil || steps < 0 {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Steps must be a nonnegative integer"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Steps must be a nonnegative integer"})
 	}
 	return s.acceptLongOperation(c, fmt.Sprintf("Steps(%d)", steps))
 }
 
-func (s SolverState) postSolverRelax(c echo.Context) error {
+func (s SolverState) postSolverRelax(c *echo.Context) error {
 	return s.acceptLongOperation(c, "Relax()")
 }
 
-func (s SolverState) postSolverMinimize(c echo.Context) error {
+func (s SolverState) postSolverMinimize(c *echo.Context) error {
 	return s.acceptLongOperation(c, "Minimize()")
 }
 
-func (s SolverState) postSolverBreak(c echo.Context) error {
+func (s SolverState) postSolverBreak(c *echo.Context) error {
 	if err := s.ws.breakSolver(); err != nil {
-		return c.JSON(http.StatusInternalServerError, echo.Map{"error": err.Error()})
+		return c.JSON(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 	}
 	s.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, "")
 }
 
-func (s SolverState) acceptLongOperation(c echo.Context, command string) error {
+func (s SolverState) acceptLongOperation(c *echo.Context, command string) error {
 	ack, accepted := s.ws.reserveSolverOperation(command, true)
 	return writeOperationAck(c, ack, accepted)
 }
 
-func (s SolverState) acceptConsoleOperation(c echo.Context, command string) error {
+func (s SolverState) acceptConsoleOperation(c *echo.Context, command string) error {
 	ack, accepted := s.ws.reserveConsoleOperation(command)
 	return writeOperationAck(c, ack, accepted)
 }
 
-func writeOperationAck(c echo.Context, ack solverOperationAck, accepted bool) error {
+func writeOperationAck(c *echo.Context, ack solverOperationAck, accepted bool) error {
 	if !accepted {
 		if ack.OperationID != 0 {
-			return c.JSON(http.StatusConflict, echo.Map{
+			return c.JSON(http.StatusConflict, map[string]any{
 				"error":       "An operation in this lane is already pending or running",
 				"operationId": ack.OperationID,
 				"status":      ack.Status,
 			})
 		}
-		return c.JSON(http.StatusServiceUnavailable, echo.Map{"error": "Operation queue is unavailable"})
+		return c.JSON(http.StatusServiceUnavailable, map[string]any{"error": "Operation queue is unavailable"})
 	}
 	return c.JSON(http.StatusAccepted, ack)
 }
 
-func (s SolverState) postSolverFixDt(c echo.Context) error {
+func (s SolverState) postSolverFixDt(c *echo.Context) error {
 	type Request struct {
 		Fixdt float64 `msgpack:"fixdt"`
 	}
 
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 
 	engine.InjectAndWait(func() { engine.EvalTryRecover("FixDt = " + strconv.FormatFloat(req.Fixdt, 'f', -1, 64)) })
@@ -199,14 +199,14 @@ func (s SolverState) postSolverFixDt(c echo.Context) error {
 	return c.JSON(http.StatusOK, "")
 }
 
-func (s SolverState) postSolverMinDt(c echo.Context) error {
+func (s SolverState) postSolverMinDt(c *echo.Context) error {
 	type Request struct {
 		Mindt float64 `msgpack:"mindt"`
 	}
 
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 
 	engine.InjectAndWait(func() { engine.EvalTryRecover("MinDt = " + strconv.FormatFloat(req.Mindt, 'f', -1, 64)) })
@@ -214,14 +214,14 @@ func (s SolverState) postSolverMinDt(c echo.Context) error {
 	return c.JSON(http.StatusOK, "")
 }
 
-func (s SolverState) postSolverMaxDt(c echo.Context) error {
+func (s SolverState) postSolverMaxDt(c *echo.Context) error {
 	type Request struct {
 		Maxdt float64 `msgpack:"maxdt"`
 	}
 
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 
 	engine.InjectAndWait(func() { engine.EvalTryRecover("MaxDt = " + strconv.FormatFloat(req.Maxdt, 'f', -1, 64)) })
@@ -229,14 +229,14 @@ func (s SolverState) postSolverMaxDt(c echo.Context) error {
 	return c.JSON(http.StatusOK, "")
 }
 
-func (s SolverState) postSolverMaxErr(c echo.Context) error {
+func (s SolverState) postSolverMaxErr(c *echo.Context) error {
 	type Request struct {
 		Maxerr float64 `msgpack:"maxerr"`
 	}
 
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 
 	engine.InjectAndWait(func() { engine.EvalTryRecover("MaxErr = " + strconv.FormatFloat(req.Maxerr, 'f', -1, 64)) })

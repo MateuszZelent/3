@@ -1,7 +1,7 @@
 package webui
 
 import (
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/mumax/3/util"
 	"net/http"
 )
@@ -166,7 +166,7 @@ func cloneValuePointer[T any](source *T) *T {
 }
 
 // Does not acquire engine or websocket state locks.
-func getDemagProgress(c echo.Context) error {
+func getDemagProgress(c *echo.Context) error {
 	c.Response().Header().Set("Cache-Control", "no-store")
 	return c.JSON(http.StatusOK, util.DemagProgressSnapshot())
 }

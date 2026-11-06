@@ -3,7 +3,7 @@ package webui
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/mumax/3/cuda"
 	"github.com/mumax/3/data"
 )
@@ -72,7 +72,7 @@ func (s *PreviewState) updatePlaneScalar(input *data.Slice) {
 
 // Atomically configure the plane, reduction and slice. Keep the last slice of
 // each axis when switching planes; a mesh change clamps them before capture.
-func (s *PreviewState) postPreviewSection(c echo.Context) error {
+func (s *PreviewState) postPreviewSection(c *echo.Context) error {
 	var req struct {
 		RequestID  string `json:"requestId"`
 		Plane      string `json:"plane" msgpack:"plane"`
@@ -80,23 +80,23 @@ func (s *PreviewState) postPreviewSection(c echo.Context) error {
 		SliceIndex *int   `json:"sliceIndex" msgpack:"sliceIndex"`
 	}
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	if !s.addPossibleDownscaleSizes() {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Mesh is not initialized"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Mesh is not initialized"})
 	}
 	plane := s.Plane
 	if req.Plane != "" {
 		plane = req.Plane
 	}
 	if !validPreviewPlane(plane) || (req.Mode != "" && req.Mode != "single" && req.Mode != "average") {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid plane or reduction mode"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid plane or reduction mode"})
 	}
 	_, _, normal := previewPlaneAxes(plane)
 	if req.SliceIndex != nil && (*req.SliceIndex < 0 || *req.SliceIndex >= s.previewMeshSize[normal]) {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Slice outside mesh"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Slice outside mesh"})
 	}
 	s.Plane = plane
 	if req.SliceIndex != nil {
@@ -109,23 +109,23 @@ func (s *PreviewState) postPreviewSection(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.ws.broadcastPreviewStateLocked(req.RequestID))
 }
 
-func (s *PreviewState) postPlaneResolution(c echo.Context) error {
+func (s *PreviewState) postPlaneResolution(c *echo.Context) error {
 	var req struct {
 		RequestID string `json:"requestId"`
 		USize     *int   `json:"uSize" msgpack:"uSize"`
 		VSize     *int   `json:"vSize" msgpack:"vSize"`
 	}
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	s.ws.stateMu.Lock()
 	defer s.ws.stateMu.Unlock()
 	if !s.addPossibleDownscaleSizes() {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Mesh is not initialized"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Mesh is not initialized"})
 	}
 	s.refreshPlaneMetadata()
 	if (req.USize != nil && !containsInt(s.PlaneUPossibleSizes, *req.USize)) || (req.VSize != nil && !containsInt(s.PlaneVPossibleSizes, *req.VSize)) {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Resolution outside plane presets"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Resolution outside plane presets"})
 	}
 	u, v, _ := previewPlaneAxes(s.Plane)
 	if req.USize != nil {

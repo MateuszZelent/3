@@ -2,7 +2,7 @@ package webui
 
 import (
 	"encoding/json"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/mumax/3/util"
 	"net/http"
 	"net/http/httptest"

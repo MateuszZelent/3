@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/mumax/3/engine"
 )
 
@@ -62,7 +62,7 @@ func TestIdlePublicationDoesNotCaptureOrPublish(t *testing.T) {
 func TestBroadcastSleepsWithoutClientsAndResumesAfterReconnect(t *testing.T) {
 	manager := newWebSocketManager()
 	e := echo.New()
-	e.GET("/", func(c echo.Context) error {
+	e.GET("/", func(c *echo.Context) error {
 		return manager.websocketEntrypointFor(c, manager.previewConnections, "preview", func() {})
 	})
 	server := httptest.NewServer(e)

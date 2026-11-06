@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/mumax/3/engine"
@@ -695,15 +695,15 @@ func (cm *connectionManager) activeCount() int {
 	return count
 }
 
-func (wsManager *WebSocketManager) websocketEntrypoint(c echo.Context) error {
+func (wsManager *WebSocketManager) websocketEntrypoint(c *echo.Context) error {
 	return wsManager.websocketEntrypointFor(c, wsManager.connections, "main", nil)
 }
 
-func (wsManager *WebSocketManager) websocketPreviewEntrypoint(c echo.Context) error {
+func (wsManager *WebSocketManager) websocketPreviewEntrypoint(c *echo.Context) error {
 	return wsManager.websocketEntrypointFor(c, wsManager.previewConnections, "preview", nil)
 }
 
-func (wsManager *WebSocketManager) websocketEntrypointFor(c echo.Context, cm *connectionManager, name string, onConnect func()) error {
+func (wsManager *WebSocketManager) websocketEntrypointFor(c *echo.Context, cm *connectionManager, name string, onConnect func()) error {
 	log.Log.Debug("New %s WebSocket connection, upgrading...", name)
 	ws, err := wsManager.upgrader.Upgrade(c.Response(), c.Request(), nil)
 	log.Log.Debug("New %s WebSocket connection upgraded", name)

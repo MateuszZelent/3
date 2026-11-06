@@ -3,7 +3,7 @@ package webui
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/mumax/3/engine"
 	"github.com/mumax/3/log"
@@ -68,14 +68,14 @@ func (s *ParametersState) getFields() {
 	s.Fields = fields
 }
 
-func (s *ParametersState) postSelectParameterRegion(c echo.Context) error {
+func (s *ParametersState) postSelectParameterRegion(c *echo.Context) error {
 	type Request struct {
 		SelectedRegion int `msgpack:"selectedRegion"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 
 	s.ws.stateMu.Lock()

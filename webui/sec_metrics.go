@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/process"
@@ -282,7 +282,7 @@ func (m *MetricsState) getTotalRAMUsage() {
 	m.RAMPercentTotal = vmStat.UsedPercent
 }
 
-func (m *MetricsState) postMetricsReset(c echo.Context) error {
+func (m *MetricsState) postMetricsReset(c *echo.Context) error {
 	m.ws.stateMu.Lock()
 	m.Error = ""
 	m.lastGPUUpdate = time.Time{}

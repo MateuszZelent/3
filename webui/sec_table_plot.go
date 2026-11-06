@@ -4,7 +4,7 @@ import (
 	"math"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/mumax/3/engine"
 	"github.com/mumax/3/log"
@@ -174,87 +174,87 @@ func (t *TablePlotState) GetTableNames() []string {
 	return columns
 }
 
-func (t *TablePlotState) postTablePlotAutoSaveInterval(c echo.Context) error {
+func (t *TablePlotState) postTablePlotAutoSaveInterval(c *echo.Context) error {
 	type Request struct {
 		AutoSaveInterval string `msgpack:"autoSaveInterval"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	engine.InjectAndWait(func() { engine.EvalTryRecover("TableAutoSave(" + req.AutoSaveInterval + ")") })
 	t.ws.broadcastEngineStateWithoutPreview()
 	return c.JSON(http.StatusOK, nil)
 }
 
-func (t *TablePlotState) postTablePlotXColumn(c echo.Context) error {
+func (t *TablePlotState) postTablePlotXColumn(c *echo.Context) error {
 	type Request struct {
 		XColumn string `msgpack:"XColumn"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	t.ws.stateMu.Lock()
 	defer t.ws.stateMu.Unlock()
 	if !t.ColumnExists(req.XColumn) {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Table column not found"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Table column not found"})
 	}
 	t.XColumn = req.XColumn
 	t.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
-func (t *TablePlotState) postTablePlotYColumn(c echo.Context) error {
+func (t *TablePlotState) postTablePlotYColumn(c *echo.Context) error {
 	type Request struct {
 		YColumn string `msgpack:"YColumn"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	t.ws.stateMu.Lock()
 	defer t.ws.stateMu.Unlock()
 	if !t.ColumnExists(req.YColumn) {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Table column not found"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Table column not found"})
 	}
 	t.YColumn = req.YColumn
 	t.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
-func (t *TablePlotState) postTablePlotMaxPoints(c echo.Context) error {
+func (t *TablePlotState) postTablePlotMaxPoints(c *echo.Context) error {
 	type Request struct {
 		MaxPoints int `msgpack:"maxPoints"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	t.ws.stateMu.Lock()
 	defer t.ws.stateMu.Unlock()
 	if req.MaxPoints < 1 || req.MaxPoints > 100000 {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "MaxPoints must be between 1 and 100000"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "MaxPoints must be between 1 and 100000"})
 	}
 	t.MaxPoints = req.MaxPoints
 	t.ws.broadcastEngineStateWithoutPreviewLocked()
 	return c.JSON(http.StatusOK, nil)
 }
 
-func (t *TablePlotState) postTablePlotStep(c echo.Context) error {
+func (t *TablePlotState) postTablePlotStep(c *echo.Context) error {
 	type Request struct {
 		Step int `msgpack:"step"`
 	}
 	req := new(Request)
 	if err := c.Bind(req); err != nil {
 		log.Log.Err("%v", err)
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Invalid request payload"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request payload"})
 	}
 	t.ws.stateMu.Lock()
 	defer t.ws.stateMu.Unlock()
 	if req.Step < 1 {
-		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Step must be at least 1"})
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Step must be at least 1"})
 	}
 	t.Step = req.Step
 	t.ws.broadcastEngineStateWithoutPreviewLocked()
