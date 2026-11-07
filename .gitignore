@@ -37,3 +37,4 @@ frontend/test-results/
 local_tests/
 webui/static/
 doc/audits/
+*.zarr*
