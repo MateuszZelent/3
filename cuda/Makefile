@@ -23,9 +23,9 @@
 SHELL = /bin/bash
 
 # When CUDA_HOME is not an environment variable and is not set on the command line, use the nvcc compiler
-# from the PATH
+# from the PATH, falling back to the standard toolkit installation.
 ifeq ($(CUDA_HOME),)
-	NVCC=nvcc
+	NVCC=$(or $(shell command -v nvcc 2>/dev/null),$(firstword $(wildcard /usr/local/cuda/bin/nvcc /opt/cuda/bin/nvcc)),nvcc)
 else 
 	NVCC=${CUDA_HOME}/bin/nvcc 
 endif

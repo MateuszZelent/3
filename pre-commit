@@ -1,19 +1,33 @@
-#!/bin/sh
-#
-# A hook script to verify what is about to be committed.
-# Called by git-commit with no arguments.  The hook should
-# exit with non-zero status after issuing an appropriate message if
-# it wants to stop the commit.
-# 
-# Add this file to .git/hooks
-# 
-# Runs gofmt on the code and stops commit if files were affected.
-# 
-fail=0;
+#!/usr/bin/env bash
+# Check staged Go formatting without rewriting the index or working tree.
+# Keep the full build gate for source/dependency/build-tool changes.
+set -euo pipefail
 
-if (gofmt -w -l */*.go */*/*.go | grep \.go); then exit 1; fi;
-make || exit 1
+cd "$(git rev-parse --show-toplevel)"
+needs_build=false
+while IFS= read -r -d '' file; do
+    case "$file" in
+        doc/audits/*) continue ;; # Historical evidence is a separate module.
+        *.go)
+            needs_build=true
+            # Deleted files still require a build, but cannot be formatted.
+            if git cat-file -e ":$file" 2>/dev/null; then
+                if ! unformatted=$(git show ":$file" | gofmt -l); then
+                    printf 'pre-commit: invalid staged Go source: %s\n' "$file" >&2
+                    exit 1
+                fi
+                if [[ -n "$unformatted" ]]; then
+                    printf 'pre-commit: format and re-stage %s before committing.\n' "$file" >&2
+                    exit 1
+                fi
+            fi
+            ;;
+        *.cu|*.cuh|*.c|*.h|go.mod|go.sum|Makefile|*/Makefile|justfile|pre-commit)
+            needs_build=true
+            ;;
+    esac
+done < <(git diff --cached --name-only --no-renames --diff-filter=ACDMRT -z)
 
-#if astyle --indent=tab cuda/*.cu | grep Formatted; then exit 1; fi;
-
-exit 0
+if "$needs_build"; then
+    make
+fi

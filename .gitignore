@@ -36,5 +36,6 @@ AUDYT_WIZUALIZACJI_3D.md
 frontend/test-results/
 local_tests/
 webui/static/
-doc/audits/
+doc/audits/*
+!doc/audits/go.mod
 *.zarr*
