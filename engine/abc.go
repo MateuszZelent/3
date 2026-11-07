@@ -107,6 +107,8 @@ func init() {
            "tanh":         steepness (higher = sharper transition, e.g. 4-10)
            "power":        exponent  (e.g. 2 = quadratic)
            "linear":       ignored
+         Layers follow simulation-box edges, not the boundary of SetGeom.
+         The current material geometry must overlap the layers.
          Calling this again replaces the previous ABC (does not stack).`)
 
 	DeclFunc("ext_SetAbsorbingBoundaryAdvanced", SetAbsorbingBoundaryAdvanced,
@@ -519,13 +521,18 @@ func SetAbsorbingBoundaryAdvanced(totalWidth, rampWidth, maxAlpha float64, direc
 }
 
 func applyAbsorbingBoundary(spec abcSideSpec, total, ramp abcSideWidths, maxAlpha float64, profile string, param float64) {
-	ClearAbsorbingBoundary()
-
 	size := Mesh().Size()
 	cs := Mesh().CellSize()
 	ws := Mesh().WorldSize()
 	normalizeSideWidths(&total, &ramp, spec, ws[X], ws[Y], cs[X], cs[Y])
 	prof := selectProfile(profile)
+	xCovered, yCovered := sampledABCAxes(spec, total, cs)
+	if maxAlpha > 0 && !xCovered && !yCovered {
+		log.Log.ErrAndExit("ABC: no cell centers lie inside the requested absorbing layers on mesh %v. Increase the number of cells along the selected axis or select the propagation axis (x or y).", size)
+	}
+	if maxAlpha > 0 && ((spec.XMinus || spec.XPlus) && !xCovered || (spec.YMinus || spec.YPlus) && !yCovered) {
+		log.Log.Warn("ABC: a requested axis has no cell centers inside its absorbing layers on mesh %v; only the other selected axis will be damped.", size)
+	}
 
 	maskHost := data.NewSlice(1, size)
 	defer maskHost.Free()
@@ -558,7 +565,35 @@ func applyAbsorbingBoundary(spec abcSideSpec, total, ramp abcSideWidths, maxAlph
 		}
 	}
 
+	if maxAlpha > 0 && !geometry.Gpu().IsNil() {
+		geomHost := geometry.Gpu().HostCopy()
+		defer geomHost.Free()
+		if !abcOverlapsGeometry(maskHost, geomHost) {
+			log.Log.Warn("ABC has no overlap with the current geometry: absorbing layers follow simulation-box edges, not material edges. Extend the material into the layers or adjust the layer width.")
+		}
+	}
+
+	// Validate the new profile before removing an existing working layer.
+	ClearAbsorbingBoundary()
 	SpongeAlpha.AddGo(maskHost, nil)
+}
+
+// Profiles are sampled at cell centers, not at the physical box boundary.
+// In particular, two layers capped at 49% of a one-cell axis miss that cell.
+func sampledABCAxes(spec abcSideSpec, total abcSideWidths, cell [3]float64) (x, y bool) {
+	x = spec.XMinus && total.XMinus > cell[X]/2 || spec.XPlus && total.XPlus > cell[X]/2
+	y = spec.YMinus && total.YMinus > cell[Y]/2 || spec.YPlus && total.YPlus > cell[Y]/2
+	return
+}
+
+func abcOverlapsGeometry(mask, geom *data.Slice) bool {
+	fill := geom.Host()[0]
+	for i, alpha := range mask.Host()[0] {
+		if alpha > 0 && fill[i] > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func combineNormalizedProfiles(a, b float64) float64 {
